@@ -33,6 +33,7 @@ Estes são os agentes registrados no sistema. Cada um possui sua própria skill 
 | `agente-saude` | Especialista em Saúde | Medicina e Saúde | Medicina, farmacologia, saúde pública, bem-estar |
 | `agente-mercado` | Analista de Mercado | Marketing e Consumidor | Comportamento do consumidor, branding, tendências, digital |
 | `avaliador-coerencia` | Avaliador de Coerência | Avaliação | **Sempre invocado** — avalia e ranqueia todas as respostas |
+| `agente-mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL |
 
 > Para adicionar novos agentes ao registro, consulte a seção **Extensibilidade** ao final.
 ```
