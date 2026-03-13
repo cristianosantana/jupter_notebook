@@ -1,0 +1,9 @@
+# Ecossistema de Agentes (ecossistema_agentes_teste.ipynb)
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+jupyter>=1.0.0
+sqlalchemy>=2.0.0
+openai>=1.0.0
+dotenv>=0.9.9
