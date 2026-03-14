@@ -17,7 +17,9 @@ sys.modules[_spec.name] = _mod
 _spec.loader.exec_module(_mod)
 
 MySQLAgent = _mod.MySQLAgent
+DefinicaoTabela = _mod.DefinicaoTabela
 MySQLConexao = _mod.MySQLConexao
 carregar_tabela_mysql = _mod.carregar_tabela_mysql
+carregar_multiplas_tabelas_mysql = _mod.carregar_multiplas_tabelas_mysql
 
-__all__ = ["MySQLAgent", "MySQLConexao", "carregar_tabela_mysql"]
+__all__ = ["MySQLAgent", "DefinicaoTabela", "MySQLConexao", "carregar_tabela_mysql", "carregar_multiplas_tabelas_mysql"]

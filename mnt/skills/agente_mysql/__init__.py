@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
-__all__ = ["MySQLAgent", "MySQLConexao", "carregar_tabela_mysql"]
+__all__ = ["MySQLAgent", "DefinicaoTabela", "MySQLConexao", "carregar_tabela_mysql", "carregar_multiplas_tabelas_mysql"]
 
 if TYPE_CHECKING:
-    from .helpers import MySQLAgent, MySQLConexao, carregar_tabela_mysql
+    from .helpers import MySQLAgent, DefinicaoTabela, MySQLConexao, carregar_tabela_mysql, carregar_multiplas_tabelas_mysql
 
 
 def __getattr__(name: str):
