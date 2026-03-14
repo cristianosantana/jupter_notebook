@@ -384,7 +384,7 @@ class MySQLAgent:
             ", ".join(f"`{c}`" for c in colunas) if colunas else "*"
         )
         where_clause = f"WHERE {filtro_where}" if filtro_where.strip() else ""
-        query = f"SELECT {cols_sql} FROM `{tabela}` {where_clause} LIMIT {limite}"
+        query = f"SELECT {cols_sql} FROM `{tabela}` {where_clause} ORDER BY id DESC LIMIT {limite}"
 
         if verbose:
             print(f"[agente-mysql] Carregando dados (limite={limite:,})...")
