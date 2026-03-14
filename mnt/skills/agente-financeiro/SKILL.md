@@ -1,5 +1,6 @@
 ---
 name: agente-financeiro
+model: gpt-5-mini
 description: >
   Especialista em finanças, investimentos, mercado de capitais e contabilidade. Use esta skill quando
   a pergunta envolver: análise de investimentos, captação de recursos, valuation, instrumentos financeiros

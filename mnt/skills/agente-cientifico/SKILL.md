@@ -1,5 +1,6 @@
 ---
 name: agente-cientifico
+model: gpt-5-mini
 description: >
   Especialista em metodologia científica, pesquisa acadêmica e evidências empíricas. Use esta skill
   quando a pergunta exigir: embasamento científico e evidências de pesquisa, revisão de literatura,

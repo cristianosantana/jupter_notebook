@@ -1,5 +1,6 @@
 ---
 name: agente-juridico
+model: gpt-5-mini
 description: >
   Especialista em direito brasileiro e regulamentação. Use esta skill quando a pergunta envolver:
   legislação brasileira, contratos e cláusulas contratuais, compliance e regulatório, direito societário,

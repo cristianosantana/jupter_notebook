@@ -1,5 +1,6 @@
 ---
 name: agente-dados
+model: gpt-5-mini
 description: >
   Especialista em dados, analytics, BI e estatística. Use esta skill quando a pergunta envolver:
   modelagem de dados, pipeline de dados e ETL, estatística aplicada e análise exploratória, métricas

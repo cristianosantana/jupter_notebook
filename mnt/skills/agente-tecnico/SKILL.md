@@ -1,5 +1,6 @@
 ---
 name: agente-tecnico
+model: gpt-5-mini
 description: >
   Especialista em tecnologia, engenharia de software e sistemas. Use esta skill quando a pergunta
   envolver: programação e desenvolvimento de software, arquitetura de sistemas, cloud computing (AWS,

@@ -1,5 +1,6 @@
 ---
 name: agente-saude
+model: gpt-5-mini
 description: >
   Especialista em saúde, medicina geral e bem-estar. Use esta skill quando a pergunta envolver:
   condições médicas e sintomas (informativo, não diagnóstico), farmacologia e medicamentos, saúde

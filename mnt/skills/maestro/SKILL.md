@@ -1,5 +1,6 @@
 ---
 name: maestro
+model: gpt-5-mini
 description: >
   Orquestrador central de múltiplos agentes especializados. Ative esta skill quando a pergunta do usuário
   envolver mais de um domínio de conhecimento, ou quando precisar de respostas multidisciplinares com alta

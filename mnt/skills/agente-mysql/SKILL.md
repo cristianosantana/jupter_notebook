@@ -1,5 +1,6 @@
 ---
 name: agente-mysql
+model: gpt-5-mini
 description: >
   Especialista em acesso e inspeção de tabelas MySQL via SQLAlchemy. Use esta skill quando a pergunta
   ou tarefa envolver: conectar a um banco MySQL, carregar uma tabela específica como DataFrame Pandas,

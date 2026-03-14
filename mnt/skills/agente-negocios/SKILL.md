@@ -1,5 +1,6 @@
 ---
 name: agente-negocios
+model: gpt-5-mini
 description: >
   Especialista em estratégia empresarial, gestão e crescimento de negócios. Use esta skill quando a
   pergunta envolver: estratégia competitiva, modelo de negócios, expansão e crescimento, gestão de

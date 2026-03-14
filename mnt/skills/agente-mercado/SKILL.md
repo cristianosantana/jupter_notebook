@@ -1,5 +1,6 @@
 ---
 name: agente-mercado
+model: gpt-5-mini
 description: >
   Especialista em marketing, comportamento do consumidor e mercado. Use esta skill quando a pergunta
   envolver: estratégia de marketing digital e tradicional, branding e posicionamento de marca,

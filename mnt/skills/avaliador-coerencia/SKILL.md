@@ -1,5 +1,6 @@
 ---
 name: avaliador-coerencia
+model: gpt-5-mini
 description: >
   Avalia e ranqueia respostas de múltiplos agentes especializados em relação a uma pergunta original.
   Use esta skill sempre que houver um conjunto de respostas de agentes que precisam ser comparadas,
