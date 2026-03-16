@@ -287,14 +287,16 @@ class MySQLAgent:
     def _inspecionar_colunas_df(self, df: pd.DataFrame) -> List[MetadadosColuna]:
         """Gera MetadadosColuna a partir de um DataFrame já carregado (para resultado de JOIN)."""
         colunas = []
-        for col in df.columns:
+        for i in range(len(df.columns)):
+            serie = df.iloc[:, i]
+            nome = str(df.columns[i]) if isinstance(df.columns[i], str) else str(i)
             colunas.append(MetadadosColuna(
-                nome=col, tipo=str(df[col].dtype),
-                nullable=bool(df[col].isna().any()),
+                nome=nome, tipo=str(serie.dtype),
+                nullable=bool(serie.isna().any()),
                 primary_key=False,
-                cardinalidade=int(df[col].nunique()),
-                nulos=int(df[col].isna().sum()),
-                percentual_nulos=round(df[col].isna().mean() * 100, 2),
+                cardinalidade=int(serie.nunique()),
+                nulos=int(serie.isna().sum()),
+                percentual_nulos=round(serie.isna().mean() * 100, 2),
             ))
         return colunas
 
