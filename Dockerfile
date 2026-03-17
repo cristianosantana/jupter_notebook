@@ -1,0 +1,17 @@
+# Serviço Maestro — API + worker
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY mnt/ ./mnt/
+COPY app/ ./app/
+
+ENV MODELO_DEFAULT=gpt-5-mini
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

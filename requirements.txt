@@ -7,4 +7,9 @@ jupyter>=1.0.0
 sqlalchemy>=2.0.0
 openai>=1.0.0
 dotenv>=0.9.9
+python-dotenv>=1.0.0
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
 sqlalchemy==2.0.47
+pymysql>=1.1.2
