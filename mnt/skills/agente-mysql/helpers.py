@@ -5,7 +5,7 @@ Conecta ao MySQL via SQLAlchemy e carrega tabelas como pd.DataFrame.
 
 Tabela única:
     agent = MySQLAgent(host=..., banco=..., usuario=..., senha=...)
-    resultado = agent.carregar_tabela("os_servicos", limite=50_000)
+    resultado = agent.carregar_tabela("os_servicos", limite=50.000)
     df = resultado["dataframe"]
 
 Múltiplas tabelas com LEFT JOINs (retorna 1 único DataFrame):
@@ -13,7 +13,7 @@ Múltiplas tabelas com LEFT JOINs (retorna 1 único DataFrame):
         {"tabela": "os_servicos",  "alias": "os"},
         {"tabela": "servicos",     "alias": "s",  "fk": "os.servico_id = s.id"},
         {"tabela": "clientes",     "alias": "c",  "fk": "os.cliente_id = c.id"},
-    ], limite=50_000)
+    ], limite=50.000)
     df = resultado["dataframe"]   # único df com colunas de todas as tabelas
 """
 
@@ -201,7 +201,7 @@ class MySQLAgent:
 
     Tabela única:
         agent = MySQLAgent(host=..., banco=..., usuario=..., senha=...)
-        r = agent.carregar_tabela("os_servicos", limite=50_000)
+        r = agent.carregar_tabela("os_servicos", limite=50.000)
         df = r["dataframe"]
 
     Múltiplas tabelas via LEFT JOIN (1 único DataFrame):
@@ -209,7 +209,7 @@ class MySQLAgent:
             {"tabela": "os_servicos", "alias": "os"},
             {"tabela": "servicos",    "alias": "s", "fk": "os.servico_id = s.id"},
             {"tabela": "clientes",    "alias": "c", "fk": "os.cliente_id = c.id"},
-        ], limite=50_000)
+        ], limite=50.000)
         df = r["dataframe"]   # colunas de todas as tabelas num único df
     """
 
@@ -317,7 +317,7 @@ class MySQLAgent:
     def carregar_tabela(
         self,
         tabela: str,
-        limite: int = 50_000,
+        limite: int = 50.000,
         filtro_where: str = "",
         colunas: Optional[List[str]] = None,
         verbose: bool = True,
@@ -390,7 +390,7 @@ class MySQLAgent:
     def carregar_multiplas_tabelas(
         self,
         definicoes: List[Dict],
-        limite: int = 50_000,
+        limite: int = 50.000,
         filtro_where: str = "",
         verbose: bool = True,
     ) -> Dict[str, Any]:
@@ -425,7 +425,7 @@ class MySQLAgent:
                 {"tabela": "os_servicos", "alias": "os"},
                 {"tabela": "servicos",    "alias": "s", "fk": "os.servico_id = s.id"},
                 {"tabela": "clientes",    "alias": "c", "fk": "os.cliente_id = c.id"},
-            ], limite=50_000, filtro_where="os.cancelado = 0")
+            ], limite=50.000, filtro_where="os.cancelado = 0")
 
             df = resultado["dataframe"]
             # df tem colunas de os_servicos + servicos + clientes numa linha só
@@ -567,7 +567,7 @@ def carregar_tabela_mysql(
     tabela: str,
     host: str = "localhost", porta: int = 3306,
     usuario: str = "root", senha: str = "", banco: str = "",
-    limite: int = 50_000, filtro_where: str = "",
+    limite: int = 50.000, filtro_where: str = "",
     injetar_globals: Optional[Dict] = None, verbose: bool = True,
 ) -> Dict[str, Any]:
     """Função de conveniência para tabela única."""
@@ -582,7 +582,7 @@ def carregar_multiplas_tabelas_mysql(
     definicoes: List[Dict],
     host: str = "localhost", porta: int = 3306,
     usuario: str = "root", senha: str = "", banco: str = "",
-    limite: int = 50_000, filtro_where: str = "",
+    limite: int = 50.000, filtro_where: str = "",
     injetar_globals: Optional[Dict] = None, verbose: bool = True,
 ) -> Dict[str, Any]:
     """Função de conveniência para múltiplas tabelas."""
