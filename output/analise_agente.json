@@ -1,0 +1,63 @@
+{
+  "S1_resumo_executivo": "Resumo: No período carregado há 39.082 registros de serviços válidos, com faturamento total de R$ 30.776.705,31. Ticket médio por registro = R$ 787,49; ticket mediano (típico) = R$ 480,00. Observação crítica: as janelas de comparação (7d e 14d) retornaram exatamente os mesmos valores do total (volume 39.082 e faturamento R$ 30.776.705,31), indicando que a consulta ou a definição de janela está incorreta ou que o dataset é exatamente a janela analisada. Pagamentos: R$ 28.383.718,08 com pagamento confirmado vs R$ 2.392.987,23 sem pagamento confirmado (≈ 7,8% do faturamento sem confirmação). Insight não-óbvio: a média (R$ 787) é 1,64× a mediana (R$ 480), sinal claro de cauda longa — poucos serviços de alto valor elevam a média; para decisões operacionais o ticket mediano é referência mais robusta. Recomendação: corrigir imediatamente as janelas de comparação (7d/14d) para possibilitar benchmarking semanal correto; paralelamente abrir auditoria das OS sem pagamento confirmado para classificar cobrança vs garantia/cortesia. Prazo sugerido: correção de janelas imediata (24-72h); auditoria financeira em 7 dias. Classificação do alerta: critico.",
+  "S1_alerta": "critico",
+  "S2_concessionarias": "Leitura: Top10 por faturamento soma ~R$ 14.757.084,79, equivalente a ~47,9% do faturamento total, distribuído entre 64 concessionárias ativas. Algumas concessionárias aparecem tanto no top por faturamento quanto por volume (ex.: OSAKA, BANZAI), enquanto outras lideram apenas por ticket médio (ex.: DISTRIBUIÇÃO PPF, PORSCHE). Insight não-óbvio: há concentração elevada — metade da receita vem de ~10 filiais, aumentando risco operacional (dependência) e bargaining power desigual. Além disso, concessionárias com ticket muito alto e volume muito baixo (p.ex. DISTRIBUIÇÃO PPF) podem inflar métricas de ticket médio sem representar escala. Recomendação: 1) criar relatório de “share de faturamento por top-10” e targets de diversificação (reduzir dependência para <40% em 90 dias); 2) segmentar ações: (a) para filiais de alto volume: foco em eficiência e retenção; (b) para filiais de alto ticket/baixo volume: validar capacidade e replicabilidade da oferta. Prazo: 30 dias para plano comercial; 90 dias para execução. Classificação do alerta: atencao.",
+  "S2_alerta": "atencao",
+  "S3_sazonalidade": "Leitura: Séries mensais mostram picos claros em meses como nov/2025 (R$ 3.126.270,50) e set/jul 2025 com comportamento sazonal; fevereiro/2026 apresenta queda (R$ 942.013,86) e volume mensal de fev/2026 = 1.451 registros, possivelmente parcial ou indicar sazonalidade negativa. Série semanal exibe variação natural, com semanas entre ~450 e 1.368 registros. Insight não-óbvio: padrões mensais sugerem janelas de pico recorrentes (meio/último trimestre) que exigem planejamento de capacidade; a queda forte em fev/2026 pode ser efeito de dados incompletos no período carregado (compatível com o problema de janelas idênticas apontado na S1). Recomendação: validar completude de dados para fev/2026 (7 dias) e, assumindo dados corretos, ajustar escala de mão-de-obra e estoques para picos previstos (plano de reforço 30 dias antes dos meses de pico). Classificação do alerta: atencao.",
+  "S3_alerta": "atencao",
+  "S4_produtos": "Leitura: Mix dominado por serviços de filmagem/PPF: FILME SOLAR (10.584 registros) e CLEAR COMFORT PARABRISA (4.741) lideram volume; por faturamento, PPF REGENERATIVA - FULL é o maior gerador (R$ 4.429.805,00), seguido por CLEAR COMFORT PARABRISA e FILME SOLAR. Top tickets são serviços PPF/recuperação com tickets unitários muito altos. Insight não-óbvio: o portfólio é altamente dependente de poucos serviços premium (PPF e filmes), que explicam parcela desproporcional da receita e da cauda longa observada. Oportunidade: padronizar ofertas complementares (higienização, selantes, check-ups) nos pós-venda para aumentar attach rate em serviços de alto ticket. Recomendação: 1) promover bundles cross-sell para clientes de PPF/filmes (campanha piloto em 10 filiais top em 30 dias); 2) revisar capacidade técnica para PPF (recursos humanos e tempo de bancada) em 60 dias. Classificação do alerta: atencao.",
+  "S4_alerta": "atencao",
+  "S5_vendedores": "Leitura: Top faturamento por vendedor: Caroline R$ 2.399.704,53; Laís R$ 2.312.174,00; listagem mostra vendedores com alto volume consistente e outros com ticket muito alto mas baixa frequência (ex.: MAIRA com ticket médio R$ 20.625,00). Insight não-óbvio: rankings por faturamento podem ser inflados por poucos serviços de alto ticket; vendedores com alto ticket médio e baixa frequência representam vendas pontuais (potencialmente ocasionais ou canal B2B). Recomendação: 1) validar consistência das top-sellers (reconciliação de vendas altas) em 7 dias; 2) criar duas trilhas de remuneração: (a) verdadeiro volume/recorrência (b) fechamento de altos tickets/contas corporativas — prazo 30 dias para desenho e 60 dias para implantação. Classificação do alerta: atencao.",
+  "S5_alerta": "atencao",
+  "S6_faixas_preco": "Leitura: Distribuição de tickets mostra P25 = R$ 215, P50 = R$ 480, P75 = R$ 940, P95 = R$ 2.010 e P99 = R$ 7.083,80. Média = R$ 787,49 > 1,5× mediana (1,64×) — cauda longa confirmada. Insight não-óbvio: segmento típico do cliente paga cerca de R$ 480; valores acima de R$ 2.010 (P95) são outliers que distorcem a média e normalmente exigem aprovação/controle adicional. Recomendação: implementar controle automático para propostas/OS com valor > P95 (R$ 2.010) — checklist de aprovação e auditoria de margem; usar mediana como KPI operacional para avaliação diária. Prazo: regras de aprovação em 14 dias, auditoria contínua. Classificação do alerta: atencao.",
+  "S6_alerta": "atencao",
+  "S7_cross_selling": "Leitura: Registros vinculados a OS multi-item (qtd_servicos >=2) = 26.382 vs single-item = 12.700. Multi-item concentra R$ 23.802.414,54 (≈77,4% do faturamento) enquanto single-item soma R$ 6.974.290,77 (≈22,6%). Ticket médio multi = R$ 902,22 vs single = R$ 549,16 — uplift de ticket ≈ 64,3% em OS multi. Insight não-óbvio: cross-selling é fator determinante de receita e melhora substancialmente o ticket; incentivos diretos a combinação de serviços tendem a ser o caminho mais eficiente para elevar faturamento por OS. Recomendação: formalizar bundles obrigatórios/opcionais no PDV e criar incentivo comercial para fechamento multi-item (meta trimestral e comissões extras); executar piloto em top-10 filiais por 30 dias. Classificação do alerta: normal.",
+  "S7_alerta": "normal",
+  "S8_alertas_anomalias": "Leitura: P95 global = R$ 2.010 define limiar de alto-ticket. Top50 de concessionárias mostra grande variação: líderes com >R$ 2,0M e cauda longa com filiais abaixo de R$ 30k. Faturamento sem pagamento confirmado ≈ R$ 2.392.987,23 (7,8% do total) requer investigação. Além disso, a igualdade dos agregados 7d/14d com o total (ver S1) indica possível erro de janela/dados. Insight não-óbvio: combinação de concentração de faturamento (top10 ≈ 48%) + 7,8% do faturamento sem confirmação de pagamento cria risco financeiro e de fluxo de caixa; igualmente, filiais com ticket médio elevado mas baixo volume podem inflar indicadores de eficácia comercial. Recomendação: 1) auditoria financeira imediata (7 dias) para distinguir inadimplência de processamento/políticas de cortesia; 2) configurar alertas automáticos (ETL/BI) quando janelas de comparação (7d/14d) retornarem valores idênticos ao total; 3) criar revisão trimestral das top-filiais para planos de mitigação de concentração. Classificação do alerta: critico.",
+  "S8_alerta": "critico",
+  "alertas_consolidados": [
+    "Comparações temporais inválidas: janelas 7d e 14d retornaram mesmos valores do total → revisão imediata do ETL/queries (critico).",
+    "Risco financeiro: ~R$ 2.392.987 (7,8% do faturamento) sem confirmação de pagamento → auditoria necessária (critico).",
+    "Concentração de receita: top-10 concessionárias respondem por ~47,9% do faturamento → risco de dependência (atencao).",
+    "Distribuição com cauda longa (média 1,64× mediana) e presença de outliers acima de P95 (R$ 2.010) que distorcem KPIs (atencao).",
+    "Vendedores com ticket muito alto e baixa frequência podem inflar ranking por faturamento; verificar consistência (atencao)."
+  ],
+  "recomendacoes": [
+    {
+      "area": "Dados / BI",
+      "acao": "Corrigir imediatamente as janelas de agregação (7d/14d) e validar completude do período (verificar se fev/2026 está parcial).",
+      "impacto": "critico",
+      "prazo": "24-72 horas"
+    },
+    {
+      "area": "Financeiro",
+      "acao": "Auditar as OS sem pagamento confirmado (R$ ~2,39M) para classificar cobrança, garantia, cortesia ou erro de conciliação.",
+      "impacto": "critico",
+      "prazo": "7 dias"
+    },
+    {
+      "area": "Operações / Atendimento",
+      "acao": "Implementar checklists e controle de aprovação para OS com valor > P95 (R$ 2.010) e usar mediana como KPI operacional para plano de produção.",
+      "impacto": "atencao",
+      "prazo": "14 dias"
+    },
+    {
+      "area": "Comercial / Vendas",
+      "acao": "Lançar piloto de bundles e incentivos de cross-sell nas top-10 filiais (focar PPF+serviços complementares) para capturar uplift de ticket observado (~+64%).",
+      "impacto": "normal",
+      "prazo": "30 dias"
+    },
+    {
+      "area": "Gestão de Filiais",
+      "acao": "Desenvolver plano de mitigação da concentração (meta: reduzir share dos top10 para <40%) e replicar práticas das filiais high-ticket/alto-volume em 90 dias.",
+      "impacto": "atencao",
+      "prazo": "90 dias"
+    },
+    {
+      "area": "Recursos Humanos / Vendas",
+      "acao": "Revisar políticas de comissão dividindo reconhecimento por volume recorrente e por fechamento de altos tickets (evitar distorções por vendas pontuais).",
+      "impacto": "atencao",
+      "prazo": "30-60 dias"
+    }
+  ]
+}
