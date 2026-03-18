@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 load_dotenv()
 
-from app.api.routes import health, pergunta
+from app.api.routes import health, pergunta, relatorio_os
 
 
 @asynccontextmanager
@@ -25,3 +25,4 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(pergunta.router)
+app.include_router(relatorio_os.router)
