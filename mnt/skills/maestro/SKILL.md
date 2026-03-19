@@ -36,6 +36,7 @@ Estes são os agentes registrados no sistema. Cada um possui sua própria skill 
 | `avaliador-coerencia` | Avaliador de Coerência | Avaliação | **Sempre invocado** — avalia e ranqueia todas as respostas |
 | `agente-mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL |
 | `agente-analise-os` | Analista de OS | Dados / OS / Gerencial | Análise de OS, concessionárias, vendedores, sazonalidade, ticket médio, relatório gerencial |
+| `agente-analise-concessionaria` | Analista concessionária | Dados / OS / Uma loja | Análise profunda de uma concessionária, séries, double_window, troca de vendedoras, projeções interpretativas, 12 seções, PDF + gráficos |
 
 > Para adicionar novos agentes ao registro, consulte a seção **Extensibilidade** ao final.
 ```
