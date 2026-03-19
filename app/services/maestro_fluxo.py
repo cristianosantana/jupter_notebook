@@ -221,6 +221,7 @@ def executar_fluxo_maestro(
     mysql_limite: int = 50_000,
     mysql_filtro_where: str = "",
     mysql_injetar_namespace: Optional[Dict] = None,
+    dataframe_preexistente: Optional[str] = None,
     skills_dir: Optional[str] = None,
 ) -> Dict:
     """
@@ -231,6 +232,11 @@ def executar_fluxo_maestro(
       - FASE 1: agente retorna perguntas agregadas em JSON (perguntas_dados)
       - Executor interno calcula somente métricas agregadas (sem linha crua)
       - FASE 2: agente interpreta resultado_extracao estruturado
+
+    DataFrame já em memória (sem nova query MySQL):
+      - ``mysql_injetar_namespace`` = dict onde o DataFrame está (ex.: ``globals()`` no Jupyter)
+      - ``dataframe_preexistente`` = nome da variável (str), ex.: ``"df_os"``
+      - Se ``mysql_tabelas`` / ``mysql_tabela`` estiver definido, o carregamento MySQL tem prioridade.
     """
     import pandas as pd
 
@@ -483,6 +489,40 @@ def executar_fluxo_maestro(
             "contrato_perguntas_dados": contrato_perguntas,
         }
         return resultado, contexto
+
+    def _preparar_contexto_dataframe_namespace(nome_var: str) -> Dict:
+        """Monta df_contexto a partir de um pandas.DataFrame já presente no namespace injetado."""
+        if mysql_injetar_namespace is None:
+            raise ValueError(
+                "dataframe_preexistente exige mysql_injetar_namespace apontando para o dict onde está o "
+                "DataFrame (ex.: globals() no Jupyter)."
+            )
+        nome_var = (nome_var or "").strip()
+        if not nome_var:
+            raise ValueError("dataframe_preexistente deve ser o nome da variável (string não vazia).")
+        ns = mysql_injetar_namespace
+        if nome_var not in ns:
+            raise ValueError(f"Variável '{nome_var}' não encontrada em mysql_injetar_namespace.")
+        df = ns[nome_var]
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"'{nome_var}' deve ser pandas.DataFrame (obtido {type(df).__name__}).")
+        amostra_sanitizada = _sanitizar_df_amostra(df)
+        try:
+            amostra_json = json.dumps(amostra_sanitizada, ensure_ascii=False)
+        except TypeError:
+            raise
+        return {
+            "df_variavel": nome_var,
+            "df_info": (
+                f"DataFrame pré-carregado em '{nome_var}' (namespace). "
+                f"Shape {int(df.shape[0])}×{int(df.shape[1])}."
+            ),
+            "df_colunas": [str(c) for c in df.columns],
+            "df_perfil": _montar_df_perfil(df),
+            "df_amostra": amostra_json,
+            "df_amostra_sanitizada": amostra_json,
+            "contrato_perguntas_dados": contrato_perguntas,
+        }
 
     def _aplicar_filtros(df: pd.DataFrame, filtros: List[Dict]) -> pd.DataFrame:
         out = df
@@ -767,6 +807,14 @@ def executar_fluxo_maestro(
             print(f"[MAESTRO] DataFrame disponível em '{df_variavel}'.")
         tabela_ref = (mysql_tabelas[0]["tabela"] if mysql_tabelas else mysql_tabela)
         contexto_maestro = f"{contexto_maestro}; Tabela: {tabela_ref}; DF: {df_variavel}"
+    elif dataframe_preexistente:
+        if verbose:
+            print("[MAESTRO] Usando DataFrame já presente no namespace (sem query MySQL)...")
+        df_contexto = _preparar_contexto_dataframe_namespace(dataframe_preexistente)
+        df_variavel = df_contexto.get("df_variavel")
+        if verbose:
+            print(f"[MAESTRO] DataFrame: '{df_variavel}' — {df_contexto.get('df_info', '')}")
+        contexto_maestro = f"{contexto_maestro}; DF em memória: {df_variavel}"
 
     def _invocar_um_agente(skill_id: str) -> Dict:
         """Invocação de um único agente (modo conhecimento ou 2 fases). Retorna o dict de resposta."""

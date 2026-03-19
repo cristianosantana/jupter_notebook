@@ -35,6 +35,7 @@ class MaestroService:
         mysql_limite: int = 50000,
         mysql_filtro_where: str = "",
         mysql_injetar_namespace: Optional[Dict] = None,
+        dataframe_preexistente: Optional[str] = None,
         skills_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict:
@@ -57,6 +58,7 @@ class MaestroService:
             mysql_limite=mysql_limite,
             mysql_filtro_where=mysql_filtro_where,
             mysql_injetar_namespace=mysql_injetar_namespace,
+            dataframe_preexistente=dataframe_preexistente,
             skills_dir=skills_dir or s.skills_dir,
             **kwargs,
         )
