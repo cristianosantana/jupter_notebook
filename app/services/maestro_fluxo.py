@@ -4,7 +4,7 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
@@ -18,6 +18,36 @@ def _get_skills(skills_list=None, skills_dir=None):
         return skills_list
     base = skills_dir or os.path.join(os.path.dirname(__file__), "..", "..", "mnt", "skills")
     return load_skills(base)
+
+
+def _normalizar_nome_variavel_dataframe(val: Any, fallback: Optional[str] = None) -> Optional[str]:
+    """
+    FASE 1 pode devolver df_variavel_usada como string ou, por erro do modelo, como dict.
+    Garante sempre uma string hashable para lookup em namespace (evita TypeError: unhashable type: 'dict').
+    """
+    if val is None:
+        out = fallback
+    elif isinstance(val, str):
+        out = val.strip() or fallback
+    elif isinstance(val, dict):
+        picked: Optional[str] = None
+        for key in ("df_variavel_usada", "df_variavel", "nome", "variavel", "name", "var"):
+            inner = val.get(key)
+            if isinstance(inner, str) and inner.strip():
+                picked = inner.strip()
+                break
+        if picked is None:
+            for v in val.values():
+                if isinstance(v, str) and v.strip():
+                    picked = v.strip()
+                    break
+        out = picked or fallback
+    else:
+        out = fallback
+    if out is not None and isinstance(out, str):
+        s = out.strip()
+        return s if s else None
+    return None
 
 
 def extrair_json(texto: str) -> Optional[Dict]:
@@ -254,11 +284,16 @@ def executar_fluxo_maestro(
     contrato_perguntas = {
         "schema": "perguntas_dados.v1",
         "campos": [
-            "metric_id", "descricao", "tipo", "coluna_valor", "group_by", "filtros", "janela_tempo", "top_n",
-            "coluna_data", "frequencia", "quantil", "agregacao"
+            "metric_id", "descricao", "tipo", "subtipo", "coluna_valor", "group_by", "filtros", "janela_tempo",
+            "janela_comparativa", "top_n", "coluna_data", "frequencia", "quantil", "agregacao",
         ],
-        "tipos_permitidos": ["count", "sum", "mean", "median", "percentile", "top_n", "timeseries", "null_rate", "nunique"],
-        "operadores_filtro_permitidos": ["eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in"],
+        "tipos_permitidos": [
+            "count", "sum", "mean", "median", "percentile", "top_n", "timeseries", "null_rate", "nunique",
+            "double_window",
+        ],
+        "operadores_filtro_permitidos": [
+            "eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "date_gte", "date_lt",
+        ],
     }
 
     def _to_scalar(v):
@@ -550,6 +585,14 @@ def executar_fluxo_maestro(
             elif op == "not_in":
                 vals = val if isinstance(val, list) else [val]
                 out = out[~out[col].isin(vals)]
+            elif op == "date_gte":
+                ts = pd.to_datetime(out[col], errors="coerce")
+                lim = pd.Timestamp(val) if not isinstance(val, pd.Timestamp) else val
+                out = out[ts >= lim]
+            elif op == "date_lt":
+                ts = pd.to_datetime(out[col], errors="coerce")
+                lim = pd.Timestamp(val) if not isinstance(val, pd.Timestamp) else val
+                out = out[ts < lim]
             else:
                 raise ValueError(f"Operador de filtro não permitido: {op}")
         return out
@@ -575,8 +618,190 @@ def executar_fluxo_maestro(
             raise ValueError("Janela temporal solicitada, mas coluna de data não encontrada")
 
         dt = pd.to_datetime(df[col_data], errors="coerce")
-        limite = pd.Timestamp.now() - pd.Timedelta(days=int(dias))
+        ref = dt.max()
+        if pd.isna(ref):
+            return df.iloc[0:0].copy()
+        limite = ref - pd.Timedelta(days=int(dias))
         return df[dt >= limite]
+
+    def _preparar_group_by(trabalho: pd.DataFrame, item: Dict) -> List[str]:
+        group_by = item.get("group_by") or []
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        if not group_by and item.get("coluna_grupo"):
+            group_by = [item["coluna_grupo"]]
+        for g in group_by:
+            if g not in trabalho.columns:
+                raise ValueError(f"group_by inválido: coluna '{g}' não existe")
+        return group_by
+
+    def _metric_core(trabalho: pd.DataFrame, tipo: str, item: Dict) -> Any:
+        """Métrica sobre um slice já filtrado (sem janela_tempo / double_window)."""
+        tipo = (tipo or "").lower().strip()
+        group_by = _preparar_group_by(trabalho, item) if tipo == "top_n" else item.get("group_by") or []
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        for g in group_by:
+            if g and g not in trabalho.columns:
+                raise ValueError(f"group_by inválido: coluna '{g}' não existe")
+
+        coluna_valor = item.get("coluna_valor")
+
+        if tipo == "count":
+            if coluna_valor:
+                if coluna_valor not in trabalho.columns:
+                    raise ValueError(f"coluna_valor inválida: {coluna_valor}")
+                return int(trabalho[coluna_valor].notna().sum())
+            return int(len(trabalho))
+
+        if tipo in {"sum", "mean", "median"}:
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("sum/mean/median exigem coluna_valor válida")
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            if tipo == "sum":
+                return _to_scalar(round(s.sum(), 6))
+            if tipo == "mean":
+                return _to_scalar(round(s.mean(), 6)) if s.notna().any() else None
+            return _to_scalar(round(s.median(), 6)) if s.notna().any() else None
+
+        if tipo == "percentile":
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("percentile exige coluna_valor válida")
+            q = item.get("quantil")
+            if q is None:
+                q = item.get("percentil")
+            q = float(q if q is not None else 0.95)
+            if q > 1:
+                q = q / 100.0
+            q = min(max(q, 0.0), 1.0)
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            return _to_scalar(round(s.quantile(q), 6)) if s.notna().any() else None
+
+        if tipo == "null_rate":
+            col = coluna_valor or item.get("coluna")
+            if not col or col not in trabalho.columns:
+                raise ValueError("null_rate exige coluna válida")
+            return round(float(trabalho[col].isna().mean() * 100), 4)
+
+        if tipo == "nunique":
+            col = coluna_valor or item.get("coluna")
+            if not col or col not in trabalho.columns:
+                raise ValueError("nunique exige coluna válida")
+            return int(trabalho[col].nunique(dropna=True))
+
+        if tipo == "top_n":
+            n = int(item.get("top_n") or 10)
+            agg = (item.get("agregacao") or "count").lower()
+            grp_cols = _preparar_group_by(trabalho, item)
+            if not grp_cols:
+                raise ValueError("top_n exige group_by ou coluna_grupo válida")
+
+            def _row_grupo(k):
+                if isinstance(k, tuple):
+                    return [_to_scalar(x) for x in k]
+                return [_to_scalar(k)]
+
+            if agg == "count":
+                serie = trabalho.groupby(grp_cols, dropna=False).size().sort_values(ascending=False).head(n)
+                return [{"grupo": _row_grupo(k), "valor": int(v)} for k, v in serie.items()]
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("top_n com agregacao != count exige coluna_valor")
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            df_aux = trabalho.assign(__valor__=s)
+            if agg == "sum":
+                serie = df_aux.groupby(grp_cols, dropna=False)["__valor__"].sum().sort_values(ascending=False).head(n)
+            elif agg == "mean":
+                serie = df_aux.groupby(grp_cols, dropna=False)["__valor__"].mean().sort_values(ascending=False).head(n)
+            else:
+                raise ValueError(f"Agregação não permitida em top_n: {agg}")
+            return [{"grupo": _row_grupo(k), "valor": _to_scalar(round(v, 6))} for k, v in serie.items()]
+
+        if tipo == "timeseries":
+            col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
+            if not col_data:
+                raise ValueError("timeseries exige coluna de data")
+            freq = (item.get("frequencia") or "ME").upper()
+            agg = (item.get("agregacao") or "count").lower()
+            dt = pd.to_datetime(trabalho[col_data], errors="coerce")
+            df_aux = trabalho.assign(__dt__=dt)
+            df_aux = df_aux[df_aux["__dt__"].notna()].set_index("__dt__")
+            if agg == "count":
+                serie = df_aux.resample(freq).size()
+            else:
+                if not coluna_valor or coluna_valor not in df_aux.columns:
+                    raise ValueError("timeseries com agregação numérica exige coluna_valor")
+                s = pd.to_numeric(df_aux[coluna_valor], errors="coerce")
+                if agg == "sum":
+                    serie = s.resample(freq).sum()
+                elif agg == "mean":
+                    serie = s.resample(freq).mean()
+                else:
+                    raise ValueError(f"Agregação não permitida em timeseries: {agg}")
+            return [
+                {"periodo": str(k.date()) if hasattr(k, "date") else str(k),
+                 "valor": _to_scalar(round(v, 6) if isinstance(v, (int, float)) else v)}
+                for k, v in serie.items()
+            ]
+
+        raise ValueError(f"Tipo não suportado em metric_core: {tipo}")
+
+    def _double_window_result(trabalho: pd.DataFrame, item: Dict) -> Dict:
+        jw = item.get("janela_comparativa") or {}
+        rec = jw.get("recente") or {}
+        base_w = jw.get("base") or {}
+        d_rec = int(rec.get("dias", 90))
+        d0 = int(base_w.get("inicio_dias", 180))
+        d1 = int(base_w.get("fim_dias", 90))
+        col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
+        if not col_data:
+            raise ValueError("double_window exige coluna de data (coluna_data ou created_at)")
+        dt = pd.to_datetime(trabalho[col_data], errors="coerce")
+        ref = dt.max()
+        if pd.isna(ref):
+            return {"recente": None, "base": None, "delta_pct": None, "aviso": "sem datas válidas"}
+
+        mask_r = (dt >= ref - pd.Timedelta(days=d_rec)) & (dt <= ref)
+        mask_b = (dt >= ref - pd.Timedelta(days=d0)) & (dt < ref - pd.Timedelta(days=d1))
+        df_r = trabalho.loc[mask_r]
+        df_b = trabalho.loc[mask_b]
+
+        subtipo = (item.get("subtipo") or "sum").lower().strip()
+        if subtipo not in contrato_perguntas["tipos_permitidos"] or subtipo == "double_window":
+            raise ValueError(f"subtipo inválido para double_window: {subtipo}")
+
+        inner = {k: v for k, v in item.items() if k not in ("janela_comparativa", "janela_tempo", "tipo")}
+        inner["tipo"] = subtipo
+        vr = _metric_core(df_r, subtipo, inner)
+        vb = _metric_core(df_b, subtipo, inner)
+
+        out: Dict = {"recente": vr, "base": vb}
+
+        if subtipo in {"sum", "mean", "median", "count", "nunique"}:
+            if vr is not None and vb is not None:
+                try:
+                    fv, fb = float(vr), float(vb)
+                    out["delta_pct"] = None if fb == 0 else _to_scalar(round((fv - fb) / fb * 100.0, 4))
+                except (TypeError, ValueError):
+                    out["delta_pct"] = None
+        elif subtipo == "top_n" and isinstance(vr, list) and isinstance(vb, list):
+            mr = {json.dumps(e["grupo"], ensure_ascii=False, default=str): e["valor"] for e in vr}
+            mb = {json.dumps(e["grupo"], ensure_ascii=False, default=str): e["valor"] for e in vb}
+            por_grupo = []
+            for ck in sorted(set(mr) | set(mb), key=lambda x: x):
+                glist = json.loads(ck)
+                a_val = mr.get(ck)
+                b_val = mb.get(ck)
+                av = 0.0 if a_val is None else float(a_val)
+                bv = 0.0 if b_val is None else float(b_val)
+                dp = None if bv == 0 else _to_scalar(round((av - bv) / bv * 100.0, 4))
+                por_grupo.append({
+                    "grupo": glist,
+                    "valor_recente": a_val,
+                    "valor_base": b_val,
+                    "delta_pct": dp,
+                })
+            out["por_grupo"] = por_grupo
+        return out
 
     def _executar_perguntas_agregadas(parsed: Dict) -> Dict:
         perguntas = parsed.get("perguntas_dados") or []
@@ -587,7 +812,10 @@ def executar_fluxo_maestro(
                 "resultado_obj": {"schema_version": "1.0", "metricas": [], "erros": ["perguntas_dados ausente ou vazio"]},
             }
 
-        df_nome = parsed.get("df_variavel_usada") or (df_contexto or {}).get("df_variavel")
+        fb_ctx = (df_contexto or {}).get("df_variavel")
+        df_nome = _normalizar_nome_variavel_dataframe(parsed.get("df_variavel_usada"), None)
+        if not df_nome:
+            df_nome = _normalizar_nome_variavel_dataframe(fb_ctx, None)
         namespace = mysql_injetar_namespace if mysql_injetar_namespace is not None else globals()
         if not df_nome or df_nome not in namespace:
             msg = f"DataFrame '{df_nome}' não encontrado no namespace"
@@ -611,117 +839,12 @@ def executar_fluxo_maestro(
 
                 trabalho = base_df.copy()
                 trabalho = _aplicar_filtros(trabalho, item.get("filtros") or [])
-                trabalho = _aplicar_janela(trabalho, item)
 
-                group_by = item.get("group_by") or []
-                if isinstance(group_by, str):
-                    group_by = [group_by]
-                for g in group_by:
-                    if g not in trabalho.columns:
-                        raise ValueError(f"group_by inválido: coluna '{g}' não existe")
-
-                coluna_valor = item.get("coluna_valor")
-
-                if tipo == "count":
-                    if coluna_valor:
-                        if coluna_valor not in trabalho.columns:
-                            raise ValueError(f"coluna_valor inválida: {coluna_valor}")
-                        valor = int(trabalho[coluna_valor].notna().sum())
-                    else:
-                        valor = int(len(trabalho))
-
-                elif tipo in {"sum", "mean", "median"}:
-                    if not coluna_valor or coluna_valor not in trabalho.columns:
-                        raise ValueError("sum/mean/median exigem coluna_valor válida")
-                    s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                    if tipo == "sum":
-                        valor = _to_scalar(round(s.sum(), 6))
-                    elif tipo == "mean":
-                        valor = _to_scalar(round(s.mean(), 6)) if s.notna().any() else None
-                    else:
-                        valor = _to_scalar(round(s.median(), 6)) if s.notna().any() else None
-
-                elif tipo == "percentile":
-                    if not coluna_valor or coluna_valor not in trabalho.columns:
-                        raise ValueError("percentile exige coluna_valor válida")
-                    q = item.get("quantil")
-                    if q is None:
-                        q = item.get("percentil")
-                    q = float(q if q is not None else 0.95)
-                    if q > 1:
-                        q = q / 100.0
-                    q = min(max(q, 0.0), 1.0)
-                    s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                    valor = _to_scalar(round(s.quantile(q), 6)) if s.notna().any() else None
-
-                elif tipo == "null_rate":
-                    col = coluna_valor or item.get("coluna")
-                    if not col or col not in trabalho.columns:
-                        raise ValueError("null_rate exige coluna válida")
-                    valor = round(float(trabalho[col].isna().mean() * 100), 4)
-
-                elif tipo == "nunique":
-                    col = coluna_valor or item.get("coluna")
-                    if not col or col not in trabalho.columns:
-                        raise ValueError("nunique exige coluna válida")
-                    valor = int(trabalho[col].nunique(dropna=True))
-
-                elif tipo == "top_n":
-                    n = int(item.get("top_n") or 10)
-                    agg = (item.get("agregacao") or "count").lower()
-                    grp = group_by[0] if group_by else item.get("coluna_grupo")
-                    if not grp or grp not in trabalho.columns:
-                        raise ValueError("top_n exige group_by ou coluna_grupo válida")
-
-                    if agg == "count":
-                        serie = trabalho[grp].value_counts(dropna=False).head(n)
-                        valor = [{"grupo": _to_scalar(k), "valor": int(v)} for k, v in serie.items()]
-                    else:
-                        if not coluna_valor or coluna_valor not in trabalho.columns:
-                            raise ValueError("top_n com agregacao != count exige coluna_valor")
-                        s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                        df_aux = trabalho.copy()
-                        df_aux["__valor__"] = s
-                        if agg == "sum":
-                            serie = df_aux.groupby(grp, dropna=False)["__valor__"].sum().sort_values(ascending=False).head(n)
-                        elif agg == "mean":
-                            serie = df_aux.groupby(grp, dropna=False)["__valor__"].mean().sort_values(ascending=False).head(n)
-                        else:
-                            raise ValueError(f"Agregação não permitida em top_n: {agg}")
-                        valor = [{"grupo": _to_scalar(k), "valor": _to_scalar(round(v, 6))} for k, v in serie.items()]
-
-                elif tipo == "timeseries":
-                    col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
-                    if not col_data:
-                        raise ValueError("timeseries exige coluna de data")
-                    freq = (item.get("frequencia") or "ME").upper()
-                    agg = (item.get("agregacao") or "count").lower()
-                    dt = pd.to_datetime(trabalho[col_data], errors="coerce")
-                    df_aux = trabalho.copy()
-                    df_aux["__dt__"] = dt
-                    df_aux = df_aux[df_aux["__dt__"].notna()]
-                    df_aux = df_aux.set_index("__dt__")
-
-                    if agg == "count":
-                        serie = df_aux.resample(freq).size()
-                    else:
-                        if not coluna_valor or coluna_valor not in df_aux.columns:
-                            raise ValueError("timeseries com agregação numérica exige coluna_valor")
-                        s = pd.to_numeric(df_aux[coluna_valor], errors="coerce")
-                        if agg == "sum":
-                            serie = s.resample(freq).sum()
-                        elif agg == "mean":
-                            serie = s.resample(freq).mean()
-                        else:
-                            raise ValueError(f"Agregação não permitida em timeseries: {agg}")
-
-                    valor = [
-                        {"periodo": str(k.date()) if hasattr(k, "date") else str(k), "valor": _to_scalar(round(v, 6) if isinstance(v, (int, float)) else v)}
-                        for k, v in serie.items()
-                    ]
-
+                if tipo == "double_window":
+                    valor = _double_window_result(trabalho, item)
                 else:
-                    raise ValueError(f"Tipo não suportado: {tipo}")
+                    trabalho = _aplicar_janela(trabalho, item)
+                    valor = _metric_core(trabalho, tipo, item)
 
                 metricas.append({
                     "metric_id": metric_id,
@@ -816,6 +939,27 @@ def executar_fluxo_maestro(
             print(f"[MAESTRO] DataFrame: '{df_variavel}' — {df_contexto.get('df_info', '')}")
         contexto_maestro = f"{contexto_maestro}; DF em memória: {df_variavel}"
 
+    def _merge_filtros_concessionaria(perguntas: List[Dict], campo: str, valor_nome: str) -> None:
+        filtro = {"coluna": campo, "operador": "eq", "valor": valor_nome}
+        for p in perguntas:
+            flist = list(p.get("filtros") or [])
+            if not any(
+                f.get("coluna") == campo and f.get("operador") == "eq" and f.get("valor") == valor_nome
+                for f in flist
+            ):
+                flist.append(filtro)
+            p["filtros"] = flist
+
+    def _garantir_filtro_oss_positivo(perguntas: List[Dict]) -> None:
+        for p in perguntas:
+            flist = list(p.get("filtros") or [])
+            if not any(
+                f.get("coluna") == "oss_valor_venda_real" and str(f.get("operador") or "").lower() == "gt"
+                for f in flist
+            ):
+                flist.append({"coluna": "oss_valor_venda_real", "operador": "gt", "valor": 0})
+            p["filtros"] = flist
+
     def _invocar_um_agente(skill_id: str) -> Dict:
         """Invocação de um único agente (modo conhecimento ou 2 fases). Retorna o dict de resposta."""
         usa_dataframe = bool(df_contexto and skill_id in _agentes_dataframe)
@@ -872,6 +1016,35 @@ def executar_fluxo_maestro(
                 or "FASE 1 não retornou perguntas_dados."
             )
             return parsed1
+        if skill_id == "agente-analise-concessionaria":
+            try:
+                msg_ext = (
+                    f"Pergunta do usuário:\n{pergunta}\n\n"
+                    "Responda só JSON: {\"concessionaria\": \"nome da concessionária em linguagem natural ou null\", "
+                    "\"campo\": \"concessionaria_nome\"}. Use campo concessionaria_nome se não tiver certeza. "
+                    "Se nenhuma concessionária for citada, concessionaria deve ser null."
+                )
+                modelo_x = model or model_maestro
+                resp_e = client.chat.completions.create(
+                    model=modelo_x,
+                    messages=[
+                        {"role": "system", "content": "Você extrai entidades. Resposta única: objeto JSON."},
+                        {"role": "user", "content": msg_ext},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                ext = extrair_json((resp_e.choices[0].message.content or "").strip()) or {}
+                nome_c = ext.get("concessionaria")
+                campo_c = ext.get("campo") or "concessionaria_nome"
+                if nome_c:
+                    _merge_filtros_concessionaria(parsed1["perguntas_dados"], str(campo_c), str(nome_c))
+                    parsed1["filtro_concessionaria_extraido"] = {"campo": campo_c, "valor": nome_c}
+                    if verbose:
+                        print(f"[MAESTRO]   [{skill_id}] Filtro concessionária: {campo_c} = {nome_c}")
+            except Exception as exc:
+                if verbose:
+                    print(f"[MAESTRO]   [{skill_id}] Extração concessionária: {exc}")
+            _garantir_filtro_oss_positivo(parsed1["perguntas_dados"])
         exec_info = _executar_perguntas_agregadas(parsed1)
         resultado_extracao = exec_info.get("resultado_obj", {})
         if verbose:
@@ -901,11 +1074,15 @@ def executar_fluxo_maestro(
                 "Retorne o JSON completo de resposta (sem codigo_pandas)."
             ),
         }
+        if parsed1.get("filtro_concessionaria_extraido"):
+            payload_fase2["filtro_concessionaria_extraido"] = parsed1["filtro_concessionaria_extraido"]
         raw2 = invocar_agente_maestro(client, skill_id, payload_fase2, model=model, skills_list=skills, skills_dir=skills_dir)
         parsed2 = extrair_json(raw2)
         if parsed2 and isinstance(parsed2, dict):
             parsed2.setdefault("agente_id", skill_id)
             parsed2["resultado_execucao"] = resultado_extracao
+            if parsed1.get("filtro_concessionaria_extraido"):
+                parsed2["filtro_concessionaria_extraido"] = parsed1["filtro_concessionaria_extraido"]
             return parsed2
         parsed1["resultado_execucao"] = resultado_extracao
         parsed1["resposta"] = (
