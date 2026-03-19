@@ -218,7 +218,7 @@ def executar_fluxo_maestro(
     mysql_banco: Optional[str] = None,
     mysql_tabela: Optional[str] = None,
     mysql_tabelas: Optional[List[Dict]] = None,
-    mysql_limite: int = 50000,
+    mysql_limite: int = 50_000,
     mysql_filtro_where: str = "",
     mysql_injetar_namespace: Optional[Dict] = None,
     skills_dir: Optional[str] = None,

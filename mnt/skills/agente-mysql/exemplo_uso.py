@@ -102,7 +102,7 @@ resultado_mysql = carregar_tabela_mysql(
     banco=os.environ.get("MYSQL_DATABASE", "comercial"),
     usuario=os.environ.get("MYSQL_USER", "root"),
     senha=os.environ.get("MYSQL_PASSWORD", ""),
-    limite=50000,
+    limite=50_000,
     injetar_globals=globals(),
     verbose=True,
 )
