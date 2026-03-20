@@ -15,6 +15,10 @@ Múltiplas tabelas com LEFT JOINs (retorna 1 único DataFrame):
         {"tabela": "clientes",     "alias": "c",  "fk": "os.cliente_id = c.id"},
     ], limite=50.000)
     df = resultado["dataframe"]   # único df com colunas de todas as tabelas
+
+Onde a query principal roda e o resultado sai:
+    - ``pd.read_sql(...)`` em ``carregar_tabela`` e ``carregar_multiplas_tabelas`` (SELECT nos dados).
+    - O dict padronizado é montado em ``_montar_retorno`` (chave ``dataframe`` + metadados).
 """
 
 from __future__ import annotations
@@ -241,7 +245,7 @@ class MySQLAgent:
     def testar_conexao(self) -> bool:
         try:
             with self._get_engine().connect() as conn:
-                conn.execute(text("SELECT 1"))
+                conn.execute(text("SELECT 1"))  # ping ao banco (não carrega dados de negócio)
             return True
         except (OperationalError, SQLAlchemyError):
             return False
@@ -265,6 +269,7 @@ class MySQLAgent:
             if total_linhas <= 500_000:
                 try:
                     with engine.connect() as conn:
+                        # Execução auxiliar (metadados): DISTINCT + COUNT de nulos por coluna — não é o SELECT de dados.
                         cardinalidade = conn.execute(
                             text(f"SELECT COUNT(DISTINCT `{nome}`) FROM `{tabela}`")
                         ).scalar()
@@ -301,6 +306,7 @@ class MySQLAgent:
         return colunas
 
     def _contar_linhas(self, tabela: str, filtro_where: str = "") -> int:
+        """Execução auxiliar: COUNT(*) na tabela (total ou com filtro). Não carrega linhas no Python."""
         where = f"WHERE {filtro_where}" if filtro_where.strip() else ""
         with self._get_engine().connect() as conn:
             return conn.execute(text(f"SELECT COUNT(*) FROM `{tabela}` {where}")).scalar() or 0
@@ -334,7 +340,7 @@ class MySQLAgent:
         try:
             engine = self._get_engine()
             with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
+                conn.execute(text("SELECT 1"))  # valida conexão antes do SELECT de dados
         except (OperationalError, SQLAlchemyError) as e:
             resultado.erro = f"Falha na conexão: {e}"
             if verbose: print(f"[agente-mysql] ❌ {resultado.erro}")
@@ -365,6 +371,7 @@ class MySQLAgent:
             print(f"[agente-mysql] Query: {query}")
 
         try:
+            # --- Ponto principal: execução da query de dados (tabela única) no MySQL e materialização em DataFrame ---
             df = pd.read_sql(query, con=engine)
         except SQLAlchemyError as e:
             resultado.erro = f"Erro ao executar query: {e}"
@@ -381,6 +388,7 @@ class MySQLAgent:
             if len(df) < total_linhas:
                 print(f"[agente-mysql] ⚠️  Parcial: {len(df):,} de {total_linhas:,}")
 
+        # --- Retorno ao chamador: dict com dataframe + metadados (via _montar_retorno) ---
         return self._montar_retorno(resultado, df)
 
     # ------------------------------------------------------------------
@@ -451,7 +459,7 @@ class MySQLAgent:
         try:
             engine = self._get_engine()
             with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
+                conn.execute(text("SELECT 1"))  # valida conexão antes do SELECT com JOIN
         except (OperationalError, SQLAlchemyError) as e:
             resultado.erro = f"Falha na conexão: {e}"
             if verbose: print(f"[agente-mysql] ❌ {resultado.erro}")
@@ -498,6 +506,7 @@ class MySQLAgent:
             print(f"[agente-mysql] Executando query (limite={limite:,})...")
 
         try:
+            # --- Ponto principal: execução da query de dados (JOIN multi-tabela) no MySQL e materialização em DataFrame ---
             df = pd.read_sql(query, con=engine)
         except SQLAlchemyError as e:
             resultado.erro = f"Erro ao executar query com JOIN: {e}"
@@ -515,6 +524,7 @@ class MySQLAgent:
             if len(df) < total_linhas:
                 print(f"[agente-mysql] ⚠️  Parcial: {len(df):,} de {total_linhas:,}")
 
+        # --- Retorno ao chamador: dict com dataframe + metadados (via _montar_retorno) ---
         return self._montar_retorno(resultado, df)
 
     # ------------------------------------------------------------------
@@ -522,6 +532,7 @@ class MySQLAgent:
     # ------------------------------------------------------------------
 
     def _montar_retorno(self, resultado: ResultadoCarregamento, df) -> Dict[str, Any]:
+        """Único lugar que estrutura o retorno público: ``dataframe``, ``metadados``, ``variavel``, ``sucesso``, ``erro``."""
         return {
             "dataframe": df,
             "metadados": {
