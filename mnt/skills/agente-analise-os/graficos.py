@@ -54,11 +54,39 @@ def _filtrar(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
+def _periodo_analise_caption(df: pd.DataFrame) -> Optional[str]:
+    """Legenda com intervalo de datas do extract (min–max), para gráficos."""
+    for col in ("created_at", "oss_created_at"):
+        if col not in df.columns:
+            continue
+        ts = pd.to_datetime(df[col], errors="coerce").dropna()
+        if ts.empty:
+            continue
+        d0 = ts.min().strftime("%d/%m/%Y")
+        d1 = ts.max().strftime("%d/%m/%Y")
+        return f"Período de análise: {d0} a {d1}"
+    return None
+
+
+def _fig_suptitle_com_periodo(
+    fig,
+    df: pd.DataFrame,
+    *linhas_titulo: str,
+    y: float = 1.02,
+    fontsize: int = 11,
+) -> None:
+    """Suptitle: linhas fixas + período (ou aviso se não houver data no DataFrame)."""
+    periodo = _periodo_analise_caption(df)
+    sufixo = periodo if periodo else "(Período: data não disponível.)"
+    texto = "\n".join([*linhas_titulo, sufixo])
+    fig.suptitle(texto, fontsize=fontsize, fontweight="bold", y=y)
+
+
 def grafico_s1_resumo_executivo(
     df: pd.DataFrame,
     out_dir: str = "output/graficos",
 ) -> str:
-    """S1 - Cards de KPIs principais + mini barras comparando 7d vs 14d."""
+    """S1 - KPIs; suptitle com período de análise."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s1_resumo_executivo.png")
@@ -72,7 +100,7 @@ def grafico_s1_resumo_executivo(
     n_nao_pagas = (df["os_paga"] == 0).sum() if "os_paga" in df.columns else 0
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-    fig.suptitle("S1 — Resumo Executivo", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(fig, df, "S1 — Resumo Executivo", y=1.12, fontsize=11)
 
     kpis = [
         ("Serviços Válidos", f"{total_servicos:,}".replace(",", "."), COLOR_PRIMARY),
@@ -99,7 +127,7 @@ def grafico_s2_concessionarias(
     out_dir: str = "output/graficos",
     top_n: int = 10,
 ) -> str:
-    """S2 - Top concessionárias por faturamento, ticket e volume."""
+    """S2 - Top concessionárias; suptitle com período."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s2_concessionarias.png")
@@ -109,26 +137,53 @@ def grafico_s2_concessionarias(
         return path
 
     grp = df.groupby("concessionaria_nome")["oss_valor_venda_real"]
-    fat = grp.sum().nlargest(top_n).sort_values()
-    ticket = grp.mean().nlargest(top_n).sort_values()
-    vol = grp.count().nlargest(top_n).sort_values()
+    fat = grp.sum().nlargest(top_n).sort_values(ascending=False)
+    ticket = grp.mean().nlargest(top_n).sort_values(ascending=False)
+
+    # Volume: média de serviços por OS por concessionária (ordem de grandeza ~unidades, não centenas de linhas)
+    tem_id_os = "id" in df.columns
+    if tem_id_os:
+        n_servicos_por_os = df.groupby(["concessionaria_nome", "id"], observed=True).size()
+        vol_media_por_conc = n_servicos_por_os.groupby(level=0).mean()
+        vol = vol_media_por_conc.nlargest(top_n).sort_values(ascending=False)
+    else:
+        vol = grp.count().nlargest(top_n).sort_values(ascending=False)
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle("S2 — Faturamento e Ticket por Concessionária", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(
+        fig, df, "S2 — Faturamento e Ticket por Concessionária", y=1.06, fontsize=11
+    )
 
-    axes[0].barh(fat.index, fat.values, color=COLOR_PRIMARY)
+    def _bar_conc_vertical(ax, series, color: str, y_formatter=None, ylabel: str = ""):
+        x_pos = np.arange(len(series))
+        ax.bar(x_pos, series.values, color=color)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(series.index, rotation=90, ha="center", va="top", fontsize=7)
+        ax.set_xlabel("Concessionária")
+        if ylabel:
+            ax.set_ylabel(ylabel)
+        if y_formatter:
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(y_formatter))
+
+    _bar_conc_vertical(
+        axes[0], fat, COLOR_PRIMARY, lambda x, _: _brl(x), "Faturamento"
+    )
     axes[0].set_title(f"Top {top_n} Faturamento")
-    axes[0].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
 
-    axes[1].barh(ticket.index, ticket.values, color=COLOR_SECONDARY)
+    _bar_conc_vertical(
+        axes[1], ticket, COLOR_SECONDARY, lambda x, _: _brl(x), "Ticket médio"
+    )
     axes[1].set_title(f"Top {top_n} Ticket Médio")
-    axes[1].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
 
-    axes[2].barh(vol.index, vol.values, color=COLOR_ACCENT)
-    axes[2].set_title(f"Top {top_n} Volume (Serviços)")
-
-    for ax in axes:
-        ax.tick_params(axis="y", labelsize=8)
+    vol_fmt = (lambda x, _: f"{x:.1f}".replace(".", ",")) if tem_id_os else None
+    vol_ylabel = "Média serviços / OS" if tem_id_os else "Qtd. linhas (serviços)"
+    vol_title = (
+        f"Top {top_n} média serviços por OS"
+        if tem_id_os
+        else f"Top {top_n} Volume (Serviços)"
+    )
+    _bar_conc_vertical(axes[2], vol, COLOR_ACCENT, vol_fmt, vol_ylabel)
+    axes[2].set_title(vol_title)
 
     plt.tight_layout()
     fig.savefig(path, dpi=FIG_DPI, bbox_inches="tight", facecolor="white")
@@ -140,7 +195,7 @@ def grafico_s3_sazonalidade(
     df: pd.DataFrame,
     out_dir: str = "output/graficos",
 ) -> str:
-    """S3 - Séries temporais mensais/semanais + heatmap hora x dia."""
+    """S3 - Sazonalidade: volume = contagem de linhas de serviço (1 linha = 1 item na OS); faturamento = soma R$."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s3_sazonalidade.png")
@@ -157,38 +212,53 @@ def grafico_s3_sazonalidade(
     df["hora"] = df["created_at"].dt.hour
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-    fig.suptitle("S3 — Sazonalidade", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(
+        fig,
+        df,
+        "S3 — Sazonalidade",
+        "(Volume = qtd. de linhas de serviço na OS; faturamento = soma em R$ — não é qtd. de OS)",
+        y=1.05,
+        fontsize=10,
+    )
 
-    # Série mensal de volume
+    # Série mensal: contagem de linhas de serviço (não número de ordens de serviço)
     mensal_vol = df.groupby("mes").size()
     axes[0, 0].plot(mensal_vol.index, mensal_vol.values, marker="o", color=COLOR_PRIMARY, lw=2)
-    axes[0, 0].set_title("Volume Mensal (Serviços)")
+    axes[0, 0].set_title("Qtd. mensal de serviços\n(1 linha do relatório = 1 item na OS)")
+    axes[0, 0].set_ylabel("Linhas de serviço")
     axes[0, 0].tick_params(axis="x", rotation=45)
 
-    # Série mensal de faturamento
+    # Faturamento em reais
     mensal_fat = df.groupby("mes")["oss_valor_venda_real"].sum()
     ax_fat = axes[0, 1]
     ax_fat.fill_between(mensal_fat.index, mensal_fat.values, alpha=0.3, color=COLOR_SECONDARY)
     ax_fat.plot(mensal_fat.index, mensal_fat.values, marker="o", color=COLOR_SECONDARY, lw=2)
-    ax_fat.set_title("Faturamento Mensal")
+    ax_fat.set_title("Faturamento mensal (R$)\n(soma de oss_valor_venda_real)")
+    ax_fat.set_ylabel("R$")
     ax_fat.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
     ax_fat.tick_params(axis="x", rotation=45)
 
-    # Volume por dia da semana
     dias_ordem = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     dia_vol = df["dia_semana"].value_counts().reindex(dias_ordem).fillna(0)
     axes[1, 0].bar(range(len(dia_vol)), dia_vol.values, color="skyblue", edgecolor="navy")
     axes[1, 0].set_xticks(range(len(dia_vol)))
     axes[1, 0].set_xticklabels(["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"], fontsize=9)
-    axes[1, 0].set_title("Volume por Dia da Semana")
+    axes[1, 0].set_title("Serviços por dia da semana\n(contagem de linhas)")
+    axes[1, 0].set_ylabel("Linhas de serviço")
 
-    # Heatmap hora x dia
     if len(df) > 0:
         pivot = df.pivot_table(index="hora", columns="dia_semana", values="oss_valor_venda_real", aggfunc="count")
         pivot = pivot.reindex(columns=dias_ordem).fillna(0)
         pivot.columns = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-        sns.heatmap(pivot, annot=True, fmt=".0f", cmap=CMAP, ax=axes[1, 1], cbar_kws={"label": "Qtd"})
-        axes[1, 1].set_title("Intensidade: Hora × Dia da Semana")
+        sns.heatmap(
+            pivot,
+            annot=True,
+            fmt=".0f",
+            cmap=CMAP,
+            ax=axes[1, 1],
+            cbar_kws={"label": "Qtd. linhas de serviço"},
+        )
+        axes[1, 1].set_title("Hora × dia da semana\n(qtd. de serviços, não R$)")
 
     plt.tight_layout()
     fig.savefig(path, dpi=FIG_DPI, bbox_inches="tight", facecolor="white")
@@ -201,7 +271,7 @@ def grafico_s4_produtos(
     out_dir: str = "output/graficos",
     top_n: int = 15,
 ) -> str:
-    """S4 - Top serviços por volume, faturamento e ticket médio."""
+    """S4 - Top serviços por volume, faturamento e ticket médio; suptitle inclui período (created_at / oss_created_at)."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s4_produtos.png")
@@ -211,26 +281,33 @@ def grafico_s4_produtos(
         return path
 
     grp = df.groupby("servico_nome")["oss_valor_venda_real"]
-    vol = grp.count().nlargest(top_n).sort_values()
-    fat = grp.sum().nlargest(top_n).sort_values()
-    ticket = grp.mean().nlargest(top_n).sort_values()
+    vol = grp.count().nlargest(top_n).sort_values(ascending=False)
+    fat = grp.sum().nlargest(top_n).sort_values(ascending=False)
+    ticket = grp.mean().nlargest(top_n).sort_values(ascending=False)
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 7))
-    fig.suptitle("S4 — Produtos e Serviços", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(fig, df, "S4 — Produtos e Serviços", y=1.06, fontsize=11)
 
-    axes[0].barh(vol.index, vol.values, color="teal")
+    def _bar_vertical(ax, series, color: str, y_formatter=None):
+        x_pos = np.arange(len(series))
+        ax.bar(x_pos, series.values, color=color)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(series.index, rotation=90, ha="center", va="top", fontsize=7)
+        ax.set_xlabel("Serviço")
+        if y_formatter:
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(y_formatter))
+
+    _bar_vertical(axes[0], vol, "teal")
     axes[0].set_title(f"Top {top_n} por Volume")
+    axes[0].set_ylabel("Quantidade")
 
-    axes[1].barh(fat.index, fat.values, color="purple")
+    _bar_vertical(axes[1], fat, "purple", lambda x, _: _brl(x))
     axes[1].set_title(f"Top {top_n} por Faturamento")
-    axes[1].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
+    axes[1].set_ylabel("Faturamento")
 
-    axes[2].barh(ticket.index, ticket.values, color=COLOR_SECONDARY)
+    _bar_vertical(axes[2], ticket, COLOR_SECONDARY, lambda x, _: _brl(x))
     axes[2].set_title(f"Top {top_n} por Ticket Médio")
-    axes[2].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
-
-    for ax in axes:
-        ax.tick_params(axis="y", labelsize=7)
+    axes[2].set_ylabel("Ticket médio")
 
     plt.tight_layout()
     fig.savefig(path, dpi=FIG_DPI, bbox_inches="tight", facecolor="white")
@@ -242,8 +319,13 @@ def grafico_s5_vendedores(
     df: pd.DataFrame,
     out_dir: str = "output/graficos",
     top_n: int = 10,
+    min_servicos_ranking_ticket: int = 10,
 ) -> str:
-    """S5 - Top vendedores + histograma de distribuição de ticket."""
+    """S5 - Top vendedores (faturamento, volume, ticket médio em barras); período no suptitle.
+
+    O ranking de ticket médio só inclui vendedores com pelo menos ``min_servicos_ranking_ticket``
+    linhas de serviço (evita outlier com 1 venda). Se ninguém passar no corte, usa todos.
+    """
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s5_vendedores.png")
@@ -253,29 +335,54 @@ def grafico_s5_vendedores(
         return path
 
     grp = df.groupby("vendedor_nome")["oss_valor_venda_real"]
-    fat = grp.sum().nlargest(top_n).sort_values()
-    vol = grp.count().nlargest(top_n).sort_values()
+    fat = grp.sum().nlargest(top_n).sort_values(ascending=False)
+    vol = grp.count().nlargest(top_n).sort_values(ascending=False)
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle("S5 — Performance de Vendedores", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(fig, df, "S5 — Performance de Vendedores", y=1.06, fontsize=11)
 
-    axes[0].barh(fat.index, fat.values, color="darkblue")
-    axes[0].set_title(f"Top {top_n} por Faturamento")
-    axes[0].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
+    def _bar_vendedor_vertical(ax, series, color: str, y_formatter=None, ylabel: str = ""):
+        x_pos = np.arange(len(series))
+        ax.bar(x_pos, series.values, color=color)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(series.index, rotation=90, ha="center", va="top", fontsize=7)
+        ax.set_xlabel("Vendedor")
+        if ylabel:
+            ax.set_ylabel(ylabel)
+        if y_formatter:
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(y_formatter))
 
-    axes[1].barh(vol.index, vol.values, color="green")
-    axes[1].set_title(f"Top {top_n} por Volume")
+    _bar_vendedor_vertical(
+        axes[0], fat, "darkblue", lambda x, _: _brl(x), "Faturamento"
+    )
+    axes[0].set_title(
+        f"Top {top_n} por faturamento\n(soma de oss_valor_venda_real por vendedor)",
+        fontsize=10,
+    )
 
-    ticket_vendedor = grp.mean().dropna()
-    axes[2].hist(ticket_vendedor.values, bins=min(20, len(ticket_vendedor)), color=COLOR_PRIMARY, edgecolor="white")
-    if len(ticket_vendedor) > 0:
-        media = ticket_vendedor.mean()
-        axes[2].axvline(media, color=COLOR_DANGER, linestyle="--", lw=2, label=f"Média: {_brl(media)}")
-        axes[2].legend()
-    axes[2].set_title("Distribuição de Ticket por Vendedor")
+    _bar_vendedor_vertical(axes[1], vol, "green", None, "Qtd. serviços")
+    axes[1].set_title(
+        f"Top {top_n} por volume\n(qtd. de linhas de serviço por vendedor)",
+        fontsize=10,
+    )
 
-    for ax in axes[:2]:
-        ax.tick_params(axis="y", labelsize=8)
+    cnt = grp.count()
+    ticket_medio = grp.mean()
+    elig = ticket_medio[cnt >= min_servicos_ranking_ticket].dropna()
+    ticket_top = (
+        elig.nlargest(top_n).sort_values(ascending=False)
+        if len(elig) > 0
+        else ticket_medio.dropna().nlargest(top_n).sort_values(ascending=False)
+    )
+    _bar_vendedor_vertical(
+        axes[2], ticket_top, COLOR_SECONDARY, lambda x, _: _brl(x), "Ticket médio (R$)"
+    )
+    sub_ticket = (
+        f"(média de oss_valor_venda_real; mín. {min_servicos_ranking_ticket} serviços/vendedor)"
+        if len(elig) > 0
+        else "(média por vendedor; sem vendedor com volume mínimo — ranking sem corte)"
+    )
+    axes[2].set_title(f"Top {top_n} por ticket médio\n{sub_ticket}", fontsize=10)
 
     plt.tight_layout()
     fig.savefig(path, dpi=FIG_DPI, bbox_inches="tight", facecolor="white")
@@ -287,7 +394,7 @@ def grafico_s6_distribuicao_tickets(
     df: pd.DataFrame,
     out_dir: str = "output/graficos",
 ) -> str:
-    """S6 - Histograma, boxplot e faixas de preço."""
+    """S6 - Histograma, boxplot e faixas; títulos/subtítulos explicam métrica (ticket por linha de serviço)."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s6_distribuicao_tickets.png")
@@ -301,27 +408,53 @@ def grafico_s6_distribuicao_tickets(
     mediana = vals.median()
     p25, p75, p95, p99 = vals.quantile([0.25, 0.75, 0.95, 0.99])
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("S6 — Distribuição de Tickets", fontsize=14, fontweight="bold", y=1.02)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    _fig_suptitle_com_periodo(
+        fig,
+        df,
+        "S6 — Distribuição de tickets",
+        "Todos os gráficos: 1 linha = 1 serviço na OS (oss_valor_venda_real em R$).",
+        "Não é valor total da OS nem quantidade de ordens.",
+        y=1.07,
+        fontsize=9,
+    )
 
     # Histograma geral
     axes[0, 0].hist(vals, bins=50, color=COLOR_PRIMARY, edgecolor="white", alpha=0.8)
     axes[0, 0].axvline(media, color=COLOR_DANGER, ls="--", lw=2, label=f"Média: {_brl(media)}")
     axes[0, 0].axvline(mediana, color=COLOR_ACCENT, ls="-", lw=2, label=f"Mediana: {_brl(mediana)}")
     axes[0, 0].legend(fontsize=8)
-    axes[0, 0].set_title("Distribuição Geral")
+    axes[0, 0].set_title(
+        "Histograma — visão completa\n"
+        "(eixo X: ticket R$; eixo Y: quantas linhas de serviço caem em cada faixa)",
+        fontsize=10,
+    )
+    axes[0, 0].set_xlabel("Ticket (R$) por linha de serviço")
+    axes[0, 0].set_ylabel("Frequência (qtd. linhas)")
 
     # Histograma até P95 (sem outliers)
     vals_p95 = vals[vals <= p95]
     axes[0, 1].hist(vals_p95, bins=40, color=COLOR_SECONDARY, edgecolor="white", alpha=0.8)
     axes[0, 1].axvline(mediana, color=COLOR_ACCENT, ls="-", lw=2, label=f"Mediana: {_brl(mediana)}")
-    axes[0, 1].set_title(f"Até P95 ({_brl(p95)})")
+    axes[0, 1].set_title(
+        f"Histograma — até o percentil 95 (P95 = {_brl(p95)})\n"
+        "(remove os 5% tickets mais altos para ver o 'miolo' sem cauda longa)",
+        fontsize=10,
+    )
     axes[0, 1].legend(fontsize=8)
+    axes[0, 1].set_xlabel("Ticket (R$)")
+    axes[0, 1].set_ylabel("Frequência (qtd. linhas)")
 
     # Boxplot
     bp = axes[1, 0].boxplot(vals, vert=False, widths=0.6, patch_artist=True,
                             boxprops=dict(facecolor=COLOR_PRIMARY, alpha=0.5))
-    axes[1, 0].set_title("Boxplot")
+    axes[1, 0].set_title(
+        "Boxplot horizontal\n"
+        "(caixa central: 50% dos valores entre P25 e P75; traço = mediana; pontos = outliers)",
+        fontsize=10,
+    )
+    axes[1, 0].set_xlabel("Ticket (R$) por linha de serviço")
+    axes[1, 0].set_ylabel("")
     axes[1, 0].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _brl(x)))
 
     # Faixas de preço
@@ -331,7 +464,13 @@ def grafico_s6_distribuicao_tickets(
     df_temp["faixa"] = pd.cut(df_temp["val"], bins=bins_faixa, labels=labels_faixa, right=False)
     faixa_counts = df_temp["faixa"].value_counts().reindex(labels_faixa).fillna(0)
     axes[1, 1].bar(faixa_counts.index, faixa_counts.values, color="lightcoral", edgecolor="darkred")
-    axes[1, 1].set_title("Distribuição por Faixa de Preço")
+    axes[1, 1].set_title(
+        "Barras por faixa fixa de preço (R$)\n"
+        "(conta quantos serviços estão em 0–100, 100–250, etc.; independente do histograma)",
+        fontsize=10,
+    )
+    axes[1, 1].set_xlabel("Faixa de ticket (R$)")
+    axes[1, 1].set_ylabel("Qtd. linhas de serviço")
     axes[1, 1].tick_params(axis="x", rotation=30)
 
     # Anotações
@@ -348,7 +487,7 @@ def grafico_s7_cross_selling(
     df: pd.DataFrame,
     out_dir: str = "output/graficos",
 ) -> str:
-    """S7 - Cross-selling: single vs multi-item (baseado em qtd_servicos)."""
+    """S7 - Cross-selling; suptitle com período."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s7_cross_selling.png")
@@ -361,7 +500,9 @@ def grafico_s7_cross_selling(
     df["tipo_os"] = np.where(df["qtd_servicos"] >= 2, "Multi-item", "Single-item")
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    fig.suptitle("S7 — Cross-Selling (Single vs Multi-item)", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(
+        fig, df, "S7 — Cross-Selling (Single vs Multi-item)", y=1.08, fontsize=11
+    )
 
     # Proporção
     prop = df["tipo_os"].value_counts()
@@ -397,7 +538,7 @@ def grafico_s8_alertas(
     out_dir: str = "output/graficos",
     top_n: int = 20,
 ) -> str:
-    """S8 - Heatmap de alertas: top concessionárias com métricas normalizadas."""
+    """S8 - Alertas; suptitle com período."""
     df = _filtrar(df)
     _ensure_dir(out_dir)
     path = os.path.join(out_dir, "s8_alertas.png")
@@ -420,7 +561,7 @@ def grafico_s8_alertas(
     })
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 8), gridspec_kw={"width_ratios": [3, 1]})
-    fig.suptitle("S8 — Alertas e Anomalias", fontsize=14, fontweight="bold", y=1.02)
+    _fig_suptitle_com_periodo(fig, df, "S8 — Alertas e Anomalias", y=1.03, fontsize=11)
 
     # Heatmap normalizado
     metricas_norm = metricas.apply(lambda s: (s - s.min()) / (s.max() - s.min() + 1e-9))
