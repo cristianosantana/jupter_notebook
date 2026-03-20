@@ -3,3 +3,4 @@ backup
 .ipynb_checkpoints
 __pycache__
 .cursor
+output
