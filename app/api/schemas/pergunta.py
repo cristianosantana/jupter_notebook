@@ -11,7 +11,7 @@ class PerguntaRequest(BaseModel):
     agentes: Optional[List[str]] = None
     agentes_dataframe: Optional[List[str]] = Field(
         default=None,
-        description="Skill IDs que operam em modo 2 fases com DataFrame (ex.: agente-analise-os)",
+        description="Skill IDs que operam em modo 2 fases com DataFrame (ex.: agente_analise_os)",
     )
     mysql_tabela: Optional[str] = None
     mysql_tabelas: Optional[List[Dict[str, Any]]] = None

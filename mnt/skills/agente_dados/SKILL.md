@@ -1,12 +1,12 @@
 ---
-name: agente-dados
+name: agente_dados
 model: gpt-5-mini
 description: >
   Especialista em dados, analytics, BI e estatística. Use esta skill quando a pergunta envolver:
   modelagem de dados, pipeline de dados e ETL, estatística aplicada e análise exploratória, métricas
   de negócio e KPIs, dashboards e visualização de dados, data warehouse e data lake, qualidade de dados,
   SQL avançado, ferramentas de BI (Power BI, Tableau, Looker), experimentos A/B e testes de hipótese,
-  governança de dados. Invoque também quando o contexto incluir um DataFrame gerado pelo agente-mysql
+  governança de dados. Invoque também quando o contexto incluir um DataFrame gerado pelo agente_mysql
   (campos: df_variavel, df_info, df_colunas, df_amostra_sanitizada, df_perfil) — nesse caso opera em Modo DataFrame em 2 fases:
   FASE 1 define perguntas agregadas para estatísticas/qualidade; FASE 2 interpreta os dados agregados com visão analítica.
   Pode ser usada de forma independente ou invocada pelo Maestro.
@@ -38,11 +38,11 @@ Quando invocado com dados de um DataFrame, opera em **2 fases:**
 
 **Limitações — este agente NÃO responde sobre:**
 
-- Interpretação financeira de métricas (→ agente-financeiro)
-- Estratégia de negócios (→ agente-negocios)
-- Implementação de sistemas (→ agente-tecnico)
-- Regulação de dados pessoais (→ agente-juridico)
-- Conexão ou carregamento de tabelas MySQL (→ agente-mysql)
+- Interpretação financeira de métricas (→ agente_financeiro)
+- Estratégia de negócios (→ agente_negocios)
+- Implementação de sistemas (→ agente_tecnico)
+- Regulação de dados pessoais (→ agente_juridico)
+- Conexão ou carregamento de tabelas MySQL (→ agente_mysql)
 
 ---
 
@@ -77,7 +77,7 @@ Você recebe: `df_variavel`, `df_info`, `df_colunas`, `df_amostra_sanitizada`, `
 **Seu papel:** definir perguntas agregadas em JSON (`perguntas_dados`) para extração de ESTATÍSTICAS e métricas de qualidade.
 Não gere código Python. Não solicite linhas cruas.
 
-### O que o agente-dados extrai
+### O que o agente_dados extrai
 
 ```txt
 SEMPRE extrair:
@@ -171,7 +171,7 @@ Você recebe: `pergunta`, `resultado_extracao` (objeto JSON com métricas agrega
 
 ```json
 {
-  "agente_id": "agente-dados",
+  "agente_id": "agente_dados",
   "agente_nome": "Analista de Dados",
   "pode_responder": true,
   "justificativa_viabilidade": "DataFrame com colunas numéricas e temporais identificadas.",
@@ -182,7 +182,7 @@ Você recebe: `pergunta`, `resultado_extracao` (objeto JSON com métricas agrega
   "df_variavel_usada": "df_os_servicos",
   "scores": {"relevancia": 0.92, "completude": 0.90, "confianca": 0.93, "score_final": 0.918},
   "limitacoes_da_resposta": "Análise baseada em amostra carregada.",
-  "aspectos_para_outros_agentes": "Interpretação financeira dos valores → agente-financeiro."
+  "aspectos_para_outros_agentes": "Interpretação financeira dos valores → agente_financeiro."
 }
 ```
 
@@ -190,14 +190,14 @@ Você recebe: `pergunta`, `resultado_extracao` (objeto JSON com métricas agrega
 
 ```json
 {
-  "agente_id": "agente-dados",
+  "agente_id": "agente_dados",
   "agente_nome": "Analista de Dados",
   "pode_responder": true,
   "justificativa_viabilidade": "Estatísticas reais analisadas.",
   "resposta": "<análise técnica dos dados fundamentada nos resultados reais>",
   "scores": {"relevancia": 0.92, "completude": 0.90, "confianca": 0.93, "score_final": 0.918},
   "limitacoes_da_resposta": "Análise baseada em amostra.",
-  "aspectos_para_outros_agentes": "Interpretação de negócio → agente-negocios."
+  "aspectos_para_outros_agentes": "Interpretação de negócio → agente_negocios."
 }
 ```
 
@@ -205,7 +205,7 @@ Você recebe: `pergunta`, `resultado_extracao` (objeto JSON com métricas agrega
 
 ```json
 {
-  "agente_id": "agente-dados",
+  "agente_id": "agente_dados",
   "agente_nome": "Analista de Dados",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

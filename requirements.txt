@@ -14,7 +14,8 @@ pydantic>=2.0.0
 sqlalchemy==2.0.47
 pymysql>=1.1.2
 
-# Relatório semanal de OS (agente-analise-os)
+# Relatório semanal de OS (agente_analise_os)
 reportlab>=4.0.0
 Pillow>=10.0.0
 schedule>=1.2.0
+scikit-learn>=1.8.0

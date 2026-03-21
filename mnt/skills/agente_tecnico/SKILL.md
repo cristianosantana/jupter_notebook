@@ -1,5 +1,5 @@
 ---
-name: agente-tecnico
+name: agente_tecnico
 model: gpt-5-mini
 description: >
   Especialista em tecnologia, engenharia de software e sistemas. Use esta skill quando a pergunta
@@ -34,10 +34,10 @@ Responde estritamente dentro do domínio técnico.
 
 **Limitações — este agente NÃO responde sobre:**
 
-- Aspectos financeiros de contratos de tecnologia (→ agente-financeiro)
-- Estratégia de produto ou negócio (→ agente-negocios)
-- Regulação e compliance de TI (→ agente-juridico)
-- Análise estatística e modelagem de dados de negócio (→ agente-dados)
+- Aspectos financeiros de contratos de tecnologia (→ agente_financeiro)
+- Estratégia de produto ou negócio (→ agente_negocios)
+- Regulação e compliance de TI (→ agente_juridico)
+- Análise estatística e modelagem de dados de negócio (→ agente_dados)
 
 ---
 
@@ -71,7 +71,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-tecnico",
+  "agente_id": "agente_tecnico",
   "agente_nome": "Especialista Técnico",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

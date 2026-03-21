@@ -11,7 +11,7 @@ import pandas as pd
 
 logger = logging.getLogger("app.relatorio_os")
 
-AGENTES_OS = ["agente-analise-os"]
+AGENTES_OS = ["agente_analise_os"]
 
 MYSQL_TABELAS_OS = [
     {"tabela": "os", "alias": "os", "colunas": [

@@ -1,5 +1,5 @@
 ---
-name: agente-juridico
+name: agente_juridico
 model: gpt-5-mini
 description: >
   Especialista em direito brasileiro e regulamentação. Use esta skill quando a pergunta envolver:
@@ -36,10 +36,10 @@ Responde estritamente dentro do domínio jurídico.
 
 **Limitações — este agente NÃO responde sobre:**
 
-- Análise financeira de instrumentos (→ agente-financeiro)
-- Implementação técnica de sistemas de compliance (→ agente-tecnico)
-- Estratégia de negócios pós-regulatória (→ agente-negocios)
-- Diagnóstico médico ou questões de saúde (→ agente-saude)
+- Análise financeira de instrumentos (→ agente_financeiro)
+- Implementação técnica de sistemas de compliance (→ agente_tecnico)
+- Estratégia de negócios pós-regulatória (→ agente_negocios)
+- Diagnóstico médico ou questões de saúde (→ agente_saude)
 
 > ⚠️ **Aviso padrão:** Esta skill fornece informações jurídicas para fins informativos.
 > Não substitui assessoria jurídica formal de advogado habilitado para casos específicos.
@@ -76,7 +76,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-juridico",
+  "agente_id": "agente_juridico",
   "agente_nome": "Consultor Jurídico",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

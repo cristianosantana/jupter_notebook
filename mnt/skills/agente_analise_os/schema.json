@@ -1,5 +1,5 @@
 {
-  "_doc": "Schema das tabelas usadas pelo agente-analise-os. Gerado via DESCRIBE em 2026-03-18.",
+  "_doc": "Schema das tabelas usadas pelo agente_analise_os. Gerado via DESCRIBE em 2026-03-18.",
   "_relacoes": {
     "os -> os_servicos": "os.id = oss.os_id (1:N, cada OS tem N servicos)",
     "os_servicos -> servicos": "oss.servico_id = ser.id (N:1)",

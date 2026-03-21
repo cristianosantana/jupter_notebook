@@ -1,5 +1,5 @@
 ---
-name: avaliador-coerencia
+name: avaliador_coerencia
 model: gpt-5-mini
 description: >
   Avalia e ranqueia respostas de múltiplos agentes especializados em relação a uma pergunta original.
@@ -24,7 +24,7 @@ dos agentes em relação à pergunta original.
   "tipo_resposta_esperada": "factual | analítica | técnica | criativa | comparativa",
   "respostas_coletadas": [
     {
-      "agente_id": "agente-financeiro",
+      "agente_id": "agente_financeiro",
       "agente_nome": "Analista Financeiro",
       "resposta": "...",
       "scores_agente": {
@@ -146,7 +146,7 @@ Antes de retornar, verificar contradições entre respostas:
 {
   "avaliacao_completa": [
     {
-      "agente_id": "agente-financeiro",
+      "agente_id": "agente_financeiro",
       "agente_nome": "Analista Financeiro",
       "scores_avaliador": {
         "alinhamento": 9,
@@ -161,7 +161,7 @@ Antes de retornar, verificar contradições entre respostas:
       "observacoes": "Resposta central e tecnicamente precisa."
     }
   ],
-  "ranking_final": ["agente-financeiro", "agente-negocios", "agente-juridico"],
+  "ranking_final": ["agente_financeiro", "agente_negocios", "agente_juridico"],
   "conflitos_detectados": [],
   "respostas_excluidas": [],
   "threshold_utilizado": 0.65

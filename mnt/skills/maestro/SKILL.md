@@ -25,17 +25,17 @@ Estes são os agentes registrados no sistema. Cada um possui sua própria skill 
 
 | Skill ID | Nome do Agente | Domínio | Quando Selecionar |
 |----------|---------------|---------|------------------|
-| `agente-financeiro` | Analista Financeiro | Finanças e Investimentos | Mercado financeiro, captação, contabilidade, investimentos, valuation |
-| `agente-tecnico` | Especialista Técnico | Tecnologia e Engenharia | Programação, arquitetura, cloud, IA/ML, segurança, infraestrutura |
-| `agente-juridico` | Consultor Jurídico | Direito | Legislação, contratos, compliance, regulamentação, societário |
-| `agente-dados` | Analista de Dados | Dados e BI | Estatística, modelagem, métricas, visualização, ETL |
-| `agente-negocios` | Especialista em Negócios | Gestão e Estratégia | Estratégia, operações, marketing, RH, processos, crescimento |
-| `agente-cientifico` | Pesquisador Científico | Ciência e Pesquisa | Metodologia, evidências empíricas, literatura científica |
-| `agente-saude` | Especialista em Saúde | Medicina e Saúde | Medicina, farmacologia, saúde pública, bem-estar |
-| `agente-mercado` | Analista de Mercado | Marketing e Consumidor | Comportamento do consumidor, branding, tendências, digital |
-| `avaliador-coerencia` | Avaliador de Coerência | Avaliação | **Sempre invocado** — avalia e ranqueia todas as respostas |
-| `agente-mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL |
-| `agente-analise-os` | Analista de OS | Dados / OS / Gerencial | Análise de OS, concessionárias, vendedores, sazonalidade, ticket médio, relatório gerencial |
+| `agente_financeiro` | Analista Financeiro | Finanças e Investimentos | Mercado financeiro, captação, contabilidade, investimentos, valuation |
+| `agente_tecnico` | Especialista Técnico | Tecnologia e Engenharia | Programação, arquitetura, cloud, IA/ML, segurança, infraestrutura |
+| `agente_juridico` | Consultor Jurídico | Direito | Legislação, contratos, compliance, regulamentação, societário |
+| `agente_dados` | Analista de Dados | Dados e BI | Estatística, modelagem, métricas, visualização, ETL |
+| `agente_negocios` | Especialista em Negócios | Gestão e Estratégia | Estratégia, operações, marketing, RH, processos, crescimento |
+| `agente_cientifico` | Pesquisador Científico | Ciência e Pesquisa | Metodologia, evidências empíricas, literatura científica |
+| `agente_saude` | Especialista em Saúde | Medicina e Saúde | Medicina, farmacologia, saúde pública, bem-estar |
+| `agente_mercado` | Analista de Mercado | Marketing e Consumidor | Comportamento do consumidor, branding, tendências, digital |
+| `avaliador_coerencia` | Avaliador de Coerência | Avaliação | **Sempre invocado** — avalia e ranqueia todas as respostas |
+| `agente_mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL |
+| `agente_analise_os` | Analista de OS | Dados / OS / Gerencial | Análise de OS, concessionárias, vendedores, sazonalidade, ticket médio, relatório gerencial |
 
 > Para adicionar novos agentes ao registro, consulte a seção **Extensibilidade** ao final.
 ```
@@ -49,7 +49,7 @@ PASSO 1 → Analisar a pergunta
 PASSO 2 → Selecionar agentes do registro (2 a 5)
 PASSO 3 → Invocar cada agente selecionado (skill independente)
 PASSO 4 → Coletar respostas + scores
-PASSO 5 → Invocar avaliador-coerencia com todas as respostas
+PASSO 5 → Invocar avaliador_coerencia com todas as respostas
 PASSO 6 → Entregar respostas qualificadas ao usuário
 ```
 
@@ -84,7 +84,7 @@ Informação central necessária: [o que precisa ser respondido]
 
 ```json
 {
-  "skill_invocada": "agente-financeiro",
+  "skill_invocada": "agente_financeiro",
   "pergunta": "<pergunta original do usuário>",
   "contexto_maestro": "<análise de domínio feita pelo maestro>",
   "tipo_resposta_esperada": "analítica",
@@ -112,9 +112,9 @@ O Maestro acumula todas as respostas recebidas:
 {
   "pergunta_original": "...",
   "respostas_coletadas": [
-    { /* resposta agente-financeiro */ },
-    { /* resposta agente-juridico */ },
-    { /* resposta agente-negocios */ }
+    { /* resposta agente_financeiro */ },
+    { /* resposta agente_juridico */ },
+    { /* resposta agente_negocios */ }
   ]
 }
 ```
@@ -125,7 +125,7 @@ Agentes que retornarem `"pode_responder": false` são registrados mas **não env
 
 ## PASSO 5 — Invocação do Avaliador de Coerência
 
-O Maestro invoca a skill `avaliador-coerencia` com o payload completo de respostas coletadas.
+O Maestro invoca a skill `avaliador_coerencia` com o payload completo de respostas coletadas.
 O Avaliador retorna as respostas ranqueadas com `score_total` e sinaliza quais passam no threshold.
 
 ---

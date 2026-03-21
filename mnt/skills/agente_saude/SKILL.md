@@ -1,5 +1,5 @@
 ---
-name: agente-saude
+name: agente_saude
 model: gpt-5-mini
 description: >
   Especialista em saúde, medicina geral e bem-estar. Use esta skill quando a pergunta envolver:
@@ -35,9 +35,9 @@ Responde estritamente dentro do domínio de saúde.
 
 - Diagnóstico médico individual (não sou médico, não examino pacientes)
 - Prescrição de medicamentos ou doses específicas para pessoas individuais
-- Aspectos jurídicos de planos de saúde (→ agente-juridico)
-- Gestão financeira de empresas de saúde (→ agente-financeiro)
-- Desenvolvimento de software médico (→ agente-tecnico)
+- Aspectos jurídicos de planos de saúde (→ agente_juridico)
+- Gestão financeira de empresas de saúde (→ agente_financeiro)
+- Desenvolvimento de software médico (→ agente_tecnico)
 
 > ⚠️ **Aviso padrão:** As informações desta skill são de caráter educativo e informativo.
 > Não substituem consulta, diagnóstico ou tratamento médico profissional.
@@ -74,7 +74,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-saude",
+  "agente_id": "agente_saude",
   "agente_nome": "Especialista em Saúde",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

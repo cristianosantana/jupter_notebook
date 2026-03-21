@@ -1,7 +1,7 @@
 """
-Wrapper de import para o módulo agente-analise-os (com hífen).
+Pacote do agente de análise de OS (skill + gráficos + PDF).
 
-Permite importar como:
+Importação típica:
     from mnt.skills.agente_analise_os import gerar_todos_graficos, gerar_relatorio_pdf
     from mnt.skills.agente_analise_os.graficos import grafico_s1_resumo_executivo
     from mnt.skills.agente_analise_os.relatorio import gerar_relatorio_pdf

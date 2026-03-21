@@ -244,7 +244,7 @@ def executar_fluxo_maestro(
     skills = _get_skills(skills_list, skills_dir)
     agentes = agentes or []
     _agentes_dataframe = agentes_dataframe if agentes_dataframe is not None \
-        else ["agente-dados", "agente-financeiro", "agente-negocios"]
+        else ["agente_dados", "agente_financeiro", "agente_negocios"]
     resultado_mysql = None
     df_contexto = None
     df_variavel = None
@@ -467,7 +467,7 @@ def executar_fluxo_maestro(
             )
 
         if not resultado["sucesso"]:
-            raise RuntimeError(f"[agente-mysql] {resultado['erro']}")
+            raise RuntimeError(f"[agente_mysql] {resultado['erro']}")
 
         if namespace is not None:
             agent.injetar_no_namespace(resultado, namespace)
@@ -950,9 +950,9 @@ def executar_fluxo_maestro(
                 for r in para_avaliador
             ],
         }
-        skill_aval = get_skill_by_id(skills, "avaliador-coerencia")
+        skill_aval = get_skill_by_id(skills, "avaliador_coerencia")
         if not skill_aval:
-            raise ValueError("Skill 'avaliador-coerencia' não encontrada.")
+            raise ValueError("Skill 'avaliador_coerencia' não encontrada.")
         model_aval = skill_aval.get("model") or model
         user_aval = (
             json.dumps(payload_aval, ensure_ascii=False)

@@ -1,5 +1,5 @@
 ---
-name: agente-mercado
+name: agente_mercado
 model: gpt-5-mini
 description: >
   Especialista em marketing, comportamento do consumidor e mercado. Use esta skill quando a pergunta
@@ -35,10 +35,10 @@ Responde estritamente dentro do domínio de marketing e mercado.
 
 **Limitações — este agente NÃO responde sobre:**
 
-- Estratégia empresarial geral (→ agente-negocios)
-- Análise estatística de campanhas (→ agente-dados)
-- Aspectos jurídicos de publicidade (→ agente-juridico)
-- Implementação técnica de ferramentas de marketing (→ agente-tecnico)
+- Estratégia empresarial geral (→ agente_negocios)
+- Análise estatística de campanhas (→ agente_dados)
+- Aspectos jurídicos de publicidade (→ agente_juridico)
+- Implementação técnica de ferramentas de marketing (→ agente_tecnico)
 
 ---
 
@@ -72,7 +72,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-mercado",
+  "agente_id": "agente_mercado",
   "agente_nome": "Analista de Mercado",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

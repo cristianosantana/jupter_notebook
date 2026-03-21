@@ -39,8 +39,8 @@ from app.services.maestro_service import MaestroService
 maestro = MaestroService(client=client, settings=settings)
 resultado = maestro.run(
     pergunta="…",
-    agentes=["agente-analise-os"],
-    agentes_dataframe=["agente-analise-os"],
+    agentes=["agente_analise_os"],
+    agentes_dataframe=["agente_analise_os"],
     # dados — escolha UM caminho coerente (MySQL OU DF em memória), vide prioridade acima
     mysql_tabelas=[…],           # opcional
     mysql_tabela=None,
@@ -124,13 +124,13 @@ O JSON **não** transporta `DataFrame`. Fluxo:
 
 #### Agregação: soma de serviços com pagamento confirmado — concessionária Osaka (Fev/2026)
 
-Pergunta direcionada a `agente-dados` e `agente-financeiro`, com join em `os`, `os_servicos`, `concessionarias` e filtro por nome da concessionária + `EXISTS` em `caixas` (pagamentos no período indicado).
+Pergunta direcionada a `agente_dados` e `agente_financeiro`, com join em `os`, `os_servicos`, `concessionarias` e filtro por nome da concessionária + `EXISTS` em `caixas` (pagamentos no período indicado).
 
 ```json
 {
   "agentes": [
-    "agente-dados",
-    "agente-financeiro"
+    "agente_dados",
+    "agente_financeiro"
   ],
   "pergunta": "Soma única do valor de serviços de OS que possuem pagamentos confirmados na Osaka em Fev/2026.",
   "mysql_tabelas": [
@@ -161,13 +161,13 @@ Pergunta direcionada a `agente-dados` e `agente-financeiro`, com join em `os`, `
 
 #### Mix de serviços: mais lucrativo vs mais popular
 
-`agente-dados` + `agente-negocios`, com `servico_nome` e `concessionaria_nome` no resultado.
+`agente_dados` + `agente_negocios`, com `servico_nome` e `concessionaria_nome` no resultado.
 
 ```json
 {
   "agentes": [
-    "agente-dados",
-    "agente-negocios"
+    "agente_dados",
+    "agente_negocios"
   ],
   "pergunta": "qual o servico mais lucrativo e qual o mais popular?",
   "mysql_limite": 10000,
@@ -203,13 +203,13 @@ Pergunta direcionada a `agente-dados` e `agente-financeiro`, com join em `os`, `
 }
 ```
 
-**Com MySQL genérico (agente-analise-os, modo DataFrame):**
+**Com MySQL genérico (agente_analise_os, modo DataFrame):**
 
 ```json
 {
   "pergunta": "Análise semanal de Ordens de Serviço",
-  "agentes": ["agente-analise-os"],
-  "agentes_dataframe": ["agente-analise-os"],
+  "agentes": ["agente_analise_os"],
+  "agentes_dataframe": ["agente_analise_os"],
   "mysql_tabelas": [],
   "mysql_limite": 50000,
   "mysql_filtro_where": "os.deleted_at IS NULL",
@@ -224,8 +224,8 @@ Pergunta direcionada a `agente-dados` e `agente-financeiro`, com join em `os`, `
 ```json
 {
   "pergunta": "Resumo executivo e top concessionárias",
-  "agentes": ["agente-analise-os"],
-  "agentes_dataframe": ["agente-analise-os"],
+  "agentes": ["agente_analise_os"],
+  "agentes_dataframe": ["agente_analise_os"],
   "dataframe_preexistente": "df_os",
   "verbose": true
 }
@@ -236,7 +236,7 @@ Pergunta direcionada a `agente-dados` e `agente-financeiro`, com join em `os`, `
 ```json
 {
   "pergunta": "Explique o conceito de ticket médio em oficinas",
-  "agentes": ["agente-negocios"],
+  "agentes": ["agente_negocios"],
   "verbose": false
 }
 ```

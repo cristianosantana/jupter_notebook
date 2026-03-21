@@ -1,8 +1,8 @@
 # Jupyter notebook - agente_mysql_exemplo.ipynb
-# Demonstra uso da skill agente-mysql standalone e via Maestro
+# Demonstra uso da skill agente_mysql standalone e via Maestro
 
 """
-## agente-mysql — Exemplos de uso
+## agente_mysql — Exemplos de uso
 
 Demonstra como usar a skill de carregamento MySQL:
 1. Uso direto (standalone) no notebook
@@ -80,14 +80,14 @@ print(df_clientes.shape)  # type: ignore  # injetado pelo injetar_globals
 # ─────────────────────────────────────────────────────────────────────────────
 
 """
-O agente-mysql pode ser integrado ao executar_fluxo_maestro como um passo
+O agente_mysql pode ser integrado ao executar_fluxo_maestro como um passo
 de pré-carregamento de dados, antes de invocar agentes analíticos.
 
 Fluxo sugerido:
   1. Usuário pergunta algo sobre dados de uma tabela MySQL
-  2. Maestro detecta que precisa de dados → invoca agente-mysql
-  3. agente-mysql carrega o DataFrame e retorna o payload JSON
-  4. Maestro passa o payload para agente-dados ou agente-financeiro
+  2. Maestro detecta que precisa de dados → invoca agente_mysql
+  3. agente_mysql carrega o DataFrame e retorna o payload JSON
+  4. Maestro passa o payload para agente_dados ou agente_financeiro
   5. Agentes analíticos usam o df carregado para responder
 """
 
@@ -95,7 +95,7 @@ import json
 from openai import OpenAI
 from mnt.skills.agente_mysql.helpers import carregar_tabela_mysql
 
-# Passo A: carrega os dados via agente-mysql
+# Passo A: carrega os dados via agente_mysql
 resultado_mysql = carregar_tabela_mysql(
     tabela="vendas",
     host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -119,7 +119,7 @@ if resultado_mysql["sucesso"]:
     print(f"\n✅ Dados disponíveis em: {variavel}")
     print(f"\ndf.info():\n{df_info_str}")
 
-    # Aqui você chamaria executar_fluxo_maestro com agente-dados ou agente-financeiro
+    # Aqui você chamaria executar_fluxo_maestro com agente_dados ou agente_financeiro
     # passando o df_info como contexto adicional para os agentes analíticos.
 
     # Exemplo:
@@ -137,7 +137,7 @@ if resultado_mysql["sucesso"]:
     #     client=client,
     #     pergunta=pergunta_com_contexto,
     #     model=model,
-    #     agentes=["agente-dados", "agente-financeiro"],
+    #     agentes=["agente_dados", "agente_financeiro"],
     #     verbose=True,
     # )
     # print(resultado["entrega_final"])

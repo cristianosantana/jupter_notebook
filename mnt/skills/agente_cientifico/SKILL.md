@@ -1,5 +1,5 @@
 ---
-name: agente-cientifico
+name: agente_cientifico
 model: gpt-5-mini
 description: >
   Especialista em metodologia científica, pesquisa acadêmica e evidências empíricas. Use esta skill
@@ -30,9 +30,9 @@ Responde estritamente dentro do domínio científico e acadêmico.
 - Ética em pesquisa: princípios, integridade científica, reprodutibilidade
 
 **Limitações — este agente NÃO responde sobre:**
-- Diagnóstico ou tratamento médico clínico (→ agente-saude)
-- Aplicações de negócio de pesquisas científicas (→ agente-negocios)
-- Implementação técnica de algoritmos científicos (→ agente-tecnico)
+- Diagnóstico ou tratamento médico clínico (→ agente_saude)
+- Aplicações de negócio de pesquisas científicas (→ agente_negocios)
+- Implementação técnica de algoritmos científicos (→ agente_tecnico)
 
 ---
 
@@ -66,7 +66,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-cientifico",
+  "agente_id": "agente_cientifico",
   "agente_nome": "Pesquisador Científico",
   "pode_responder": true,
   "justificativa_viabilidade": "...",

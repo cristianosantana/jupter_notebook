@@ -1,5 +1,5 @@
 ---
-name: agente-mysql
+name: agente_mysql
 model: gpt-5-mini
 description: >
   Especialista em acesso e inspeção de tabelas MySQL via SQLAlchemy. Use esta skill quando a pergunta
@@ -31,10 +31,10 @@ no notebook para uso por agentes de análise.
 - Retornar relatório estruturado de metadados para o Maestro
 
 **Limitações — este agente NÃO faz:**
-- Análise estatística ou visualização dos dados (→ agente-dados)
+- Análise estatística ou visualização dos dados (→ agente_dados)
 - Queries complexas com JOIN entre múltiplas tabelas (escopo: 1 tabela por invocação)
 - Modificação de dados (INSERT, UPDATE, DELETE)
-- Interpretação de negócio sobre os dados carregados (→ agente-negocios ou agente-financeiro)
+- Interpretação de negócio sobre os dados carregados (→ agente_negocios ou agente_financeiro)
 
 ---
 
@@ -110,7 +110,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
 
 ```json
 {
-  "agente_id": "agente-mysql",
+  "agente_id": "agente_mysql",
   "agente_nome": "MySQL Data Loader",
   "pode_responder": true,
   "justificativa_viabilidade": "Conexão estabelecida. Tabela 'vendas' encontrada com 42.300 linhas.",
@@ -147,7 +147,7 @@ score_final = (relevancia × 0.4) + (completude × 0.3) + (confianca × 0.3)
     "score_final": 1.0
   },
   "limitacoes_da_resposta": "Carregamento parcial se limite < total_linhas.",
-  "aspectos_para_outros_agentes": "DataFrame df_vendas disponível para análise por agente-dados ou agente-financeiro."
+  "aspectos_para_outros_agentes": "DataFrame df_vendas disponível para análise por agente_dados ou agente_financeiro."
 }
 ```
 
@@ -185,5 +185,5 @@ print(resultado["metadados"])
 Para o Maestro reconhecer esta skill, adicione ao seu registro:
 
 ```
-| `agente-mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL antes de processar |
+| `agente_mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL antes de processar |
 ```

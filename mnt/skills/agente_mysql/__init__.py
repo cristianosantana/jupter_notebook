@@ -1,13 +1,15 @@
-from typing import TYPE_CHECKING
+from .helpers import (
+    DefinicaoTabela,
+    MySQLAgent,
+    MySQLConexao,
+    carregar_multiplas_tabelas_mysql,
+    carregar_tabela_mysql,
+)
 
-__all__ = ["MySQLAgent", "DefinicaoTabela", "MySQLConexao", "carregar_tabela_mysql", "carregar_multiplas_tabelas_mysql"]
-
-if TYPE_CHECKING:
-    from .helpers import MySQLAgent, DefinicaoTabela, MySQLConexao, carregar_tabela_mysql, carregar_multiplas_tabelas_mysql
-
-
-def __getattr__(name: str):
-    if name in __all__:
-        from . import helpers as _helpers
-        return getattr(_helpers, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__all__ = [
+    "MySQLAgent",
+    "DefinicaoTabela",
+    "MySQLConexao",
+    "carregar_tabela_mysql",
+    "carregar_multiplas_tabelas_mysql",
+]

@@ -26,7 +26,7 @@ def post_relatorio_os(
     body: RelatorioOSRequest,
     maestro: MaestroService = Depends(get_maestro_service),
 ):
-    """Executa o fluxo Maestro com agente-analise-os e gera gráficos + PDF."""
+    """Executa o fluxo Maestro com agente_analise_os e gera gráficos + PDF."""
     t0 = time.time()
     namespace = {}
 
