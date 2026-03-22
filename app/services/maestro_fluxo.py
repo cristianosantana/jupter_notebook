@@ -4,13 +4,33 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
 from mnt.skills.agente_mysql.helpers import MySQLAgent
 
 from app.core.skills import get_skill_by_id, load_skills
+from app.services.clustering_metricas import executar_clustering_metricas
+
+# FASE 2 — instruções extra injetadas pelo Maestro (prevalecem sobre exemplos longos na skill).
+INSTRUCAO_FASE2_AGENTE_CLUSTERIZACAO = (
+    "FASE 2 — INTERPRETAÇÃO (agente_clusterizacao_concessionaria): "
+    "Use exclusivamente 'resultado_extracao' (métricas com status ok e, se existir, clustering_deterministico) "
+    "como fonte de factos. Não invente números nem atribua lojas a clusters sem amparo no determinístico. "
+    "Responda de forma estrita ao texto de 'pergunta'; não acrescente secções que o utilizador não pediu.\n\n"
+    "O objeto 'resposta' DEVE incluir 'resumo_executivo': texto curto em português (cerca de 800–1500 caracteres) "
+    "que responda directamente à pergunta; pode resumir os perfis sem copiar listas longas no texto.\n\n"
+    "Se existir clustering_deterministico: não recalcule clusters; em 'perfis_clusters' cada cluster_id deve incluir "
+    "a lista COMPLETA de concessionárias daquele cluster, alinhada a perfis_clusters_dados e mapeamento_concessionarias "
+    "(não substitua por apenas concessionárias_representativas ou amostra).\n\n"
+    "Não preencha 'relatorios_concessionarias' nem 'visualizacoes_sugeridas' por loja A MENOS que a pergunta peça "
+    "explicitamente relatório ou diagnóstico por concessionária, detalhe individual por loja ou gráfico por unidade. "
+    "Se preencher relatórios por loja: em cada 'visualizacoes_sugeridas' use 'fonte_metric_ids' apenas de métricas já "
+    "filtradas àquela concessionária na FASE 1 (filtros eq em concessionaria_nome ou concessionaria_id), nunca apenas "
+    "o ranking da rede inteira agregado por loja sem esse filtro.\n\n"
+    "Retorne JSON completo válido conforme a skill (sem codigo_pandas)."
+)
 
 
 def _get_skills(skills_list=None, skills_dir=None):
@@ -18,6 +38,36 @@ def _get_skills(skills_list=None, skills_dir=None):
         return skills_list
     base = skills_dir or os.path.join(os.path.dirname(__file__), "..", "..", "mnt", "skills")
     return load_skills(base)
+
+
+def _normalizar_nome_variavel_dataframe(val: Any, fallback: Optional[str] = None) -> Optional[str]:
+    """
+    FASE 1 pode devolver df_variavel_usada como string ou, por erro do modelo, como dict.
+    Garante sempre uma string hashable para lookup em namespace (evita TypeError: unhashable type: 'dict').
+    """
+    if val is None:
+        out = fallback
+    elif isinstance(val, str):
+        out = val.strip() or fallback
+    elif isinstance(val, dict):
+        picked: Optional[str] = None
+        for key in ("df_variavel_usada", "df_variavel", "nome", "variavel", "name", "var"):
+            inner = val.get(key)
+            if isinstance(inner, str) and inner.strip():
+                picked = inner.strip()
+                break
+        if picked is None:
+            for v in val.values():
+                if isinstance(v, str) and v.strip():
+                    picked = v.strip()
+                    break
+        out = picked or fallback
+    else:
+        out = fallback
+    if out is not None and isinstance(out, str):
+        s = out.strip()
+        return s if s else None
+    return None
 
 
 def extrair_json(texto: str) -> Optional[Dict]:
@@ -135,13 +185,166 @@ def _trecho_para_sintese(resp, limite: int = 560) -> str:
     return cut + "…"
 
 
-def _resposta_agente_para_texto(resp) -> str:
+_MAX_LOJAS_MARKDOWN_POR_CLUSTER = 500
+
+
+def _parse_cluster_id_para_entrega(cid: Any) -> Optional[int]:
+    if cid is None:
+        return None
+    try:
+        return int(cid)
+    except (TypeError, ValueError):
+        return None
+
+
+def _perfis_clusters_dados_lookup_entrega(clu: Optional[dict]) -> Dict[int, List[str]]:
+    out: Dict[int, List[str]] = {}
+    if not isinstance(clu, dict):
+        return out
+    for p in clu.get("perfis_clusters_dados") or []:
+        if not isinstance(p, dict):
+            continue
+        icid = _parse_cluster_id_para_entrega(p.get("cluster_id"))
+        if icid is None:
+            continue
+        lojas = p.get("concessionarias")
+        if not isinstance(lojas, list):
+            continue
+        out[icid] = [str(x).strip() for x in lojas if x is not None and str(x).strip()]
+    return out
+
+
+def _mapeamento_concessionarias_entrega(resposta: dict, clu: Optional[dict]) -> List[dict]:
+    m = resposta.get("mapeamento_concessionarias")
+    if isinstance(m, list) and m:
+        return [x for x in m if isinstance(x, dict)]
+    if isinstance(clu, dict):
+        m2 = clu.get("mapeamento_concessionarias")
+        if isinstance(m2, list) and m2:
+            return [x for x in m2 if isinstance(x, dict)]
+    return []
+
+
+def _lojas_de_mapeamento_entrega(mapeamento: List[dict], icid: int) -> List[str]:
+    nomes: List[str] = []
+    for m in mapeamento:
+        if _parse_cluster_id_para_entrega(m.get("cluster_id")) != icid:
+            continue
+        c = m.get("concessionaria")
+        if c is not None and str(c).strip():
+            nomes.append(str(c).strip())
+    return sorted(set(nomes))
+
+
+def _lojas_cluster_resolvidas_entrega(
+    icid: Optional[int],
+    perfil: Optional[dict],
+    dados_lookup: Dict[int, List[str]],
+    mapeamento: List[dict],
+) -> List[str]:
+    if perfil and isinstance(perfil, dict):
+        lojas = perfil.get("concessionarias")
+        if isinstance(lojas, list) and lojas:
+            return [str(x).strip() for x in lojas if x is not None and str(x).strip()]
+    if icid is not None and icid in dados_lookup:
+        return list(dados_lookup[icid])
+    if icid is not None and mapeamento:
+        return _lojas_de_mapeamento_entrega(mapeamento, icid)
+    return []
+
+
+def _markdown_concessionarias_por_cluster(
+    resposta: Optional[dict],
+    resultado_execucao: Optional[dict] = None,
+) -> str:
+    """
+    Secção markdown com listas de concessionárias por cluster para a entrega do Maestro.
+    Usa perfis_clusters do modelo e, em falta, clustering_deterministico / mapeamento.
+    """
+    if not isinstance(resposta, dict):
+        return ""
+    clu = None
+    if isinstance(resultado_execucao, dict):
+        clu = resultado_execucao.get("clustering_deterministico")
+    if not isinstance(clu, dict):
+        clu = None
+    dados_lookup = _perfis_clusters_dados_lookup_entrega(clu)
+    mapeamento = _mapeamento_concessionarias_entrega(resposta, clu)
+    perfis = resposta.get("perfis_clusters")
+    blocos: List[Tuple[Optional[int], str, List[str]]] = []
+    seen: set = set()
+
+    if isinstance(perfis, list) and perfis:
+        for item in perfis:
+            if not isinstance(item, dict):
+                continue
+            icid = _parse_cluster_id_para_entrega(item.get("cluster_id"))
+            nome_perfil = item.get("nome_perfil")
+            titulo = (
+                str(nome_perfil).strip()
+                if isinstance(nome_perfil, str) and nome_perfil.strip()
+                else (f"Cluster {icid}" if icid is not None else "Cluster")
+            )
+            lojas = _lojas_cluster_resolvidas_entrega(icid, item, dados_lookup, mapeamento)
+            if lojas:
+                blocos.append((icid, titulo, lojas))
+                if icid is not None:
+                    seen.add(icid)
+        for icid in sorted(dados_lookup.keys()):
+            if icid in seen or not dados_lookup[icid]:
+                continue
+            blocos.append((icid, f"Cluster {icid}", list(dados_lookup[icid])))
+            seen.add(icid)
+    elif dados_lookup:
+        for icid in sorted(dados_lookup.keys()):
+            lojas = dados_lookup[icid]
+            if lojas:
+                blocos.append((icid, f"Cluster {icid}", lojas))
+    elif mapeamento:
+        por_cluster: Dict[int, List[str]] = {}
+        for m in mapeamento:
+            icid = _parse_cluster_id_para_entrega(m.get("cluster_id"))
+            if icid is None:
+                continue
+            c = m.get("concessionaria")
+            if c is None or not str(c).strip():
+                continue
+            por_cluster.setdefault(icid, []).append(str(c).strip())
+        for icid in sorted(por_cluster.keys()):
+            lojas = sorted(set(por_cluster[icid]))
+            if lojas:
+                blocos.append((icid, f"Cluster {icid}", lojas))
+
+    if not blocos:
+        return ""
+    lines = ["#### Concessionárias por cluster", ""]
+    for icid, titulo, lojas in blocos:
+        suf = f" (id {icid})" if icid is not None else ""
+        lines.append(f"##### {titulo}{suf}")
+        mostrar = lojas[:_MAX_LOJAS_MARKDOWN_POR_CLUSTER]
+        for nome in mostrar:
+            lines.append(f"- {nome}")
+        resto = len(lojas) - len(mostrar)
+        if resto > 0:
+            lines.append(f"- _(+{resto} unidades omitidas por limite de exibição)_")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _resposta_agente_para_texto(resp, resultado_execucao: Optional[dict] = None) -> str:
     """Texto completo da resposta de um agente para a entrega markdown."""
     if isinstance(resp, dict):
+        extra = _markdown_concessionarias_por_cluster(resp, resultado_execucao)
         re = resp.get("resumo_executivo")
         if isinstance(re, str) and re.strip():
-            return re.strip()
-        return _dict_resposta_para_markdown(resp)
+            base = re.strip()
+            return f"{base}\n\n{extra}" if extra else base
+        base = _dict_resposta_para_markdown(resp)
+        if extra:
+            if not (base and str(base).strip()):
+                return extra
+            return f"{base}\n\n{extra}"
+        return base
     return resp if isinstance(resp, str) else str(resp)
 
 
@@ -172,7 +375,11 @@ def _formatar_entrega(pergunta: str, respostas_agentes: List[Dict], avaliacao: O
         )
         pct = round((score_total or 0) * 100)
         _resp_raw = r.get("resposta", "")
-        _str_res = _resposta_agente_para_texto(_resp_raw)
+        _ex = r.get("resultado_execucao")
+        _str_res = _resposta_agente_para_texto(
+            _resp_raw,
+            resultado_execucao=_ex if isinstance(_ex, dict) else None,
+        )
         linhas += [f"### {nome} — {aid}", f"*Score de Confiança: {pct}%*", "", _str_res, "", "---"]
     linhas += ["", "### Síntese"]
     resumos = []
@@ -181,6 +388,63 @@ def _formatar_entrega(pergunta: str, respostas_agentes: List[Dict], avaliacao: O
         resumos.append(f"**{nome_s}:** {_trecho_para_sintese(r.get('resposta', ''))}")
     linhas.append("\n\n".join(resumos))
     return "\n".join(linhas)
+
+
+def _float_seguro_metrica(v: Any) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def extrair_tabela_para_visualizador_maestro(respostas_agentes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Primeira série plotável (top_n grupo+valor ou timeseries periodo+valor) das métricas FASE 1,
+    até 50 linhas — entrada esperada pelo agente_visualizador (dados.tabela).
+    """
+    for r in respostas_agentes or []:
+        ex = r.get("resultado_execucao")
+        if not isinstance(ex, dict):
+            continue
+        for m in ex.get("metricas") or []:
+            if m.get("status") != "ok":
+                continue
+            res = m.get("resultado")
+            if not isinstance(res, list) or not res:
+                continue
+            r0 = res[0]
+            if not isinstance(r0, dict):
+                continue
+            if "grupo" in r0 and "valor" in r0 and "periodo" not in r0:
+                rows: List[Dict[str, Any]] = []
+                for item in res[:50]:
+                    if not isinstance(item, dict):
+                        continue
+                    gv = item.get("grupo")
+                    if isinstance(gv, (list, tuple)):
+                        gv = json.dumps(gv, ensure_ascii=False)
+                    rows.append(
+                        {
+                            "grupo": str(gv)[:120] if gv is not None else "",
+                            "valor": _float_seguro_metrica(item.get("valor")),
+                        }
+                    )
+                if rows:
+                    return rows
+            if "periodo" in r0 and "valor" in r0:
+                rows_ts: List[Dict[str, Any]] = []
+                for item in res[:50]:
+                    if not isinstance(item, dict):
+                        continue
+                    rows_ts.append(
+                        {
+                            "periodo": str(item.get("periodo", ""))[:80],
+                            "valor": _float_seguro_metrica(item.get("valor")),
+                        }
+                    )
+                if rows_ts:
+                    return rows_ts
+    return []
 
 
 def invocar_agente_maestro(client, skill_id, payload_maestro, model, skills_list=None, skills_dir=None):
@@ -223,10 +487,14 @@ def executar_fluxo_maestro(
     mysql_injetar_namespace: Optional[Dict] = None,
     dataframe_preexistente: Optional[str] = None,
     skills_dir: Optional[str] = None,
+    gerar_graficos_cluster_automatico: bool = True,
+    graficos_cluster_output_dir: Optional[str] = None,
+    invocar_visualizador_final: bool = True,
+    pausa_antes_clustering_metricas: bool = False,
 ) -> Dict:
     """
     Executa o fluxo completo: análise (1+2), invocação dos N agentes (3),
-    payload avaliador (4), avaliador (5), entrega (6).
+    payload avaliador (4), avaliador (5), entrega (6), artefatos pós-Maestro (7).
 
     Versão com privacidade reforçada para agentes DataFrame:
       - FASE 1: agente retorna perguntas agregadas em JSON (perguntas_dados)
@@ -237,6 +505,10 @@ def executar_fluxo_maestro(
       - ``mysql_injetar_namespace`` = dict onde o DataFrame está (ex.: ``globals()`` no Jupyter)
       - ``dataframe_preexistente`` = nome da variável (str), ex.: ``"df_os"``
       - Se ``mysql_tabelas`` / ``mysql_tabela`` estiver definido, o carregamento MySQL tem prioridade.
+
+    ``pausa_antes_clustering_metricas`` (Jupyter/debug): se True, após FASE 1 do
+    ``agente_clusterizacao_concessionaria`` (JSON do modelo + agregados) e antes de
+    ``executar_clustering_metricas``, imprime um resumo e aguarda Enter.
     """
     import pandas as pd
 
@@ -244,7 +516,7 @@ def executar_fluxo_maestro(
     skills = _get_skills(skills_list, skills_dir)
     agentes = agentes or []
     _agentes_dataframe = agentes_dataframe if agentes_dataframe is not None \
-        else ["agente_dados", "agente_financeiro", "agente_negocios"]
+        else ["agente-dados", "agente-financeiro", "agente-negocios"]
     resultado_mysql = None
     df_contexto = None
     df_variavel = None
@@ -254,11 +526,16 @@ def executar_fluxo_maestro(
     contrato_perguntas = {
         "schema": "perguntas_dados.v1",
         "campos": [
-            "metric_id", "descricao", "tipo", "coluna_valor", "group_by", "filtros", "janela_tempo", "top_n",
-            "coluna_data", "frequencia", "quantil", "agregacao"
+            "metric_id", "descricao", "tipo", "subtipo", "coluna_valor", "group_by", "filtros", "janela_tempo",
+            "janela_comparativa", "top_n", "coluna_data", "frequencia", "quantil", "agregacao",
         ],
-        "tipos_permitidos": ["count", "sum", "mean", "median", "percentile", "top_n", "timeseries", "null_rate", "nunique"],
-        "operadores_filtro_permitidos": ["eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in"],
+        "tipos_permitidos": [
+            "count", "sum", "mean", "median", "percentile", "top_n", "timeseries", "null_rate", "nunique",
+            "double_window",
+        ],
+        "operadores_filtro_permitidos": [
+            "eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "date_gte", "date_lt",
+        ],
     }
 
     def _to_scalar(v):
@@ -467,7 +744,7 @@ def executar_fluxo_maestro(
             )
 
         if not resultado["sucesso"]:
-            raise RuntimeError(f"[agente_mysql] {resultado['erro']}")
+            raise RuntimeError(f"[agente-mysql] {resultado['erro']}")
 
         if namespace is not None:
             agent.injetar_no_namespace(resultado, namespace)
@@ -550,6 +827,14 @@ def executar_fluxo_maestro(
             elif op == "not_in":
                 vals = val if isinstance(val, list) else [val]
                 out = out[~out[col].isin(vals)]
+            elif op == "date_gte":
+                ts = pd.to_datetime(out[col], errors="coerce")
+                lim = pd.Timestamp(val) if not isinstance(val, pd.Timestamp) else val
+                out = out[ts >= lim]
+            elif op == "date_lt":
+                ts = pd.to_datetime(out[col], errors="coerce")
+                lim = pd.Timestamp(val) if not isinstance(val, pd.Timestamp) else val
+                out = out[ts < lim]
             else:
                 raise ValueError(f"Operador de filtro não permitido: {op}")
         return out
@@ -575,8 +860,212 @@ def executar_fluxo_maestro(
             raise ValueError("Janela temporal solicitada, mas coluna de data não encontrada")
 
         dt = pd.to_datetime(df[col_data], errors="coerce")
-        limite = pd.Timestamp.now() - pd.Timedelta(days=int(dias))
+        ref = dt.max()
+        if pd.isna(ref):
+            return df.iloc[0:0].copy()
+        limite = ref - pd.Timedelta(days=int(dias))
         return df[dt >= limite]
+
+    def _preparar_group_by(trabalho: pd.DataFrame, item: Dict) -> List[str]:
+        group_by = item.get("group_by") or []
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        if not group_by and item.get("coluna_grupo"):
+            group_by = [item["coluna_grupo"]]
+        for g in group_by:
+            if g not in trabalho.columns:
+                raise ValueError(f"group_by inválido: coluna '{g}' não existe")
+        return group_by
+
+    def _metric_core(trabalho: pd.DataFrame, tipo: str, item: Dict) -> Any:
+        """Métrica sobre um slice já filtrado (sem janela_tempo / double_window)."""
+        tipo = (tipo or "").lower().strip()
+        group_by = _preparar_group_by(trabalho, item) if tipo == "top_n" else item.get("group_by") or []
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        for g in group_by:
+            if g and g not in trabalho.columns:
+                raise ValueError(f"group_by inválido: coluna '{g}' não existe")
+
+        coluna_valor = item.get("coluna_valor")
+
+        if tipo == "count":
+            if coluna_valor:
+                if coluna_valor not in trabalho.columns:
+                    raise ValueError(f"coluna_valor inválida: {coluna_valor}")
+                return int(trabalho[coluna_valor].notna().sum())
+            return int(len(trabalho))
+
+        if tipo in {"sum", "mean", "median"}:
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("sum/mean/median exigem coluna_valor válida")
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            if tipo == "sum":
+                return _to_scalar(round(s.sum(), 6))
+            if tipo == "mean":
+                return _to_scalar(round(s.mean(), 6)) if s.notna().any() else None
+            return _to_scalar(round(s.median(), 6)) if s.notna().any() else None
+
+        if tipo == "percentile":
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("percentile exige coluna_valor válida")
+            q = item.get("quantil")
+            if q is None:
+                q = item.get("percentil")
+            q = float(q if q is not None else 0.95)
+            if q > 1:
+                q = q / 100.0
+            q = min(max(q, 0.0), 1.0)
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            return _to_scalar(round(s.quantile(q), 6)) if s.notna().any() else None
+
+        if tipo == "null_rate":
+            col = coluna_valor or item.get("coluna")
+            if not col or col not in trabalho.columns:
+                raise ValueError("null_rate exige coluna válida")
+            return round(float(trabalho[col].isna().mean() * 100), 4)
+
+        if tipo == "nunique":
+            col = coluna_valor or item.get("coluna")
+            if not col or col not in trabalho.columns:
+                raise ValueError("nunique exige coluna válida")
+            return int(trabalho[col].nunique(dropna=True))
+
+        if tipo == "top_n":
+            n = int(item.get("top_n") or 10)
+            agg = (item.get("agregacao") or "count").lower()
+            grp_cols = _preparar_group_by(trabalho, item)
+            if not grp_cols:
+                raise ValueError("top_n exige group_by ou coluna_grupo válida")
+
+            def _row_grupo(k):
+                if len(grp_cols) == 1:
+                    return _to_scalar(k)
+                if isinstance(k, tuple):
+                    return [_to_scalar(x) for x in k]
+                return [_to_scalar(k)]
+
+            if agg == "count":
+                serie = trabalho.groupby(grp_cols, dropna=False).size().sort_values(ascending=False).head(n)
+                return [{"grupo": _row_grupo(k), "valor": int(v)} for k, v in serie.items()]
+            if agg == "nunique":
+                col_nu = coluna_valor or item.get("coluna")
+                if not col_nu or col_nu not in trabalho.columns:
+                    raise ValueError("top_n com agregacao nunique exige coluna_valor ou coluna")
+                serie = (
+                    trabalho.groupby(grp_cols, dropna=False)[col_nu]
+                    .nunique()
+                    .sort_values(ascending=False)
+                    .head(n)
+                )
+                return [{"grupo": _row_grupo(k), "valor": int(v)} for k, v in serie.items()]
+            if not coluna_valor or coluna_valor not in trabalho.columns:
+                raise ValueError("top_n com agregacao numérica exige coluna_valor")
+            s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
+            df_aux = trabalho.assign(__valor__=s)
+            gbagg = df_aux.groupby(grp_cols, dropna=False)["__valor__"]
+            if agg == "sum":
+                serie = gbagg.sum().sort_values(ascending=False).head(n)
+            elif agg == "mean":
+                serie = gbagg.mean().sort_values(ascending=False).head(n)
+            elif agg == "median":
+                serie = gbagg.median().sort_values(ascending=False).head(n)
+            else:
+                raise ValueError(f"Agregação não permitida em top_n: {agg}")
+            return [
+                {
+                    "grupo": _row_grupo(k),
+                    "valor": _to_scalar(round(float(v), 6)) if pd.notna(v) else None,
+                }
+                for k, v in serie.items()
+            ]
+
+        if tipo == "timeseries":
+            col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
+            if not col_data:
+                raise ValueError("timeseries exige coluna de data")
+            freq = (item.get("frequencia") or "ME").upper()
+            agg = (item.get("agregacao") or "count").lower()
+            dt = pd.to_datetime(trabalho[col_data], errors="coerce")
+            df_aux = trabalho.assign(__dt__=dt)
+            df_aux = df_aux[df_aux["__dt__"].notna()].set_index("__dt__")
+            if agg == "count":
+                serie = df_aux.resample(freq).size()
+            else:
+                if not coluna_valor or coluna_valor not in df_aux.columns:
+                    raise ValueError("timeseries com agregação numérica exige coluna_valor")
+                s = pd.to_numeric(df_aux[coluna_valor], errors="coerce")
+                if agg == "sum":
+                    serie = s.resample(freq).sum()
+                elif agg == "mean":
+                    serie = s.resample(freq).mean()
+                else:
+                    raise ValueError(f"Agregação não permitida em timeseries: {agg}")
+            return [
+                {"periodo": str(k.date()) if hasattr(k, "date") else str(k),
+                 "valor": _to_scalar(round(v, 6) if isinstance(v, (int, float)) else v)}
+                for k, v in serie.items()
+            ]
+
+        raise ValueError(f"Tipo não suportado em metric_core: {tipo}")
+
+    def _double_window_result(trabalho: pd.DataFrame, item: Dict) -> Dict:
+        jw = item.get("janela_comparativa") or {}
+        rec = jw.get("recente") or {}
+        base_w = jw.get("base") or {}
+        d_rec = int(rec.get("dias", 90))
+        d0 = int(base_w.get("inicio_dias", 180))
+        d1 = int(base_w.get("fim_dias", 90))
+        col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
+        if not col_data:
+            raise ValueError("double_window exige coluna de data (coluna_data ou created_at)")
+        dt = pd.to_datetime(trabalho[col_data], errors="coerce")
+        ref = dt.max()
+        if pd.isna(ref):
+            return {"recente": None, "base": None, "delta_pct": None, "aviso": "sem datas válidas"}
+
+        mask_r = (dt >= ref - pd.Timedelta(days=d_rec)) & (dt <= ref)
+        mask_b = (dt >= ref - pd.Timedelta(days=d0)) & (dt < ref - pd.Timedelta(days=d1))
+        df_r = trabalho.loc[mask_r]
+        df_b = trabalho.loc[mask_b]
+
+        subtipo = (item.get("subtipo") or "sum").lower().strip()
+        if subtipo not in contrato_perguntas["tipos_permitidos"] or subtipo == "double_window":
+            raise ValueError(f"subtipo inválido para double_window: {subtipo}")
+
+        inner = {k: v for k, v in item.items() if k not in ("janela_comparativa", "janela_tempo", "tipo")}
+        inner["tipo"] = subtipo
+        vr = _metric_core(df_r, subtipo, inner)
+        vb = _metric_core(df_b, subtipo, inner)
+
+        out: Dict = {"recente": vr, "base": vb}
+
+        if subtipo in {"sum", "mean", "median", "count", "nunique"}:
+            if vr is not None and vb is not None:
+                try:
+                    fv, fb = float(vr), float(vb)
+                    out["delta_pct"] = None if fb == 0 else _to_scalar(round((fv - fb) / fb * 100.0, 4))
+                except (TypeError, ValueError):
+                    out["delta_pct"] = None
+        elif subtipo == "top_n" and isinstance(vr, list) and isinstance(vb, list):
+            mr = {json.dumps(e["grupo"], ensure_ascii=False, default=str): e["valor"] for e in vr}
+            mb = {json.dumps(e["grupo"], ensure_ascii=False, default=str): e["valor"] for e in vb}
+            por_grupo = []
+            for ck in sorted(set(mr) | set(mb), key=lambda x: x):
+                glist = json.loads(ck)
+                a_val = mr.get(ck)
+                b_val = mb.get(ck)
+                av = 0.0 if a_val is None else float(a_val)
+                bv = 0.0 if b_val is None else float(b_val)
+                dp = None if bv == 0 else _to_scalar(round((av - bv) / bv * 100.0, 4))
+                por_grupo.append({
+                    "grupo": glist,
+                    "valor_recente": a_val,
+                    "valor_base": b_val,
+                    "delta_pct": dp,
+                })
+            out["por_grupo"] = por_grupo
+        return out
 
     def _executar_perguntas_agregadas(parsed: Dict) -> Dict:
         perguntas = parsed.get("perguntas_dados") or []
@@ -587,7 +1076,10 @@ def executar_fluxo_maestro(
                 "resultado_obj": {"schema_version": "1.0", "metricas": [], "erros": ["perguntas_dados ausente ou vazio"]},
             }
 
-        df_nome = parsed.get("df_variavel_usada") or (df_contexto or {}).get("df_variavel")
+        fb_ctx = (df_contexto or {}).get("df_variavel")
+        df_nome = _normalizar_nome_variavel_dataframe(parsed.get("df_variavel_usada"), None)
+        if not df_nome:
+            df_nome = _normalizar_nome_variavel_dataframe(fb_ctx, None)
         namespace = mysql_injetar_namespace if mysql_injetar_namespace is not None else globals()
         if not df_nome or df_nome not in namespace:
             msg = f"DataFrame '{df_nome}' não encontrado no namespace"
@@ -611,123 +1103,29 @@ def executar_fluxo_maestro(
 
                 trabalho = base_df.copy()
                 trabalho = _aplicar_filtros(trabalho, item.get("filtros") or [])
-                trabalho = _aplicar_janela(trabalho, item)
 
-                group_by = item.get("group_by") or []
-                if isinstance(group_by, str):
-                    group_by = [group_by]
-                for g in group_by:
-                    if g not in trabalho.columns:
-                        raise ValueError(f"group_by inválido: coluna '{g}' não existe")
-
-                coluna_valor = item.get("coluna_valor")
-
-                if tipo == "count":
-                    if coluna_valor:
-                        if coluna_valor not in trabalho.columns:
-                            raise ValueError(f"coluna_valor inválida: {coluna_valor}")
-                        valor = int(trabalho[coluna_valor].notna().sum())
-                    else:
-                        valor = int(len(trabalho))
-
-                elif tipo in {"sum", "mean", "median"}:
-                    if not coluna_valor or coluna_valor not in trabalho.columns:
-                        raise ValueError("sum/mean/median exigem coluna_valor válida")
-                    s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                    if tipo == "sum":
-                        valor = _to_scalar(round(s.sum(), 6))
-                    elif tipo == "mean":
-                        valor = _to_scalar(round(s.mean(), 6)) if s.notna().any() else None
-                    else:
-                        valor = _to_scalar(round(s.median(), 6)) if s.notna().any() else None
-
-                elif tipo == "percentile":
-                    if not coluna_valor or coluna_valor not in trabalho.columns:
-                        raise ValueError("percentile exige coluna_valor válida")
-                    q = item.get("quantil")
-                    if q is None:
-                        q = item.get("percentil")
-                    q = float(q if q is not None else 0.95)
-                    if q > 1:
-                        q = q / 100.0
-                    q = min(max(q, 0.0), 1.0)
-                    s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                    valor = _to_scalar(round(s.quantile(q), 6)) if s.notna().any() else None
-
-                elif tipo == "null_rate":
-                    col = coluna_valor or item.get("coluna")
-                    if not col or col not in trabalho.columns:
-                        raise ValueError("null_rate exige coluna válida")
-                    valor = round(float(trabalho[col].isna().mean() * 100), 4)
-
-                elif tipo == "nunique":
-                    col = coluna_valor or item.get("coluna")
-                    if not col or col not in trabalho.columns:
-                        raise ValueError("nunique exige coluna válida")
-                    valor = int(trabalho[col].nunique(dropna=True))
-
-                elif tipo == "top_n":
-                    n = int(item.get("top_n") or 10)
-                    agg = (item.get("agregacao") or "count").lower()
-                    grp = group_by[0] if group_by else item.get("coluna_grupo")
-                    if not grp or grp not in trabalho.columns:
-                        raise ValueError("top_n exige group_by ou coluna_grupo válida")
-
-                    if agg == "count":
-                        serie = trabalho[grp].value_counts(dropna=False).head(n)
-                        valor = [{"grupo": _to_scalar(k), "valor": int(v)} for k, v in serie.items()]
-                    else:
-                        if not coluna_valor or coluna_valor not in trabalho.columns:
-                            raise ValueError("top_n com agregacao != count exige coluna_valor")
-                        s = pd.to_numeric(trabalho[coluna_valor], errors="coerce")
-                        df_aux = trabalho.copy()
-                        df_aux["__valor__"] = s
-                        if agg == "sum":
-                            serie = df_aux.groupby(grp, dropna=False)["__valor__"].sum().sort_values(ascending=False).head(n)
-                        elif agg == "mean":
-                            serie = df_aux.groupby(grp, dropna=False)["__valor__"].mean().sort_values(ascending=False).head(n)
-                        else:
-                            raise ValueError(f"Agregação não permitida em top_n: {agg}")
-                        valor = [{"grupo": _to_scalar(k), "valor": _to_scalar(round(v, 6))} for k, v in serie.items()]
-
-                elif tipo == "timeseries":
-                    col_data = _resolver_col_data(trabalho, preferida=item.get("coluna_data"))
-                    if not col_data:
-                        raise ValueError("timeseries exige coluna de data")
-                    freq = (item.get("frequencia") or "ME").upper()
-                    agg = (item.get("agregacao") or "count").lower()
-                    dt = pd.to_datetime(trabalho[col_data], errors="coerce")
-                    df_aux = trabalho.copy()
-                    df_aux["__dt__"] = dt
-                    df_aux = df_aux[df_aux["__dt__"].notna()]
-                    df_aux = df_aux.set_index("__dt__")
-
-                    if agg == "count":
-                        serie = df_aux.resample(freq).size()
-                    else:
-                        if not coluna_valor or coluna_valor not in df_aux.columns:
-                            raise ValueError("timeseries com agregação numérica exige coluna_valor")
-                        s = pd.to_numeric(df_aux[coluna_valor], errors="coerce")
-                        if agg == "sum":
-                            serie = s.resample(freq).sum()
-                        elif agg == "mean":
-                            serie = s.resample(freq).mean()
-                        else:
-                            raise ValueError(f"Agregação não permitida em timeseries: {agg}")
-
-                    valor = [
-                        {"periodo": str(k.date()) if hasattr(k, "date") else str(k), "valor": _to_scalar(round(v, 6) if isinstance(v, (int, float)) else v)}
-                        for k, v in serie.items()
-                    ]
-
+                if tipo == "double_window":
+                    valor = _double_window_result(trabalho, item)
                 else:
-                    raise ValueError(f"Tipo não suportado: {tipo}")
+                    trabalho = _aplicar_janela(trabalho, item)
+                    valor = _metric_core(trabalho, tipo, item)
+
+                if tipo == "top_n":
+                    group_by_metrica = list(_preparar_group_by(trabalho, item))
+                else:
+                    _rg = item.get("group_by") or []
+                    if isinstance(_rg, str):
+                        _rg = [_rg]
+                    group_by_metrica = list(_rg)
+                    if not group_by_metrica and item.get("coluna_grupo"):
+                        group_by_metrica = [item["coluna_grupo"]]
 
                 metricas.append({
                     "metric_id": metric_id,
                     "descricao": desc,
                     "tipo": tipo,
                     "status": "ok",
+                    "group_by": group_by_metrica,
                     "resultado": valor,
                 })
 
@@ -816,6 +1214,27 @@ def executar_fluxo_maestro(
             print(f"[MAESTRO] DataFrame: '{df_variavel}' — {df_contexto.get('df_info', '')}")
         contexto_maestro = f"{contexto_maestro}; DF em memória: {df_variavel}"
 
+    def _merge_filtros_concessionaria(perguntas: List[Dict], campo: str, valor_nome: str) -> None:
+        filtro = {"coluna": campo, "operador": "eq", "valor": valor_nome}
+        for p in perguntas:
+            flist = list(p.get("filtros") or [])
+            if not any(
+                f.get("coluna") == campo and f.get("operador") == "eq" and f.get("valor") == valor_nome
+                for f in flist
+            ):
+                flist.append(filtro)
+            p["filtros"] = flist
+
+    def _garantir_filtro_oss_positivo(perguntas: List[Dict]) -> None:
+        for p in perguntas:
+            flist = list(p.get("filtros") or [])
+            if not any(
+                f.get("coluna") == "oss_valor_venda_real" and str(f.get("operador") or "").lower() == "gt"
+                for f in flist
+            ):
+                flist.append({"coluna": "oss_valor_venda_real", "operador": "gt", "valor": 0})
+            p["filtros"] = flist
+
     def _invocar_um_agente(skill_id: str) -> Dict:
         """Invocação de um único agente (modo conhecimento ou 2 fases). Retorna o dict de resposta."""
         usa_dataframe = bool(df_contexto and skill_id in _agentes_dataframe)
@@ -872,6 +1291,35 @@ def executar_fluxo_maestro(
                 or "FASE 1 não retornou perguntas_dados."
             )
             return parsed1
+        if skill_id == "agente-analise-concessionaria":
+            try:
+                msg_ext = (
+                    f"Pergunta do usuário:\n{pergunta}\n\n"
+                    "Responda só JSON: {\"concessionaria\": \"nome da concessionária em linguagem natural ou null\", "
+                    "\"campo\": \"concessionaria_nome\"}. Use campo concessionaria_nome se não tiver certeza. "
+                    "Se nenhuma concessionária for citada, concessionaria deve ser null."
+                )
+                modelo_x = model or model_maestro
+                resp_e = client.chat.completions.create(
+                    model=modelo_x,
+                    messages=[
+                        {"role": "system", "content": "Você extrai entidades. Resposta única: objeto JSON."},
+                        {"role": "user", "content": msg_ext},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                ext = extrair_json((resp_e.choices[0].message.content or "").strip()) or {}
+                nome_c = ext.get("concessionaria")
+                campo_c = ext.get("campo") or "concessionaria_nome"
+                if nome_c:
+                    _merge_filtros_concessionaria(parsed1["perguntas_dados"], str(campo_c), str(nome_c))
+                    parsed1["filtro_concessionaria_extraido"] = {"campo": campo_c, "valor": nome_c}
+                    if verbose:
+                        print(f"[MAESTRO]   [{skill_id}] Filtro concessionária: {campo_c} = {nome_c}")
+            except Exception as exc:
+                if verbose:
+                    print(f"[MAESTRO]   [{skill_id}] Extração concessionária: {exc}")
+            _garantir_filtro_oss_positivo(parsed1["perguntas_dados"])
         exec_info = _executar_perguntas_agregadas(parsed1)
         resultado_extracao = exec_info.get("resultado_obj", {})
         if verbose:
@@ -885,8 +1333,45 @@ def executar_fluxo_maestro(
             ).strip()
             parsed1["resultado_execucao"] = resultado_extracao
             return parsed1
+        if (
+            pausa_antes_clustering_metricas
+            and skill_id == "agente_clusterizacao_concessionaria"
+        ):
+            _lim = 32_000
+            _pj = json.dumps(parsed1, ensure_ascii=False, indent=2, default=str)
+            _re = json.dumps(resultado_extracao, ensure_ascii=False, indent=2, default=str)
+            if len(_pj) > _lim:
+                _pj = _pj[:_lim] + f"\n... [truncado, total {len(_pj)} chars]"
+            if len(_re) > _lim:
+                _re = _re[:_lim] + f"\n... [truncado, total {len(_re)} chars]"
+            print("\n" + "=" * 72)
+            print(
+                "[MAESTRO] PAUSA: FASE 1 (agente_clusterizacao_concessionaria) — "
+                "parsed1 (modelo) e resultado_extracao (agregados) antes de executar_clustering_metricas."
+            )
+            print("--- parsed1 ---\n", _pj, sep="")
+            print("\n--- resultado_extracao ---\n", _re, sep="")
+            input("[MAESTRO] Enter para continuar... ")
+        if skill_id == "agente_clusterizacao_concessionaria":
+            try:
+                clu = executar_clustering_metricas(resultado_extracao, log_diagnostico=verbose)
+                if clu:
+                    resultado_extracao["clustering_deterministico"] = clu
+            except Exception as exc:
+                if verbose:
+                    print(f"[MAESTRO]   [{skill_id}] clustering métricas: {exc}")
         if verbose:
             print(f"[MAESTRO]   [{skill_id}] FASE 2: enviando agregados para interpretação...")
+        _instr_f2 = (
+            INSTRUCAO_FASE2_AGENTE_CLUSTERIZACAO
+            if skill_id == "agente_clusterizacao_concessionaria"
+            else (
+                "FASE 2 — INTERPRETAÇÃO: você recebeu em 'resultado_extracao' apenas métricas agregadas reais. "
+                "Interprete conforme seu domínio e responda a pergunta do usuário. "
+                "Não solicitar nem inferir dados linha a linha. "
+                "Retorne o JSON completo de resposta (sem codigo_pandas)."
+            )
+        )
         payload_fase2 = {
             "skill_invocada": skill_id,
             "pergunta": pergunta,
@@ -894,18 +1379,17 @@ def executar_fluxo_maestro(
             "tipo_resposta_esperada": analise.get("tipo_resposta_esperada", "analítica"),
             "fase": "interpretacao",
             "resultado_extracao": resultado_extracao,
-            "instrucao": (
-                "FASE 2 — INTERPRETAÇÃO: você recebeu em 'resultado_extracao' apenas métricas agregadas reais. "
-                "Interprete conforme seu domínio e responda a pergunta do usuário. "
-                "Não solicitar nem inferir dados linha a linha. "
-                "Retorne o JSON completo de resposta (sem codigo_pandas)."
-            ),
+            "instrucao": _instr_f2,
         }
+        if parsed1.get("filtro_concessionaria_extraido"):
+            payload_fase2["filtro_concessionaria_extraido"] = parsed1["filtro_concessionaria_extraido"]
         raw2 = invocar_agente_maestro(client, skill_id, payload_fase2, model=model, skills_list=skills, skills_dir=skills_dir)
         parsed2 = extrair_json(raw2)
         if parsed2 and isinstance(parsed2, dict):
             parsed2.setdefault("agente_id", skill_id)
             parsed2["resultado_execucao"] = resultado_extracao
+            if parsed1.get("filtro_concessionaria_extraido"):
+                parsed2["filtro_concessionaria_extraido"] = parsed1["filtro_concessionaria_extraido"]
             return parsed2
         parsed1["resultado_execucao"] = resultado_extracao
         parsed1["resposta"] = (
@@ -950,9 +1434,9 @@ def executar_fluxo_maestro(
                 for r in para_avaliador
             ],
         }
-        skill_aval = get_skill_by_id(skills, "avaliador_coerencia")
+        skill_aval = get_skill_by_id(skills, "avaliador-coerencia")
         if not skill_aval:
-            raise ValueError("Skill 'avaliador_coerencia' não encontrada.")
+            raise ValueError("Skill 'avaliador-coerencia' não encontrada.")
         model_aval = skill_aval.get("model") or model
         user_aval = (
             json.dumps(payload_aval, ensure_ascii=False)
@@ -979,6 +1463,54 @@ def executar_fluxo_maestro(
             print("[MAESTRO] Passo 6: Formatando entrega ao usuário.")
         entrega_final = _formatar_entrega(pergunta, respostas_agentes, avaliacao, para_avaliador)
 
+    artefatos_graficos_cluster: Dict[str, str] = {}
+    if gerar_graficos_cluster_automatico:
+        try:
+            from app.services.graficos_cluster import gerar_graficos_cluster_resultado
+
+            _out_gc = graficos_cluster_output_dir or os.environ.get(
+                "MAESTRO_GRAFICOS_CLUSTER_DIR", "output/graficos_cluster"
+            )
+            artefatos_graficos_cluster = gerar_graficos_cluster_resultado(
+                {"respostas_agentes": respostas_agentes},
+                output_dir=_out_gc,
+            )
+        except Exception as exc_gc:
+            if verbose:
+                print(f"[MAESTRO] Passo 7a — Gráficos cluster (opcional): {exc_gc}")
+
+    visualizador_pos_maestro: Optional[Dict[str, Any]] = None
+    if invocar_visualizador_final:
+        skill_viz = get_skill_by_id(skills, "agente_visualizador")
+        tab_viz = extrair_tabela_para_visualizador_maestro(respostas_agentes)
+        if skill_viz and tab_viz:
+            if verbose:
+                print("[MAESTRO] Passo 7b — Invocando agente_visualizador (artefato Chart.js / análise).")
+            try:
+                payload_viz: Dict[str, Any] = {
+                    "dados": {"tabela": tab_viz},
+                    "pergunta_contexto": (pergunta or "")[:800],
+                    "apenas_recomendacao": False,
+                    "biblioteca": "chartjs",
+                }
+                raw_viz = invocar_agente_maestro(
+                    client,
+                    "agente_visualizador",
+                    payload_viz,
+                    model=model,
+                    skills_list=skills,
+                    skills_dir=skills_dir,
+                )
+                visualizador_pos_maestro = extrair_json(raw_viz)
+            except Exception as exc_v:
+                if verbose:
+                    print(f"[MAESTRO] Visualizador final: {exc_v}")
+                visualizador_pos_maestro = {"erro": str(exc_v), "pode_responder": False}
+        elif verbose and not tab_viz:
+            print("[MAESTRO] Passo 7b — agente_visualizador omitido (sem tabela extraível das métricas).")
+        elif verbose and not skill_viz:
+            print("[MAESTRO] Passo 7b — skill agente_visualizador não encontrada.")
+
     if verbose:
         print("[MAESTRO] Fluxo concluído.")
     return {
@@ -988,4 +1520,6 @@ def executar_fluxo_maestro(
         "entrega_final": entrega_final,
         "resultado_mysql": resultado_mysql,
         "df_variavel": df_variavel,
+        "artefatos_graficos_cluster": artefatos_graficos_cluster,
+        "visualizador_pos_maestro": visualizador_pos_maestro,
     }

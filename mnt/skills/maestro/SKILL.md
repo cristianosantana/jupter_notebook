@@ -36,6 +36,8 @@ Estes são os agentes registrados no sistema. Cada um possui sua própria skill 
 | `avaliador_coerencia` | Avaliador de Coerência | Avaliação | **Sempre invocado** — avalia e ranqueia todas as respostas |
 | `agente_mysql` | MySQL Data Loader | Dados / MySQL | Sempre que a análise precisar de dados de uma tabela MySQL |
 | `agente_analise_os` | Analista de OS | Dados / OS / Gerencial | Análise de OS, concessionárias, vendedores, sazonalidade, ticket médio, relatório gerencial |
+| `agente_clusterizacao_concessionaria` | Especialista Clusterização Concessionarias | Dados / OS / Gerencial | Segmentação, clusters, perfis por loja, peers, benchmarking, outliers — **catálogo de perguntas:** skill `agente_clusterizacao_concessionaria` → seção *Perguntas que acionam este agente* (7 categorias + combinações Maestro) |
+| `agente_visualizador` | Visualizador de Dados | Visualização | Seleção de tipo de gráfico (Chart.js / Vega-Lite) e código embarcável; **no pipeline automático** é invocado **após** o avaliador quando há métricas agregadas extraíveis (`dados.tabela`). Artefatos PNG de cluster vêm do módulo de gráficos da skill de clusterização. |
 
 > Para adicionar novos agentes ao registro, consulte a seção **Extensibilidade** ao final.
 ```
@@ -51,6 +53,7 @@ PASSO 3 → Invocar cada agente selecionado (skill independente)
 PASSO 4 → Coletar respostas + scores
 PASSO 5 → Invocar avaliador_coerencia com todas as respostas
 PASSO 6 → Entregar respostas qualificadas ao usuário
+PASSO 7 → Artefatos pós-Maestro (implementação técnica): gerar PNGs de cluster a partir de `resultado_execucao` quando aplicável; invocar `agente_visualizador` com a primeira série tabular extraível (top_n ou timeseries) para recomendação + `codigo_grafico`. Não substitui a escolha de agentes no PASSO 2 quando o utilizador pede visualização como tema principal.
 ```
 
 ---
@@ -75,7 +78,7 @@ Informação central necessária: [o que precisa ser respondido]
 
 **Regras de seleção:**
 
-- Mínimo: 2 agentes | Máximo: 5 agentes
+- Mínimo: 2 agentes | Máximo: N agentes
 - Selecionar por **sobreposição direta** com o domínio da pergunta
 - Incluir agentes com **perspectiva complementar** relevante
 - Excluir agentes sem conexão real com o tema
