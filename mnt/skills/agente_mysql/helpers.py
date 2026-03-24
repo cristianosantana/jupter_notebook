@@ -17,7 +17,7 @@ Múltiplas tabelas com LEFT JOINs (retorna 1 único DataFrame):
     df = resultado["dataframe"]   # único df com colunas de todas as tabelas
 
 Onde a query principal roda e o resultado sai:
-    - ``pd.read_sql(...)`` em ``carregar_tabela`` e ``carregar_multiplas_tabelas`` (SELECT nos dados).
+    - ``pd.read_sql(...)`` em ``carregar_tabela``, ``carregar_multiplas_tabelas`` e ``executar_select`` (SELECT nos dados).
     - O dict padronizado é montado em ``_montar_retorno`` (chave ``dataframe`` + metadados).
 """
 
@@ -215,6 +215,10 @@ class MySQLAgent:
             {"tabela": "clientes",    "alias": "c", "fk": "os.cliente_id = c.id"},
         ], limite=50.000)
         df = r["dataframe"]   # colunas de todas as tabelas num único df
+
+    SELECT arbitrário:
+        r = agent.executar_select("SELECT id, nome FROM concessionarias LIMIT 10")
+        df = r["dataframe"]
     """
 
     def __init__(
@@ -527,6 +531,79 @@ class MySQLAgent:
         # --- Retorno ao chamador: dict com dataframe + metadados (via _montar_retorno) ---
         return self._montar_retorno(resultado, df)
 
+    def executar_select(
+        self,
+        sql: str,
+        verbose: bool = True,
+        variavel_notebook: str = "df_select",
+    ) -> Dict[str, Any]:
+        """
+        Executa um SELECT SQL arbitrário e retorna o mesmo dict padronizado que ``carregar_tabela``.
+
+        Parâmetros:
+            sql: texto completo do SELECT (sem ponto e vírgula obrigatório no final).
+            verbose: imprime progresso e query.
+            variavel_notebook: nome sugerido para injeção no namespace.
+
+        Retorno:
+            ``sucesso``, ``dataframe``, ``erro``, ``metadados`` (inclui ``query_executada``), ``variavel``.
+        """
+        sql = (sql or "").strip()
+        resultado = ResultadoCarregamento(
+            sucesso=False,
+            tabela="(select)",
+            banco=self.conexao.banco,
+            variavel_notebook=variavel_notebook,
+            query_executada=sql,
+        )
+
+        if not sql:
+            resultado.erro = "SQL vazio."
+            if verbose:
+                print(f"[agente_mysql] ❌ {resultado.erro}")
+            return self._montar_retorno(resultado, None)
+
+        if verbose:
+            print(f"[agente_mysql] Conectando ao banco '{self.conexao.banco}'...")
+
+        try:
+            engine = self._get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except (OperationalError, SQLAlchemyError) as e:
+            resultado.erro = f"Falha na conexão: {e}"
+            if verbose:
+                print(f"[agente_mysql] ❌ {resultado.erro}")
+            return self._montar_retorno(resultado, None)
+
+        if verbose:
+            print("[agente_mysql] Executando SELECT livre...")
+            print(f"[agente_mysql] Query:\n{sql}\n")
+
+        try:
+            engine = self._get_engine()
+            df = pd.read_sql(text(sql), con=engine)
+        except SQLAlchemyError as e:
+            resultado.erro = f"Erro ao executar query: {e}"
+            if verbose:
+                print(f"[agente_mysql] ❌ {resultado.erro}")
+            return self._montar_retorno(resultado, None)
+
+        resultado.sucesso = True
+        resultado.linhas_carregadas = len(df)
+        resultado.total_linhas = len(df)
+        resultado.dataframe = df
+        resultado.colunas = self._inspecionar_colunas_df(df)
+        resultado.df_info_str = self._capturar_df_info(df)
+
+        if verbose:
+            print(
+                f"[agente_mysql] ✅ {len(df):,} linhas × {len(df.columns)} colunas "
+                f"→ '{variavel_notebook}'"
+            )
+
+        return self._montar_retorno(resultado, df)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -600,3 +677,20 @@ def carregar_multiplas_tabelas_mysql(
     agent = MySQLAgent(host=host, porta=porta, usuario=usuario, senha=senha, banco=banco)
     resultado = agent.carregar_multiplas_tabelas(definicoes=definicoes, limite=limite,
                                                  filtro_where=filtro_where, verbose=verbose)
+    if injetar_globals is not None:
+        agent.injetar_no_namespace(resultado, injetar_globals)
+    return resultado
+
+def executar_select_mysql(
+    sql: str,
+    host: str = "localhost", porta: int = 3306,
+    usuario: str = "root", senha: str = "", banco: str = "",
+    injetar_globals: Optional[Dict] = None, verbose: bool = True,
+) -> Dict[str, Any]:
+    """Função de conveniêdo executar SELECT."""
+    agent = MySQLAgent(host=host, porta=porta, usuario=usuario, senha=senha, banco=banco)
+    resultado = agent.executar_select(sql=sql, verbose=verbose)
+
+    if injetar_globals is not None:
+        agent.injetar_no_namespace(resultado, injetar_globals)
+    return resultado

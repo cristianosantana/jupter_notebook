@@ -1,9 +1,11 @@
 SELECT 
-    con.nome AS concessionaria,
+    con.id AS concessionaria_id,
+    con.nome AS concessionaria_nome,
     -- Tradução do número do dia para nome (1=Domingo, 2=Segunda...)
     DAYNAME(os.created_at) AS dia_semana,
     HOUR(os.created_at) AS hora_dia,
-    s.nome AS servico,
+    s.id AS servico_id,
+    s.nome AS servico_nome,
     COUNT(DISTINCT os.id) AS qtd_vendas,
     SUM(oss.valor_venda_real) AS faturamento_total,
     -- Ranking para identificar o serviço "campeão" naquele horário

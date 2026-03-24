@@ -1,8 +1,12 @@
 SELECT 
+    con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,
-    p_origem.nome AS produtivo_original,
-    p_destino.nome AS produtivo_reparo,
-    s.nome AS servico_reclamado,
+    p_origem.id AS produtivo_original_id,
+    p_origem.nome AS produtivo_original_nome,
+    p_destino.id AS produtivo_reparo_id,
+    p_destino.nome AS produtivo_reparo_nome,
+    s.id AS servico_reclamado_id,
+    s.nome AS servico_reclamado_nome,
     -- Usamos DISTINCT para não contar a mesma relação de retorno múltiplas vezes
     COUNT(DISTINCT ret.id) AS qtd_retrabalhos,
     MAX(ret.created_at) AS ultimo_retrabalho_registrado

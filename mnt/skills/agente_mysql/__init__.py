@@ -4,6 +4,7 @@ from .helpers import (
     MySQLConexao,
     carregar_multiplas_tabelas_mysql,
     carregar_tabela_mysql,
+    executar_select_mysql,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "MySQLConexao",
     "carregar_tabela_mysql",
     "carregar_multiplas_tabelas_mysql",
+    "executar_select_mysql",
 ]

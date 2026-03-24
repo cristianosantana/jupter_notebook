@@ -1,7 +1,10 @@
 SELECT 
-    con.nome AS concessionaria,
-    v.nome AS vendedor,
-    s.nome AS tipo_servico,
+    con.id AS concessionaria_id,
+    con.nome AS concessionaria_nome,
+    v.id AS vendedor_id,
+    v.nome AS vendedor_nome,
+    s.id AS servico_id,
+    s.nome AS servico_nome,
     COUNT(DISTINCT os.id) AS total_oportunidades_os,
     SUM(CASE WHEN os.paga = 1 AND os.cancelada = 0 THEN 1 ELSE 0 END) AS total_conversoes,
     ROUND(
@@ -18,5 +21,5 @@ GROUP BY
     v.id, 
     s.id
 ORDER BY 
-    con.nome, 
+    con.id, 
     taxa_conversao_pct DESC;
