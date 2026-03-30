@@ -46,6 +46,7 @@ Você é especialista em **seleção inteligente de gráficos** e geração de v
 ## Exemplo: Seu Processo
 
 **Entrada**: Dados de ticket por concessionária (50 linhas)
+
 1. Detecta: 1 dimensão categórica (concessionária), 1 contínua (ticket)
 2. Objetivo: Comparação entre unidades
 3. **Seleção**: Bar Chart

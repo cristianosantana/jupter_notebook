@@ -29,6 +29,10 @@ MAX_TOOL_ROUNDS = 24
 MAX_HISTORY_MESSAGES = 20
 MAX_MESSAGE_AGE_SECONDS = 7200.0
 TOOL_RESULT_PREVIEW_MAX = 500
+# Margem extra no orçamento (metadados de pedido, imperfeição da estimativa char→token).
+CONTEXT_BUDGET_SAFETY_MARGIN = 768
+# ~3 caracteres por token: estimativa conservadora (podagem um pouco mais agressiva).
+CHARS_PER_TOKEN_ESTIMATE = 3
 
 # Enums
 AgentType = Literal["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
@@ -171,6 +175,52 @@ def _messages_with_skill(
     return out
 
 
+def _estimate_tokens_from_text(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE)
+
+
+def _estimate_tokens_for_message(msg: dict[str, Any]) -> int:
+    """Tokens aproximados de uma mensagem no formato chat (content + tool_calls)."""
+    n = 4  # overhead de estrutura (role, campos)
+    role = msg.get("role")
+    if role is not None:
+        n += _estimate_tokens_from_text(str(role))
+    content = msg.get("content")
+    if isinstance(content, str):
+        n += _estimate_tokens_from_text(content)
+    elif isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict):
+                txt = part.get("text")
+                if isinstance(txt, str):
+                    n += _estimate_tokens_from_text(txt)
+    tool_calls = msg.get("tool_calls")
+    if tool_calls:
+        n += _estimate_tokens_from_text(json.dumps(tool_calls, ensure_ascii=False))
+    return n
+
+
+def _estimate_prompt_tokens_messages_plus_skill(
+    skill: str,
+    messages: list[dict[str, Any]],
+) -> int:
+    """Estimativa do prompt enviado ao modelo (SKILL fundido no system + histórico)."""
+    merged = _messages_with_skill(skill, messages)
+    return sum(_estimate_tokens_for_message(m) for m in merged)
+
+
+def _estimate_tokens_from_tool_dicts(tools: list[dict[str, Any]] | None) -> int:
+    """Tokens aproximados de definições de ferramentas já serializáveis como dict (ex.: OpenAI-style)."""
+    if not tools:
+        return 0
+    total = 128
+    for t in tools:
+        total += _estimate_tokens_from_text(json.dumps(t, ensure_ascii=False))
+    return total
+
+
 class ModularOrchestrator:
     """
     Orquestrador Modular com suporte a múltiplos agentes especializados.
@@ -210,7 +260,9 @@ class ModularOrchestrator:
     async def set_agent(self, agent_type: AgentType) -> None:
         """Muda agente ativo, carregando seu SKILL."""
         if agent_type == self.current_agent:
-            return  # Já carregado
+            if not self.current_skill:
+                self.current_skill, self.current_metadata = self.skill_loader.load_skill(agent_type)
+            return
 
         print(f"🔄 Switching agent: {self.current_agent} → {agent_type}")
         self.current_skill, self.current_metadata = self.skill_loader.load_skill(agent_type)
@@ -218,12 +270,56 @@ class ModularOrchestrator:
         self.messages.clear()  # Limpa histórico ao trocar agente
         self._message_times.clear()
 
+    async def reset_conversation(self) -> None:
+        """Limpa histórico e reposiciona no Maestro (novo tópico)."""
+        self.messages.clear()
+        self._message_times.clear()
+        await self.set_agent("maestro")
+
     def _append_message(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
         self._message_times.append(time.time())
 
+    def _strip_leading_orphan_tools(self) -> None:
+        while self.messages and self.messages[0].get("role") == "tool":
+            self.messages.pop(0)
+            self._message_times.pop(0)
+
+    def _estimate_tools_tokens(self) -> int:
+        """Tokens aproximados do bloco `tools` enviado ao modelo no passo atual."""
+        if self.current_agent == "maestro":
+            return _estimate_tokens_from_tool_dicts(MAESTRO_TOOLS_ONLY)
+        if not self.tools:
+            return 0
+        total = 128  # cabeçalho / estrutura do bloco tools
+        for t in self.tools:
+            try:
+                total += _estimate_tokens_from_text(t.model_dump_json())
+            except Exception:
+                total += _estimate_tokens_from_text(str(t))
+        return total
+
+    def _effective_input_token_cap(self) -> int | None:
+        """
+        Limite estimado para mensagens + SKILL, reservando max_tokens da resposta
+        e o custo declarado das ferramentas dentro de context_budget.
+        """
+        meta = self.current_metadata
+        if meta is None or meta.context_budget <= 0:
+            return None
+        reserved_out = max(0, meta.max_tokens)
+        tools_est = self._estimate_tools_tokens()
+        available = (
+            meta.context_budget
+            - reserved_out
+            - tools_est
+            - CONTEXT_BUDGET_SAFETY_MARGIN
+        )
+        # Mantém um mínimo para não esvaziar o histórico por arredondamento agressivo.
+        return max(256, available)
+
     def _prune_messages(self) -> None:
-        """TTL no início, limite de tamanho, sem deixar mensagem 'tool' órfã no topo."""
+        """TTL no início, orçamento de contexto (metadata), limite de mensagens, sem tool órfã."""
         if len(self.messages) != len(self._message_times):
             self._message_times = [time.time() for _ in self.messages]
 
@@ -234,17 +330,28 @@ class ModularOrchestrator:
             self.messages.pop(0)
             self._message_times.pop(0)
 
-        while self.messages and self.messages[0].get("role") == "tool":
-            self.messages.pop(0)
-            self._message_times.pop(0)
+        self._strip_leading_orphan_tools()
+
+        cap = self._effective_input_token_cap()
+        if cap is not None:
+            while self.messages:
+                if (
+                    _estimate_prompt_tokens_messages_plus_skill(
+                        self.current_skill,
+                        self.messages,
+                    )
+                    <= cap
+                ):
+                    break
+                self.messages.pop(0)
+                self._message_times.pop(0)
+                self._strip_leading_orphan_tools()
 
         while len(self.messages) > MAX_HISTORY_MESSAGES:
             self.messages.pop(0)
             self._message_times.pop(0)
 
-        while self.messages and self.messages[0].get("role") == "tool":
-            self.messages.pop(0)
-            self._message_times.pop(0)
+        self._strip_leading_orphan_tools()
 
     def _cap_messages(self) -> None:
         self._prune_messages()
@@ -261,7 +368,11 @@ class ModularOrchestrator:
         tools_used: list[dict[str, Any]] = []
 
         if auto_route:
-            await self.set_agent("maestro")
+            continuing_specialist = (
+                self.current_agent != "maestro" and len(self.messages) > 0
+            )
+            if not continuing_specialist:
+                await self.set_agent("maestro")
         else:
             await self.set_agent(target_agent)
 
@@ -279,7 +390,7 @@ class ModularOrchestrator:
 
             step = 0
 
-            if auto_route:
+            if auto_route and self.current_agent == "maestro":
                 maestro_tool_choice: dict[str, Any] = {
                     "type": "function",
                     "function": {"name": ROUTE_TO_SPECIALIST_TOOL_NAME},
@@ -291,6 +402,7 @@ class ModularOrchestrator:
                             f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
                         )
 
+                    self._cap_messages()
                     response = await self.model.chat(
                         messages=_messages_with_skill(self.current_skill, self.messages),
                         tools=MAESTRO_TOOLS_ONLY,
@@ -386,6 +498,7 @@ class ModularOrchestrator:
                         f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
                     )
 
+                self._cap_messages()
                 response = await self.model.chat(
                     messages=_messages_with_skill(self.current_skill, self.messages),
                     tools=tools_payload,

@@ -65,7 +65,7 @@ def list_analytics_queries() -> str:
 
 _RUN_ANALYTICS_DESC = (
     "Executa uma análise pré-definida sobre OS/concessionárias/vendedores/serviços. "
-    "Dados já vêm agregados no SQL; devolve no máximo 100 linhas por chamada. "
+    "Dados já vêm agregados no SQL; devolve no máximo 10000 linhas por chamada. "
     "Use offset para paginar. Para faturamento_ticket_concessionaria_periodo passe date_from e date_to (YYYY-MM-DD). summarize=true pede resumo via MCP Sampling (requer cliente com sampling). "
     "\n\n"
     + analytics_queries.QUERY_ID_PARAM_HELP
@@ -78,14 +78,14 @@ _RUN_ANALYTICS_DESC = (
 )
 async def run_analytics_query(
     query_id: QueryId,
-    limit: int = 100,
+    limit: int = 10000,
     offset: int = 0,
     summarize: bool = False,
     date_from: str | None = None,
     date_to: str | None = None,
     ctx: Context | None = None,
 ) -> str:
-    lim = max(1, min(100, int(limit)))
+    lim = max(1, min(10000, int(limit)))
     off = max(0, int(offset))
 
     try:

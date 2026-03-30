@@ -24,6 +24,7 @@ Você é especialista em **consolidação e síntese** de múltiplas análises e
 ## Estrutura de Roll-up
 
 ### Nível 1: Rede Inteira (50-60 concessionárias)
+
 - Volume total de OS
 - Faturamento agregado
 - Ticket médio da rede
@@ -31,11 +32,13 @@ Você é especialista em **consolidação e síntese** de múltiplas análises e
 - Taxa de retrabalho média
 
 ### Nível 2: Por Cluster (segmentação)
+
 - Unidades no cluster
 - KPIs agregados por cluster
 - Comparação inter-clusters
 
 ### Nível 3: Detalhe Concessionária (drilldown)
+
 - KPIs individuais
 - Posição no cluster
 - Benchmark vs. cluster similar
@@ -43,17 +46,20 @@ Você é especialista em **consolidação e síntese** de múltiplas análises e
 ## Formatos de Saída
 
 ### Executivo (2-3 slides)
+
 - 1 tabela: KPIs principais
 - 2-3 insights top
 - 1 call-to-action
 
 ### Operacional (5-10 slides)
+
 - Por cluster
 - KPIs detalhados
 - Comparações
 - Recomendações
 
 ### Detalhado (20+ slides)
+
 - Todas as análises compiladas
 - Apêndice com dados brutos
 

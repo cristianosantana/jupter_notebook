@@ -4,6 +4,7 @@
 
 | Camada | Tecnologia | Versão (referência) | Uso |
 |--------|------------|---------------------|-----|
+
 | API HTTP | FastAPI | 0.135.x | Rotas, lifecycle, JSON. |
 | Servidor ASGI | Uvicorn | 0.42.x | Execução da app (`run.py`). |
 | LLM | OpenAI API | SDK openai 2.30.x | Chat completions + tools; sampling via callback. |
@@ -64,6 +65,7 @@ Ferramentas listadas em `requirements.txt` mas não no núcleo do fluxo chat+MCP
 
 | Variável | Onde | Descrição |
 |----------|------|-----------|
+
 | `OPENAI_API_KEY` | Host | Chave da API OpenAI. |
 | `OPENAI_MODEL` | Host | Modelo (ex.: `gpt-4o-mini`). Usado no provider e no sampling. |
 | `MYSQL_HOST` | Servidor MCP (herdado do processo pai) | Host MySQL. |
@@ -120,17 +122,19 @@ Content-Type: application/json
 }
 ```
 
-**Campos da resposta**
+**Campos da resposta:**
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
+
 | `reply` | string | Texto final do assistente (`content` da última mensagem). |
 | `tools_used` | array | Só ferramentas **executadas neste** `POST`. Cada item: `name`, `arguments`, `ok`, `error`, `result_preview` (truncado). |
 
-**Erros comuns**
+**Erros comuns:**
 
 | Situação | Comportamento típico |
 |----------|----------------------|
+
 | Agente não inicializado | `500` / `RuntimeError` em desenvolvimento. |
 | OpenAI rejeita pedido | Exceção da SDK (tratar com middleware em produção). |
 | MySQL indisponível | JSON de erro dentro do resultado da tool `run_analytics_query`, ou falha na chamada MCP. |
@@ -144,9 +148,10 @@ Content-Type: application/json
 Argumentos principais:
 
 | Argumento | Tipo | Notas |
-|-----------|------|--------|
+|-----------|------|-------|
+
 | `query_id` | string (enum) | Um dos 9 ids documentados em [estrutura-e-recursos.md](estrutura-e-recursos.md). |
-| `limit` | int | Máximo 100 (clamp no servidor). |
+| `limit` | int | Máximo 10000 (clamp no servidor). |
 | `offset` | int | Paginação. |
 | `summarize` | bool | Se true, tenta MCP sampling para resumo (requer cliente com sampling). |
 | `date_from` / `date_to` | string opcional | **Obrigatórios** para `faturamento_ticket_concessionaria_periodo` (`YYYY-MM-DD`). |
