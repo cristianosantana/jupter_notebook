@@ -146,3 +146,86 @@ def test_specialist_cannot_call_route_to_specialist():
     assert blocked["name"] == ROUTE_TO_SPECIALIST_TOOL_NAME
     assert blocked["ok"] is False
     assert "Maestro" in (blocked.get("error") or "")
+
+
+class FakeModelHandoffThenSecondTurn(ModelProvider):
+    """
+    Run 1: Maestro (tool_choice) → handoff; especialista responde só texto.
+    Run 2: primeira chat não deve ser Maestro (tool_choice None).
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def chat(self, messages, tools=None, tool_choice=None):
+        self.calls += 1
+        if self.calls == 1:
+            assert tool_choice is not None
+            assert tools is not None and len(tools) == 1
+            return {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_r1",
+                        "type": "function",
+                        "function": {
+                            "name": ROUTE_TO_SPECIALIST_TOOL_NAME,
+                            "arguments": '{"agent": "analise_os", "reason": "test"}',
+                        },
+                    }
+                ],
+            }
+        if self.calls == 2:
+            assert tool_choice is None
+            return {
+                "role": "assistant",
+                "content": "Qual período pretendes analisar?",
+                "tool_calls": None,
+            }
+        assert self.calls == 3
+        assert tool_choice is None
+        return {
+            "role": "assistant",
+            "content": "Segue a análise para o período indicado.",
+            "tool_calls": None,
+        }
+
+
+def test_auto_route_continues_specialist_on_second_message():
+    """Segundo POST sem target_agent não volta ao Maestro nem limpa o contexto relevante."""
+
+    async def _run():
+        client = _mock_client()
+        model = FakeModelHandoffThenSecondTurn()
+        orch = ModularOrchestrator(model, client, skills_dir=_SKILLS)
+        await orch.load_tools()
+        out1 = await orch.run("Volume de OS?", target_agent=None)
+        assert orch.current_agent == "analise_os"
+        assert len(orch.messages) > 0
+        out2 = await orch.run("Último trimestre.", target_agent=None)
+        return out1, out2, model.calls
+
+    out1, out2, n_calls = asyncio.run(_run())
+
+    assert out1["agent"] == "analise_os"
+    assert "Qual período" in (out1["assistant"].get("content") or "")
+    assert out2["agent"] == "analise_os"
+    assert out2["assistant"]["content"] == "Segue a análise para o período indicado."
+    assert n_calls == 3
+
+
+def test_reset_conversation_clears_and_returns_to_maestro():
+    async def _run():
+        client = _mock_client()
+        model = FakeModelHandoff()
+        orch = ModularOrchestrator(model, client, skills_dir=_SKILLS)
+        await orch.load_tools()
+        await orch.run("Volume de OS?", target_agent=None)
+        assert orch.current_agent == "analise_os"
+        await orch.reset_conversation()
+        assert orch.current_agent == "maestro"
+        assert len(orch.messages) == 0
+        return orch
+
+    asyncio.run(_run())

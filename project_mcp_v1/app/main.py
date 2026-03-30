@@ -65,7 +65,8 @@ app = FastAPI(title="project_mcp_v1_modular", lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str
-    target_agent: AgentType | None = None  # Se None, usa Maestro
+    target_agent: AgentType | None = None  # Se None, usa Maestro (ou continua especialista)
+    new_conversation: bool = False  # Se True, limpa histórico e recomeça pelo Maestro
 
 
 @app.get("/health")
@@ -79,15 +80,23 @@ async def chat(request: ChatRequest):
     """
     Endpoint de chat com suporte a roteamento de agentes.
 
+    Por omissão mantém a thread: após handoff para um especialista, novas mensagens
+    com ``target_agent`` omitido continuam com o mesmo agente e o histórico.
+
+    - ``new_conversation: true`` — limpa mensagens e recomeça pelo Maestro.
+
     Exemplos:
     - POST /chat {"message": "Análise semanal de OS"}
       → Maestro roteia para agente_analise_os
-    
+
     - POST /chat {"message": "Agrupar concessionárias", "target_agent": "clusterizacao"}
       → Direto para agente_clusterizacao
     """
     if agent is None:
         raise RuntimeError("Agent not initialized")
+
+    if request.new_conversation:
+        await agent.reset_conversation()
 
     out = await agent.run(request.message, target_agent=request.target_agent)
     assistant = out["assistant"]

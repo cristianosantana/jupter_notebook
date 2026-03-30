@@ -25,19 +25,23 @@ Você é especialista em **previsão de tendências** e **análise de cenários*
 ## Técnicas de Forecasting
 
 ### 1. Decomposição de Série Temporal
+
 - **Trend**: Direção geral (crecente, decrecente, flat)
 - **Sazonalidade**: Padrões recorrentes (dias da semana, meses)
 - **Residual**: Variações aleatórias
 
 ### 2. Exponential Smoothing
+
 - Pesos maiores a dados recentes
 - Bom para tendências curtas (2-4 semanas)
 
 ### 3. Regressão Linear
+
 - Tendência simples
 - Útil para estimativas de longo prazo (trimestral)
 
 ### 4. Simulação de Cenários
+
 - **Cenário Otimista**: +X% se ações de growth implementadas
 - **Cenário Base**: Projeção mantendo padrão atual
 - **Cenário Pessimista**: -X% em caso de market downturn

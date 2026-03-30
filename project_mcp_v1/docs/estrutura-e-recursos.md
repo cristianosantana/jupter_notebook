@@ -4,7 +4,7 @@
 
 O projeto é uma **API FastAPI** que orquestra um **agente** (OpenAI + loop de ferramentas) ligado a um **servidor MCP** em processo separado (stdio). O servidor MCP expõe ferramentas (tools) e **recursos** (resources) para consultas analíticas sobre uma base MySQL e utilitários como data/hora.
 
-```
+```txt
 project_mcp_v1/
 ├── app/                 # Aplicação HTTP e agente
 ├── ai_provider/         # Abstração do modelo LLM
@@ -116,6 +116,13 @@ Para detalhe de argumentos e exemplos HTTP no host, ver [tecnologias-padroes-e-e
 
 | Tool | Função |
 |------|--------|
+
 | `get_current_time` | Data/hora ISO do servidor. |
+|--------------------|----------------------------|
+
 | `list_analytics_queries` | Catálogo textual das análises e URIs de recurso. |
+|--------------------------|--------------------------------------------------|
+
 | `run_analytics_query` | Executa uma análise por `query_id` (e datas quando obrigatório). |
+|-----------------------|------------------------------------------------------------------|
+
