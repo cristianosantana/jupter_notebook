@@ -20,25 +20,23 @@ Os cinco últimos itens abaixo correspondem ao bloco VENDAS (Queries 1–5) em [
 
 ## Entradas (ordem do registo)
 
-
-| `query_id`                                         | Ficheiro                                               | Formato resposta típico                                      | `resource_description`                                                   |
-| -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `cross_selling`                                    | `cross_selling.sql`                                    | Tabular; tool compacta para LLM                              | Pares de serviços na mesma OS; ranking por concessionária e mês.         |
-| `taxa_retrabalho_servico_produtivo_concessionaria` | `taxa_retrabalho_servico_produtivo_concessionaria.sql` | Tabular; tool compacta                                       | Retrabalho vs serviço produtivo por concessionária e período.            |
-| `taxa_conversao_servico_concessionaria_vendedor`   | `taxa_conversao_servico_concessionaria_vendedor.sql`   | Tabular; tool compacta                                       | Conversão de serviço por concessionária e vendedor.                      |
-| `servicos_vendidos_por_concessionaria`             | `servicos_vendidos_por_concessionaria.sql`             | Tabular; tool compacta                                       | Mix de serviços vendidos e share percentual por concessionária e mês.    |
-| `sazonalidade_por_concessionaria`                  | `sazonalidade_por_concessionaria.sql`                  | Tabular; tool compacta                                       | Padrão sazonal de volume/OS por concessionária.                          |
-| `performance_vendedor_mes`                     | `performance_vendedor_mes.sql`                     | Tabular; tool compacta                                       | KPIs de vendedor **por mês** (`periodo` = YYYY-MM); mesmas métricas que a análise anual. |
-| `performance_vendedor_ano`                       | `performance_vendedor_ano.sql`                         | Tabular; tool compacta                                       | KPIs de vendedor **por ano civil** (`periodo_ano` = YYYY) no intervalo de datas.        |
-| `faturamento_ticket_concessionaria_periodo`        | `faturamento_ticket_concessionaria_periodo.sql`        | Tabular; tool compacta                                       | Faturamento de serviços, qtd OS e ticket médio por concessionária e mês. |
-| `distribuicao_ticket_percentil`                    | `distribuicao_ticket_percentil.sql`                    | Tabular; tool compacta                                       | Distribuição de ticket por quartis (NTILE) por concessionária.           |
-| `propenso_compra_hora_dia_servico`                 | `propenso_compra_hora_dia_servico.sql`                 | Tabular; tool compacta                                       | Propensão de compra por hora, dia da semana e tipo de serviço.           |
-| `volume_os_concessionaria_mom`                     | `volume_os_concessionaria_mom.sql`                     | Uma linha; coluna `resultado` (JSON) — **Query 1** do doc 30 | Volume de OS por concessionária com variação MoM (JSON agregado).        |
-| `volume_os_vendedor_ranking`                       | `volume_os_vendedor_ranking.sql`                       | `resultado` JSON — **Query 2**                               | Volume de OS por vendedor e concessionária com ranking (JSON).           |
-| `ticket_medio_concessionaria_agg`                  | `ticket_medio_concessionaria_agg.sql`                  | `resultado` JSON — **Query 3**                               | Ticket médio e estatísticas por concessionária (JSON).                   |
-| `ticket_medio_vendedor_top_bottom`                 | `ticket_medio_vendedor_top_bottom.sql`                 | `resultado` JSON — **Query 4**                               | Top 5 e bottom 5 vendedores por ticket médio (JSON).                     |
-| `taxa_conversao_servicos_os_fechada`               | `taxa_conversao_servicos_os_fechada.sql`               | `resultado` JSON — **Query 5**                               | Conversão de linhas de serviço em OS fechadas, global e por loja (JSON). |
-
+| `query_id`                                         | Ficheiro                                               | Formato resposta típico                                      | `resource_description`                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `cross_selling`                                    | `cross_selling.sql`                                    | Tabular; tool compacta para LLM                              | Pares de serviços na mesma OS; ranking por concessionária e mês.                          |
+| `taxa_retrabalho_servico_produtivo_concessionaria` | `taxa_retrabalho_servico_produtivo_concessionaria.sql` | Tabular; tool compacta                                       | Retrabalho vs serviço produtivo por concessionária e período.                             |
+| `taxa_conversao_servico_concessionaria_vendedor`   | `taxa_conversao_servico_concessionaria_vendedor.sql`   | Tabular; tool compacta                                       | Conversão de serviço por concessionária e vendedor.                                       |
+| `servicos_vendidos_por_concessionaria`             | `servicos_vendidos_por_concessionaria.sql`             | Tabular; tool compacta                                       | Mix de serviços vendidos e share percentual por concessionária e mês.                     |
+| `sazonalidade_por_concessionaria`                  | `sazonalidade_por_concessionaria.sql`                  | Tabular; tool compacta                                       | Padrão sazonal de volume/OS por concessionária.                                           |
+| `performance_vendedor_mes`                         | `performance_vendedor_mes.sql`                         | Tabular; tool compacta                                       | KPIs de vendedor **por mês** (`periodo` = YYYY-MM); mesmas métricas que a análise anual.  |
+| `performance_vendedor_ano`                         | `performance_vendedor_ano.sql`                         | Tabular; tool compacta                                       | KPIs de vendedor **por ano civil** (`periodo_ano` = YYYY) no intervalo de datas.          |
+| `faturamento_ticket_concessionaria_periodo`        | `faturamento_ticket_concessionaria_periodo.sql`        | Tabular; tool compacta                                       | Faturamento de serviços, qtd OS e ticket médio por concessionária e mês.                  |
+| `distribuicao_ticket_percentil`                    | `distribuicao_ticket_percentil.sql`                    | Tabular; tool compacta                                       | Distribuição de ticket por quartis (NTILE) por concessionária.                            |
+| `propenso_compra_hora_dia_servico`                 | `propenso_compra_hora_dia_servico.sql`                 | Tabular; tool compacta                                       | Propensão de compra por hora, dia da semana e tipo de serviço.                            |
+| `volume_os_concessionaria_mom`                     | `volume_os_concessionaria_mom.sql`                     | Uma linha; coluna `resultado` (JSON) — **Query 1** do doc 30 | Volume de OS por concessionária com variação MoM (JSON agregado).                         |
+| `volume_os_vendedor_ranking`                       | `volume_os_vendedor_ranking.sql`                       | `resultado` JSON — **Query 2**                               | Volume de OS por vendedor e concessionária com ranking (JSON).                            |
+| `ticket_medio_concessionaria_agg`                  | `ticket_medio_concessionaria_agg.sql`                  | `resultado` JSON — **Query 3**                               | Ticket médio e estatísticas por concessionária (JSON).                                    |
+| `ticket_medio_vendedor_top_bottom`                 | `ticket_medio_vendedor_top_bottom.sql`                 | `resultado` JSON — **Query 4**                               | Top 5 e bottom 5 vendedores por ticket médio (JSON).                                      |
+| `taxa_conversao_servicos_os_fechada`               | `taxa_conversao_servicos_os_fechada.sql`               | `resultado` JSON — **Query 5**                               | Conversão de linhas de serviço em OS fechadas, global e por loja (JSON).                  |
 
 ---
 
@@ -68,4 +66,3 @@ Texto igual ao exposto por `list_analytics_queries` / `QUERY_ID_PARAM_HELP`:
 
 - Ao adicionar ou renomear `query_id`, atualizar `QUERY_REGISTRY`, `QueryId` em [mcp_server/server.py](../mcp_server/server.py), este documento e a tabela em [estrutura-e-recursos.md](estrutura-e-recursos.md).
 - Se um novo `query_id` for tabular e não deve ir em bruto ao LLM, acrescentar o id a `TABULAR_LEGACY_QUERY_IDS` em `analytics_queries.py`.
-

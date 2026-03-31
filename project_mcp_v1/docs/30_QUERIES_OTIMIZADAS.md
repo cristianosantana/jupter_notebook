@@ -838,31 +838,38 @@ Devido ao tamanho, vou passar as demais 15 queries em estrutura compacta:
 
 ## 📝 **Queries 16-30 (Compactas)**
 
-**Query 16: Performance vs Meta Individual**
+**Query 16: Performance vs Meta Individual:**
+
 - Params: `date_from`, `date_to`
 - Retorna: Meta individual vs realizado, elegibilidade de bônus
 
-**Query 17: Performance vs Meta por Concessionária**
+**Query 17: Performance vs Meta por Concessionária:**
+
 - Params: `date_from`, `date_to`
 - Retorna: Meta concessionária vs realizado, ranking
 
-**Query 18: Eficiência (OS/dia trabalhado)**
+**Query 18: Eficiência (OS/dia trabalhado):**
+
 - Params: `date_from`, `date_to`
 - Retorna: Produtividade por dia, consistência
 
-**Query 19: Taxa de Clientes por Vendedor**
+**Query 19: Taxa de Clientes por Vendedor:**
+
 - Params: `date_from`, `date_to`
 - Retorna: Clientes atendidos, novos, recorrência%
 
-**Query 20: Tempo Médio de Conclusão de OS**
+**Query 20: Tempo Médio de Conclusão de OS:**
+
 - Params: `date_from`, `date_to`
 - Retorna: Por tipo OS, por serviço, por vendedor
 
-**Query 21: Vendedores com Melhor Taxa de Conversão**
+**Query 21: Vendedores com Melhor Taxa de Conversão:**
+
 - Params: `date_from`, `date_to`, `limit=20`
 - Retorna: Orcamentos recebidos vs convertidos
 
-**Query 22: Análise de Comissões Ganhas**
+**Query 22: Análise de Comissões Ganhas:**
+
 - Params: `date_from`, `date_to`
 - Retorna: Total ganho, meta atingida, elegibilidade
 
@@ -870,28 +877,36 @@ Devido ao tamanho, vou passar as demais 15 queries em estrutura compacta:
 
 ## 📆 **Bloco 4-5: SAZONALIDADE & CROSS-SELLING (8 Queries)**
 
-**Query 23: Sazonalidade por Mês (últimos 3 anos)**
+**Query 23: Sazonalidade por Mês (últimos 3 anos):**
+
 - Padrão sazonal, meses fortes/fracos
 
-**Query 24: Sazonalidade por Dia da Semana**
+**Query 24: Sazonalidade por Dia da Semana:**
+
 - Qual dia tem mais vendas
 
-**Query 25: Tendência de Crescimento (12 meses)**
+**Query 25: Tendência de Crescimento (12 meses):**
+
 - Série temporal + forecasting simples
 
-**Query 26: Variação Semanal**
+**Query 26: Variação Semanal:**
+
 - Semana-a-semana, volatilidade
 
-**Query 27: Propensão de Compra (Hora/Dia)**
+**Query 27: Propensão de Compra (Hora/Dia):**
+
 - Quando é melhor vender
 
-**Query 28: Pares de Serviços (Correlação)**
+**Query 28: Pares de Serviços (Correlação):**
+
 - Cerâmica + Insulfilm frequência
 
-**Query 29: Mix de Serviços por Concessionária**
+**Query 29: Mix de Serviços por Concessionária:**
+
 - % Cerâmica, % Insulfilm, % Outros
 
-**Query 30: Upsell Opportunities**
+**Query 30: Upsell Opportunities:**
+
 - Clientes que compraram A, podem comprar B
 
 ---
@@ -947,6 +962,7 @@ async def run_analytics_query(
 
 | Query | Linhas | Tempo Esperado | Índices |
 |-------|--------|----------------|---------|
+
 | Q1-Q6 | Milhões | <2s | `idx_os_created_at` |
 | Q7-Q14 | Milhões | <3s | `idx_orcamento_itens` |
 | Q15-Q22 | Milhões | <5s | `idx_vendedor_created` |
