@@ -1,3 +1,6 @@
+-- Agregação MENSAL por vendedor × concessionária.
+-- Coluna `periodo` = mês civil no formato YYYY-MM (derivado de os.created_at).
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,
@@ -23,7 +26,8 @@ JOIN concessionarias con ON os.concessionaria_id = con.id
 WHERE 
     os.paga = 1 
     AND os.cancelada = 0
-    AND os.created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH) -- Analisamos o último ano para ver tendências
+    AND os.created_at >= __MCP_DATE_FROM__
+    AND os.created_at <= __MCP_DATE_TO__
     AND os.os_tipo_id IN(1,2,3,4,5)
 GROUP BY 
     con.id, 

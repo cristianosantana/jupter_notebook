@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from ai_provider.base import ModelProvider
-from app.orchestrator import ModularOrchestrator
+from app.orchestrator import ModularOrchestrator, _messages_with_skill
 from app.routing_tools import ROUTE_TO_SPECIALIST_TOOL_NAME
 
 
@@ -229,3 +229,45 @@ def test_reset_conversation_clears_and_returns_to_maestro():
         return orch
 
     asyncio.run(_run())
+
+
+def test_run_strips_orch_anchor_after_finally():
+    async def _run():
+        client = _mock_client()
+        model = FakeModelDirect()
+        orch = ModularOrchestrator(model, client, skills_dir=_SKILLS)
+        await orch.load_tools()
+        await orch.run("Olá", target_agent="visualizador")
+        for m in orch.messages:
+            assert "_orch_anchor" not in m
+
+    asyncio.run(_run())
+
+
+def test_messages_with_skill_omits_orch_internal_keys():
+    msgs = [{"role": "user", "content": "pergunta", "_orch_anchor": True}]
+    out = _messages_with_skill("SKILL", msgs)
+    assert not any("_orch_anchor" in m for m in out)
+    user_part = [m for m in out if m.get("role") == "user"]
+    assert user_part[0]["content"] == "pergunta"
+
+
+def test_run_strips_orch_anchor_after_finally():
+    async def _run():
+        client = _mock_client()
+        model = FakeModelDirect()
+        orch = ModularOrchestrator(model, client, skills_dir=_SKILLS)
+        await orch.load_tools()
+        await orch.run("Olá", target_agent="visualizador")
+        for m in orch.messages:
+            assert "_orch_anchor" not in m
+
+    asyncio.run(_run())
+
+
+def test_messages_with_skill_omits_orch_internal_keys():
+    msgs = [{"role": "user", "content": "pergunta", "_orch_anchor": True}]
+    out = _messages_with_skill("SKILL", msgs)
+    assert not any("_orch_anchor" in m for m in out)
+    user_part = [m for m in out if m.get("role") == "user"]
+    assert user_part[0]["content"] == "pergunta"

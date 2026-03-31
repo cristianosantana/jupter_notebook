@@ -1,3 +1,4 @@
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,
@@ -16,6 +17,8 @@ JOIN concessionarias con ON os.concessionaria_id = con.id
 JOIN funcionarios v ON os.vendedor_id = v.id -- Assumindo que vendedor_id está na tabela os
 JOIN os_servicos oss ON oss.os_id = os.id
 JOIN servicos s ON oss.servico_id = s.id
+WHERE os.created_at >= __MCP_DATE_FROM__
+    AND os.created_at <= __MCP_DATE_TO__
 GROUP BY 
     con.id, 
     v.id, 

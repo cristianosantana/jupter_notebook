@@ -8,31 +8,53 @@ Uso:
     uvicorn app.main_modular:app --reload
 """
 
+import asyncio
 import os
+import uuid
 from contextlib import asynccontextmanager
+from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from openai import AsyncOpenAI
 
 from ai_provider.openai_provider import OpenAIProvider
-from app.config import get_settings
+from app.config import get_settings, resolve_agent_trace_dir
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
 from app.orchestrator import ModularOrchestrator, AgentType
+from app.session_store import SessionStore
 
 
 agent: ModularOrchestrator | None = None
+session_store: SessionStore | None = None
+orchestrator_lock = asyncio.Lock()
+
+_AGENT_TYPES: frozenset[str] = frozenset({
+    "maestro",
+    "analise_os",
+    "clusterizacao",
+    "visualizador",
+    "agregador",
+    "projecoes",
+})
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent
+    global agent, session_store
 
     model = OpenAIProvider()
     settings = get_settings()
+    trace_root = resolve_agent_trace_dir(settings)
+    if trace_root is not None:
+        trace_root.mkdir(parents=True, exist_ok=True)
+        os.environ["AGENT_TRACE_DIR"] = str(trace_root)
+    else:
+        os.environ.pop("AGENT_TRACE_DIR", None)
+
     os.environ.setdefault("MYSQL_HOST", settings.mysql_host)
     os.environ.setdefault("MYSQL_PORT", str(settings.mysql_port))
     os.environ.setdefault("MYSQL_USER", settings.mysql_user)
@@ -54,8 +76,15 @@ async def lifespan(app: FastAPI):
     agent = ModularOrchestrator(model, client)
     await agent.load_tools()
 
+    if settings.postgres_enabled:
+        session_store = await SessionStore.create(settings)
+        await session_store.run_migrations(settings)
+
     yield
 
+    if session_store:
+        await session_store.close()
+        session_store = None
     if agent:
         await agent.client.close()
 
@@ -67,6 +96,8 @@ class ChatRequest(BaseModel):
     message: str
     target_agent: AgentType | None = None  # Se None, usa Maestro (ou continua especialista)
     new_conversation: bool = False  # Se True, limpa histórico e recomeça pelo Maestro
+    user_id: str | None = None
+    session_id: UUID | None = None
 
 
 @app.get("/health")
@@ -84,6 +115,8 @@ async def chat(request: ChatRequest):
     com ``target_agent`` omitido continuam com o mesmo agente e o histórico.
 
     - ``new_conversation: true`` — limpa mensagens e recomeça pelo Maestro.
+    - Com PostgreSQL activo: envia ``session_id`` nas mensagens seguintes; ``user_id`` é opcional.
+      O transcript persistido inclui só a conversa com especialistas (não o roteamento do Maestro).
 
     Exemplos:
     - POST /chat {"message": "Análise semanal de OS"}
@@ -95,17 +128,61 @@ async def chat(request: ChatRequest):
     if agent is None:
         raise RuntimeError("Agent not initialized")
 
-    if request.new_conversation:
-        await agent.reset_conversation()
+    sid: UUID | None = None
 
-    out = await agent.run(request.message, target_agent=request.target_agent)
-    assistant = out["assistant"]
+    async with orchestrator_lock:
+        if session_store:
+            if request.user_id:
+                await session_store.upsert_user(request.user_id)
 
-    return {
+            if request.new_conversation:
+                nsid = uuid.uuid4()
+                await session_store.create_session(nsid, request.user_id)
+                await agent.reset_conversation()
+                sid = nsid
+            elif request.session_id is None:
+                nsid = uuid.uuid4()
+                await session_store.create_session(nsid, request.user_id)
+                await agent.reset_conversation()
+                sid = nsid
+            else:
+                row = await session_store.get_session(request.session_id)
+                if row is None:
+                    raise HTTPException(status_code=404, detail="session_id não encontrado")
+                sid = request.session_id
+                msgs = await session_store.load_messages(sid)
+                ca = row["current_agent"]
+                if ca not in _AGENT_TYPES:
+                    ca = "maestro"
+                    msgs = []
+                agent.hydrate_session_state(ca, msgs)  # type: ignore[arg-type]
+        else:
+            if request.new_conversation:
+                await agent.reset_conversation()
+
+        out = await agent.run(request.message, target_agent=request.target_agent)
+        assistant = out["assistant"]
+
+        if session_store is not None and sid is not None:
+            if out["agent"] != "maestro":
+                await session_store.replace_conversation_messages(sid, agent.messages)
+                await session_store.touch_session(sid, out["agent"])
+            else:
+                await session_store.touch_session(sid)
+
+    payload: dict = {
         "reply": assistant["content"],
         "tools_used": out["tools_used"],
         "agent_used": out["agent"],
     }
+    tid = out.get("trace_run_id")
+    if tid:
+        payload["trace_run_id"] = tid
+    if session_store is not None and sid is not None:
+        payload["session_id"] = str(sid)
+    if request.user_id is not None:
+        payload["user_id"] = request.user_id
+    return payload
 
 
 @app.post("/agent/set")

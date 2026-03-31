@@ -1,3 +1,4 @@
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os_orig.created_at.
 SELECT 
     con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,
@@ -23,7 +24,8 @@ JOIN os_servicos oss_orig ON oss_orig.os_id = os_orig.id
 JOIN funcionarios p_origem ON oss_orig.produtivo_id = p_origem.id
 JOIN funcionarios p_destino ON oss_dest.produtivo_id = p_destino.id
 WHERE 
-    os_orig.created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+    os_orig.created_at >= __MCP_DATE_FROM__
+    AND os_orig.created_at <= __MCP_DATE_TO__
     AND os_orig.cancelada = 0
 GROUP BY 
     con.id, 

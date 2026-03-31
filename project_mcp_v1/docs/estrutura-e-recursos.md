@@ -25,6 +25,7 @@ project_mcp_v1/
 
 | Ficheiro | Responsabilidade |
 |----------|------------------|
+
 | `main.py` | FastAPI: startup (OpenAI, MCP client, orquestrador), `POST /chat`, shutdown. Injeta variáveis MySQL no ambiente para o subprocesso MCP. |
 | `orchestrator.py` | **Agent loop**: mensagens → `model.chat` → se houver `tool_calls`, executa MCP → mensagens `role: tool` → repete até resposta só texto. Mantém histórico com TTL e limite de mensagens. Devolve `tools_used` por pedido. |
 | `config.py` | `pydantic-settings`: `OPENAI_*`, `MYSQL_*` a partir de `.env` / ambiente. |
@@ -34,6 +35,7 @@ project_mcp_v1/
 
 | Ficheiro | Responsabilidade |
 |----------|------------------|
+
 | `base.py` | Contrato `ModelProvider.chat(messages, tools)`. |
 | `openai_provider.py` | Cliente OpenAI: converte ferramentas no formato MCP dump para o formato exigido pela API Chat Completions (`type: function`, `parameters`). |
 
@@ -41,14 +43,16 @@ project_mcp_v1/
 
 | Ficheiro | Responsabilidade |
 |----------|------------------|
+
 | `client.py` | Arranca `mcp_server/server.py` com `sys.executable`, `ClientSession` com `sampling_callback` e capabilities de sampling. Expõe `list_tools` e `call_tool`. |
 
 ### `mcp_server/`
 
-| Ficheiro / pasta | Responsabilidade |
-|------------------|-------------------|
+| Ficheiro / pasta | Responsabilidade   |
+|------------------|--------------------|
+
 | `server.py` | **FastMCP**: registo de tools, recurso template de analytics, `mcp.run()` em modo stdio. |
-| `analytics_queries.py` | Catálogo `QUERY_REGISTRY`: `query_id` → ficheiro SQL, descrições para modelo, `params_note` onde há placeholders. |
+| `analytics_queries.py` | Catálogo `QUERY_REGISTRY`, `TABULAR_LEGACY_QUERY_IDS` (payload compacto obrigatório para LLM) e `GLOBAL_PERIOD_HELP`. Espelho em [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
 | `query_sql/` | **Fonte única** dos textos SQL servidos pelos recursos e executados pela tool (whitelist). |
 | `sql_params.py` | Substituição validada de placeholders (ex.: `__MCP_DATE_FROM__` / `__MCP_DATE_TO__`). |
 | `db.py` | Pool **aiomysql**, execução `SELECT * FROM (sql) LIMIT/OFFSET`, serialização JSON segura (ex.: `Decimal`). |
@@ -61,6 +65,7 @@ Material de curso / referência (notebook, cópias de queries). O servidor MCP e
 
 | Ficheiro | Responsabilidade |
 |----------|------------------|
+
 | `run.py` | `uvicorn.run(app, host="0.0.0.0", port=8000)`. |
 
 ---
@@ -73,29 +78,37 @@ No protocolo MCP, **resources** são conteúdos endereçáveis por URI, normalme
 
 Há **um** template registado:
 
-| Campo | Valor |
+| Campo | Valor  |
 |-------|--------|
+
 | **URI template** | `analytics://query/{query_id}` |
 | **Nome** | `analytics_query_sql` |
-| **Descrição (MCP)** | Texto SQL completo da análise (agregações definidas no servidor). |
+| **Descrição (MCP)** | SQL completo com filtros de período `__MCP_DATE_FROM__` / `__MCP_DATE_TO__` (substituídos em `run_analytics_query` com `date_from` / `date_to`). |
 
-O parâmetro `{query_id}` deve ser um dos identificadores abaixo. Uma leitura bem-sucedida devolve **texto plano** com o SQL (pode incluir placeholders como `__MCP_DATE_FROM__` quando a análise for parametrizável).
+O parâmetro `{query_id}` deve ser um dos identificadores abaixo. Uma leitura bem-sucedida devolve **texto plano** com o SQL (comentário de cabeçalho + placeholders de período em todas as análises atuais).
 
 ### Instâncias válidas (`query_id`)
 
 Cada linha corresponde a **uma** análise; o conteúdo do recurso é o ficheiro homónimo em `mcp_server/query_sql/`.
 
-| `query_id` | Conteúdo semântico do SQL (resumo) |
+| `query_id` | Conteúdo semântico do SQL (resumo)  |
 |------------|-------------------------------------|
+
 | `cross_selling` | Pares de serviços na mesma OS, ranking por concessionária e mês. |
 | `taxa_retrabalho_servico_produtivo_concessionaria` | Retrabalho vs serviço produtivo por concessionária e período. |
 | `taxa_conversao_servico_concessionaria_vendedor` | Conversão de serviço por concessionária e vendedor. |
 | `servicos_vendidos_por_concessionaria` | Mix de serviços e participação percentual por concessionária e mês. |
 | `sazonalidade_por_concessionaria` | Padrão sazonal de volume/OS por concessionária. |
-| `performance_vendedor_periodo` | KPIs de vendedor (OS, faturamento, ticket, desconto, serviços por OS). |
-| `faturamento_ticket_concessionaria_periodo` | Faturamento de serviços, quantidade de OS e ticket médio por concessionária e mês; **SQL com placeholders de data** (`__MCP_DATE_FROM__`, `__MCP_DATE_TO__`). |
+| `performance_vendedor_mes` | KPIs de vendedor por **mês** (YYYY-MM): OS, faturamento, ticket, desconto, serviços por OS. |
+| `performance_vendedor_ano` | Mesmas KPIs agregadas por **ano civil** (YYYY) no intervalo de datas. |
+| `faturamento_ticket_concessionaria_periodo` | Faturamento de serviços, quantidade de OS e ticket médio por concessionária e mês. |
 | `distribuicao_ticket_percentil` | Distribuição de ticket por quartis (NTILE) por concessionária. |
 | `propenso_compra_hora_dia_servico` | Propensão de compra por hora, dia da semana e tipo de serviço. |
+| `volume_os_concessionaria_mom` | Volume de OS por concessionária com variação MoM; resultado JSON (`resultado`). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 1. |
+| `volume_os_vendedor_ranking` | Ranking de vendedores por volume de OS (JSON). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 2. |
+| `ticket_medio_concessionaria_agg` | Ticket médio e dispersão por concessionária (JSON). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 3. |
+| `ticket_medio_vendedor_top_bottom` | Top 5 e bottom 5 vendedores por ticket médio (JSON). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 4. |
+| `taxa_conversao_servicos_os_fechada` | Taxa conversão serviços/OS fechada, global e por concessionária (JSON). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 5. |
 
 ### Como o host usa os recursos
 
@@ -123,6 +136,5 @@ Para detalhe de argumentos e exemplos HTTP no host, ver [tecnologias-padroes-e-e
 | `list_analytics_queries` | Catálogo textual das análises e URIs de recurso. |
 |--------------------------|--------------------------------------------------|
 
-| `run_analytics_query` | Executa uma análise por `query_id` (e datas quando obrigatório). |
-|-----------------------|------------------------------------------------------------------|
-
+| `run_analytics_query` | Executa uma análise por `query_id` com `date_from` / `date_to` obrigatórios. |
+|-----------------------|------------------------------------------------------------------------------|

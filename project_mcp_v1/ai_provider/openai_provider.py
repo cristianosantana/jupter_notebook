@@ -3,6 +3,7 @@ from typing import Any, List, Dict
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
+from app.agent_trace import get_trace_logger
 from app.config import get_settings
 from ai_provider.base import ModelProvider
 
@@ -77,6 +78,22 @@ class OpenAIProvider(ModelProvider):
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
 
-        response = await self.client.chat.completions.create(**kwargs)
+        tr = get_trace_logger()
+        if tr:
+            tr.record(
+                "llm.request",
+                model=self.model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
 
-        return _normalized_assistant_message(response)
+        response = await self.client.chat.completions.create(**kwargs)
+        out = _normalized_assistant_message(response)
+        if tr:
+            tr.record(
+                "llm.response",
+                model=response.model,
+                assistant_message=out,
+            )
+        return out
