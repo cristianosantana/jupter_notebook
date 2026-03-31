@@ -137,6 +137,8 @@ curl -X POST "$BASE_URL/chat" \
       "name": "run_analytics_query",
       "arguments": {
         "query_id": "servicos_vendidos_por_concessionaria",
+        "date_from": "2025-01-01",
+        "date_to": "2025-12-31",
         "limit": 100,
         "offset": 0,
         "summarize": false
@@ -181,7 +183,9 @@ curl -X POST "$BASE_URL/chat" \
     {
       "name": "run_analytics_query",
       "arguments": {
-        "query_id": "performance_vendedor_periodo",
+        "query_id": "performance_vendedor_mes",
+        "date_from": "2025-01-01",
+        "date_to": "2025-05-31",
         "limit": 100
       },
       "ok": true,

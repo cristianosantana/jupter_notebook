@@ -39,6 +39,12 @@ Analisar dados agregados de OS e fornecer insights acionáveis sobre:
 - **S7**: Propensão de Compra (hora/dia/serviço)
 - **S8**: Cross-Selling (pares de serviços)
 
+## Ferramentas de análise (MCP)
+
+- Para dados agregados da base, usa **`run_analytics_query`** com **`date_from`** e **`date_to`** no formato **`YYYY-MM-DD`** (obrigatório para todas as análises; o SQL usa placeholders de período).
+- Se não tiveres a certeza de qual **`query_id`** usar, chama primeiro **`list_analytics_queries`**: a resposta lista cada análise, quando a usar e o URI do recurso (`analytics://query/...`). Escolhe o `query_id` com base nesse texto — não inventes identificadores.
+- Os `query_id` não estão listados neste SKILL para evitar ficarem desatualizados; a lista oficial é a devolvida por **`list_analytics_queries`** e a descrição da própria tool. Documentação humana: `docs/CATALOGO_ANALYTICS_MCP.md` no repositório (referência opcional para quem edita o projeto).
+
 ## Instruções
 
 - Use as ferramentas MCP para buscar dados — nunca invente números.

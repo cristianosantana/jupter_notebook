@@ -21,6 +21,13 @@ from app.routing_tools import (
     parse_route_arguments,
     specialist_from_text_fallback,
 )
+from app.agent_trace import (
+    AgentTraceLogger,
+    get_trace_logger,
+    reset_trace_logger,
+    set_trace_logger,
+)
+from app.config import get_settings, resolve_agent_trace_dir
 from mcp_client.client import Client
 from mcp.types import CallToolResult, Tool  # pyright: ignore[reportMissingImports]
 
@@ -29,6 +36,8 @@ MAX_TOOL_ROUNDS = 24
 MAX_HISTORY_MESSAGES = 20
 MAX_MESSAGE_AGE_SECONDS = 7200.0
 TOOL_RESULT_PREVIEW_MAX = 500
+# Teto por mensagem tool enviada ao LLM (caracteres); evita estourar o orçamento com JSON enorme.
+TOOL_MESSAGE_CONTENT_MAX_CHARS = 32000
 # Margem extra no orçamento (metadados de pedido, imperfeição da estimativa char→token).
 CONTEXT_BUDGET_SAFETY_MARGIN = 768
 # ~3 caracteres por token: estimativa conservadora (podagem um pouco mais agressiva).
@@ -159,13 +168,23 @@ def _mcp_result_to_text(result: CallToolResult) -> str:
     return text if text else "(sem conteúdo textual)"
 
 
+def _strip_orch_internal_keys(msg: dict[str, Any]) -> dict[str, Any]:
+    """Remove chaves internas do orquestrador (não enviar à API do modelo)."""
+    return {
+        k: v
+        for k, v in msg.items()
+        if not (isinstance(k, str) and k.startswith("_orch"))
+    }
+
+
 def _messages_with_skill(
     skill: str,
     messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    public = [_strip_orch_internal_keys(m) for m in messages]
     if not skill:
-        return list(messages)
-    out = list(messages)
+        return list(public)
+    out = list(public)
     if out and out[0].get("role") == "system":
         existing = (out[0].get("content") or "").strip()
         merged = f"{skill}\n\n{existing}".strip() if existing else skill
@@ -276,6 +295,27 @@ class ModularOrchestrator:
         self._message_times.clear()
         await self.set_agent("maestro")
 
+    def hydrate_session_state(
+        self,
+        agent_type: AgentType,
+        messages: list[dict[str, Any]],
+        message_times: list[float] | None = None,
+    ) -> None:
+        """
+        Repõe histórico e agente sem `set_agent` (evita limpar mensagens ao trocar de sessão).
+        Usado para reidratar a partir do PostgreSQL.
+        """
+        if agent_type != self.current_agent:
+            self.current_skill, self.current_metadata = self.skill_loader.load_skill(agent_type)
+            self.current_agent = agent_type
+        elif not self.current_skill:
+            self.current_skill, self.current_metadata = self.skill_loader.load_skill(agent_type)
+        self.messages = [dict(m) for m in messages]
+        if message_times and len(message_times) == len(self.messages):
+            self._message_times = list(message_times)
+        else:
+            self._message_times = [time.time() for _ in self.messages]
+
     def _append_message(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
         self._message_times.append(time.time())
@@ -326,7 +366,12 @@ class ModularOrchestrator:
         now = time.time()
         cutoff = now - MAX_MESSAGE_AGE_SECONDS
 
-        while self.messages and self._message_times and self._message_times[0] < cutoff:
+        while (
+            self.messages
+            and self._message_times
+            and self._message_times[0] < cutoff
+            and not self.messages[0].get("_orch_anchor")
+        ):
             self.messages.pop(0)
             self._message_times.pop(0)
 
@@ -343,11 +388,15 @@ class ModularOrchestrator:
                     <= cap
                 ):
                     break
+                if self.messages[0].get("_orch_anchor"):
+                    break
                 self.messages.pop(0)
                 self._message_times.pop(0)
                 self._strip_leading_orphan_tools()
 
         while len(self.messages) > MAX_HISTORY_MESSAGES:
+            if self.messages[0].get("_orch_anchor"):
+                break
             self.messages.pop(0)
             self._message_times.pop(0)
 
@@ -355,6 +404,313 @@ class ModularOrchestrator:
 
     def _cap_messages(self) -> None:
         self._prune_messages()
+
+    async def _prepare_agent_for_run(
+        self,
+        *,
+        auto_route: bool,
+        target_agent: AgentType | None,
+    ) -> None:
+        if auto_route:
+            continuing_specialist = (
+                self.current_agent != "maestro" and len(self.messages) > 0
+            )
+            if not continuing_specialist:
+                await self.set_agent("maestro")
+        else:
+            assert target_agent is not None
+            await self.set_agent(target_agent)
+
+    def _tools_payload_for_chat(self) -> list[dict[str, Any]] | None:
+        if not self.tools:
+            return None
+        return [tool.model_dump() for tool in self.tools]
+
+    @staticmethod
+    def _maestro_tool_choice_dict() -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {"name": ROUTE_TO_SPECIALIST_TOOL_NAME},
+        }
+
+    def _maestro_terminal_response(
+        self,
+        content: str,
+        tools_used: list[dict[str, Any]],
+        agent: AgentType,
+    ) -> dict[str, Any]:
+        return {
+            "assistant": {"role": "assistant", "content": content},
+            "tools_used": tools_used,
+            "agent": agent,
+        }
+
+    async def _run_maestro_routing_phase(
+        self,
+        user_input: str,
+        tools_used: list[dict[str, Any]],
+        step: int,
+    ) -> tuple[dict[str, Any] | None, int]:
+        """
+        Loop do Maestro até handoff para especialista.
+        Retorna (resposta_terminal, step) — se resposta_terminal não for None, o caller deve
+        devolvê-la imediatamente; caso contrário segue para o loop do especialista.
+        """
+        maestro_tool_choice = self._maestro_tool_choice_dict()
+        while self.current_agent == "maestro":
+            step += 1
+            if step > MAX_TOOL_ROUNDS:
+                raise RuntimeError(
+                    f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
+                )
+
+            self._cap_messages()
+            response = await self.model.chat(
+                messages=_messages_with_skill(self.current_skill, self.messages),
+                tools=MAESTRO_TOOLS_ONLY,
+                tool_choice=maestro_tool_choice,
+            )
+            tool_calls = response.get("tool_calls") or []
+            tlm = get_trace_logger()
+            if tlm:
+                tlm.record("orchestrator.maestro.llm_turn", tool_calls=tool_calls)
+
+            routed = False
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                name = fn.get("name")
+                if name != ROUTE_TO_SPECIALIST_TOOL_NAME:
+                    continue
+                args = _parse_tool_arguments(fn.get("arguments"))
+                try:
+                    specialist = parse_route_arguments(args)
+                except ValueError as e:
+                    return (
+                        self._maestro_terminal_response(
+                            (
+                                "Não foi possível rotear o pedido: argumentos inválidos na "
+                                f"ferramenta de roteamento ({e})."
+                            ),
+                            tools_used,
+                            self.current_agent,
+                        ),
+                        step,
+                    )
+                tools_used.append({
+                    "name": ROUTE_TO_SPECIALIST_TOOL_NAME,
+                    "arguments": args,
+                    "ok": True,
+                    "error": None,
+                    "result_preview": f"handoff → {specialist}",
+                })
+                print(f"🎯 Handoff: maestro → {specialist}")
+                await self.set_agent(specialist)
+                self._append_message({
+                    "role": "user",
+                    "content": user_input,
+                })
+                routed = True
+                break
+
+            if routed:
+                break
+
+            if not tool_calls:
+                fb = specialist_from_text_fallback(response.get("content") or "")
+                if fb is not None:
+                    tools_used.append({
+                        "name": ROUTE_TO_SPECIALIST_TOOL_NAME,
+                        "arguments": {"agent": fb, "reason": "fallback_text_token"},
+                        "ok": True,
+                        "error": None,
+                        "result_preview": f"handoff (fallback texto) → {fb}",
+                    })
+                    print(f"🎯 Handoff (fallback texto): maestro → {fb}")
+                    await self.set_agent(fb)
+                    self._append_message({
+                        "role": "user",
+                        "content": user_input,
+                    })
+                    break
+                return (
+                    self._maestro_terminal_response(
+                        (
+                            "Não foi possível determinar o agente especializado. "
+                            "Reformula a pergunta ou indica ``target_agent`` no pedido HTTP."
+                        ),
+                        tools_used,
+                        "maestro",
+                    ),
+                    step,
+                )
+
+            return (
+                self._maestro_terminal_response(
+                    (
+                        "Resposta inesperada do Maestro (sem roteamento válido). "
+                        "Tenta de novo ou usa ``target_agent`` explícito."
+                    ),
+                    tools_used,
+                    "maestro",
+                ),
+                step,
+            )
+
+        return (None, step)
+
+    async def _execute_single_tool_call(
+        self,
+        tc: dict[str, Any],
+        tools_used: list[dict[str, Any]],
+    ) -> None:
+        tc_id = tc.get("id") or ""
+        fn = tc.get("function") or {}
+        name = fn.get("name")
+
+        if not name:
+            tlog = get_trace_logger()
+            if tlog:
+                tlog.record("orchestrator.tool.missing_name", tool_call=tc)
+            self._append_message({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": "Erro: nome da ferramenta ausente na resposta do modelo.",
+            })
+            tools_used.append({
+                "name": None,
+                "arguments": {},
+                "ok": False,
+                "error": "nome da ferramenta ausente",
+                "result_preview": None,
+            })
+            return
+
+        args = _parse_tool_arguments(fn.get("arguments"))
+
+        if name == ROUTE_TO_SPECIALIST_TOOL_NAME and self.current_agent != "maestro":
+            msg = (
+                "Roteamento entre agentes só é feito pelo Maestro (pedido HTTP sem "
+                "`target_agent`). Como agente especialista, não podes usar "
+                "`route_to_specialist`. Resolve o pedido com as ferramentas MCP "
+                "disponíveis ou explica ao utilizador o que não consegues fazer "
+                "neste papel."
+            )
+            print(
+                f"⛔ [{self.current_agent}] Bloqueado: {name} "
+                "(apenas Maestro pode rotear)"
+            )
+            tlog = get_trace_logger()
+            if tlog:
+                tlog.record(
+                    "orchestrator.tool.blocked",
+                    agent=self.current_agent,
+                    tool=name,
+                    arguments=args,
+                )
+            tools_used.append({
+                "name": name,
+                "arguments": args,
+                "ok": False,
+                "error": "route_to_specialist não permitido fora do Maestro",
+                "result_preview": None,
+            })
+            self._append_message({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": msg,
+            })
+            return
+
+        print(f"⚙️  [{self.current_agent}] Executing: {name}")
+
+        try:
+            mcp_result = await self.client.call_tool(name, args)
+            content = _mcp_result_to_text(mcp_result)
+            preview = content[:TOOL_RESULT_PREVIEW_MAX]
+            if len(content) > TOOL_RESULT_PREVIEW_MAX:
+                preview += "…"
+            tools_used.append({
+                "name": name,
+                "arguments": args,
+                "ok": True,
+                "error": None,
+                "result_preview": preview,
+            })
+        except Exception as e:
+            content = f"Erro ao chamar a ferramenta: {e}"
+            tools_used.append({
+                "name": name,
+                "arguments": args,
+                "ok": False,
+                "error": str(e),
+                "result_preview": None,
+            })
+
+        max_tool = TOOL_MESSAGE_CONTENT_MAX_CHARS
+        if len(content) > max_tool:
+            content = (
+                content[:max_tool]
+                + "\n\n[Conteúdo truncado pelo orquestrador (limite de contexto). "
+                "Use summarize=true, menos linhas por query ou paginação offset.]"
+            )
+
+        self._append_message({
+            "role": "tool",
+            "tool_call_id": tc_id,
+            "content": content,
+        })
+
+    async def _run_specialist_loop(
+        self,
+        tools_payload: list[dict[str, Any]] | None,
+        tools_used: list[dict[str, Any]],
+        step: int,
+    ) -> dict[str, Any]:
+        while True:
+            step += 1
+            if step > MAX_TOOL_ROUNDS:
+                raise RuntimeError(
+                    f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
+                )
+
+            self._cap_messages()
+            response = await self.model.chat(
+                messages=_messages_with_skill(self.current_skill, self.messages),
+                tools=tools_payload,
+            )
+
+            tool_calls = response.get("tool_calls")
+            if tool_calls:
+                response.setdefault(
+                    "content",
+                    "[Agent is requesting tool execution]",
+                )
+                tlog = get_trace_logger()
+                if tlog:
+                    tlog.record(
+                        "orchestrator.specialist.tool_calls_raw",
+                        agent=self.current_agent,
+                        tool_calls=tool_calls,
+                    )
+
+            self._append_message(response)
+
+            if not tool_calls:
+                return {
+                    "assistant": response,
+                    "tools_used": tools_used,
+                    "agent": self.current_agent,
+                }
+
+            requested = [
+                n
+                for tc in tool_calls
+                if (n := tc.get("function", {}).get("name"))
+            ]
+            print(f"🔧 [{self.current_agent}] Tool request: {requested}")
+
+            for tc in tool_calls:
+                await self._execute_single_tool_call(tc, tools_used)
 
     async def run(self, user_input: str, target_agent: AgentType | None = None) -> dict[str, Any]:
         """
@@ -367,240 +723,67 @@ class ModularOrchestrator:
         auto_route = target_agent is None
         tools_used: list[dict[str, Any]] = []
 
-        if auto_route:
-            continuing_specialist = (
-                self.current_agent != "maestro" and len(self.messages) > 0
+        trace_token = None
+        self._trace_run_id = None
+        st = get_settings()
+        trace_root = resolve_agent_trace_dir(st)
+        if trace_root is not None:
+            trace_root.mkdir(parents=True, exist_ok=True)
+            tr0 = AgentTraceLogger.start_run(
+                trace_root,
+                max_value_chars=st.agent_trace_max_field_chars,
             )
-            if not continuing_specialist:
-                await self.set_agent("maestro")
-        else:
-            await self.set_agent(target_agent)
+            self._trace_run_id = tr0.run_id
+            trace_token = set_trace_logger(tr0)
+            tr0.record(
+                "orchestrator.run.start",
+                user_input=user_input,
+                target_agent=target_agent,
+                current_agent=self.current_agent,
+            )
+
+        await self._prepare_agent_for_run(
+            auto_route=auto_route,
+            target_agent=target_agent,
+        )
 
         try:
             self._append_message({
                 "role": "user",
                 "content": user_input,
+                "_orch_anchor": True,
             })
 
-            tools_payload = (
-                [tool.model_dump() for tool in self.tools]
-                if self.tools
-                else None
-            )
-
+            tools_payload = self._tools_payload_for_chat()
             step = 0
 
             if auto_route and self.current_agent == "maestro":
-                maestro_tool_choice: dict[str, Any] = {
-                    "type": "function",
-                    "function": {"name": ROUTE_TO_SPECIALIST_TOOL_NAME},
-                }
-                while self.current_agent == "maestro":
-                    step += 1
-                    if step > MAX_TOOL_ROUNDS:
-                        raise RuntimeError(
-                            f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
-                        )
-
-                    self._cap_messages()
-                    response = await self.model.chat(
-                        messages=_messages_with_skill(self.current_skill, self.messages),
-                        tools=MAESTRO_TOOLS_ONLY,
-                        tool_choice=maestro_tool_choice,
-                    )
-                    tool_calls = response.get("tool_calls") or []
-
-                    routed = False
-                    for tc in tool_calls:
-                        fn = tc.get("function") or {}
-                        name = fn.get("name")
-                        if name != ROUTE_TO_SPECIALIST_TOOL_NAME:
-                            continue
-                        args = _parse_tool_arguments(fn.get("arguments"))
-                        try:
-                            specialist = parse_route_arguments(args)
-                        except ValueError as e:
-                            return {
-                                "assistant": {
-                                    "role": "assistant",
-                                    "content": (
-                                        "Não foi possível rotear o pedido: argumentos inválidos na "
-                                        f"ferramenta de roteamento ({e})."
-                                    ),
-                                },
-                                "tools_used": tools_used,
-                                "agent": self.current_agent,
-                            }
-                        tools_used.append({
-                            "name": ROUTE_TO_SPECIALIST_TOOL_NAME,
-                            "arguments": args,
-                            "ok": True,
-                            "error": None,
-                            "result_preview": f"handoff → {specialist}",
-                        })
-                        print(f"🎯 Handoff: maestro → {specialist}")
-                        await self.set_agent(specialist)
-                        self._append_message({
-                            "role": "user",
-                            "content": user_input,
-                        })
-                        routed = True
-                        break
-
-                    if routed:
-                        break
-
-                    if not tool_calls:
-                        fb = specialist_from_text_fallback(response.get("content") or "")
-                        if fb is not None:
-                            tools_used.append({
-                                "name": ROUTE_TO_SPECIALIST_TOOL_NAME,
-                                "arguments": {"agent": fb, "reason": "fallback_text_token"},
-                                "ok": True,
-                                "error": None,
-                                "result_preview": f"handoff (fallback texto) → {fb}",
-                            })
-                            print(f"🎯 Handoff (fallback texto): maestro → {fb}")
-                            await self.set_agent(fb)
-                            self._append_message({
-                                "role": "user",
-                                "content": user_input,
-                            })
-                            break
-                        return {
-                            "assistant": {
-                                "role": "assistant",
-                                "content": (
-                                    "Não foi possível determinar o agente especializado. "
-                                    "Reformula a pergunta ou indica ``target_agent`` no pedido HTTP."
-                                ),
-                            },
-                            "tools_used": tools_used,
-                            "agent": "maestro",
-                        }
-
-                    return {
-                        "assistant": {
-                            "role": "assistant",
-                            "content": (
-                                "Resposta inesperada do Maestro (sem roteamento válido). "
-                                "Tenta de novo ou usa ``target_agent`` explícito."
-                            ),
-                        },
-                        "tools_used": tools_used,
-                        "agent": "maestro",
-                    }
-
-            while True:
-                step += 1
-                if step > MAX_TOOL_ROUNDS:
-                    raise RuntimeError(
-                        f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
-                    )
-
-                self._cap_messages()
-                response = await self.model.chat(
-                    messages=_messages_with_skill(self.current_skill, self.messages),
-                    tools=tools_payload,
+                early, step = await self._run_maestro_routing_phase(
+                    user_input, tools_used, step
                 )
+                if early is not None:
+                    if self._trace_run_id:
+                        early["trace_run_id"] = self._trace_run_id
+                    return early
 
-                tool_calls = response.get("tool_calls")
-                if tool_calls:
-                    response.setdefault(
-                        "content",
-                        "[Agent is requesting tool execution]",
-                    )
-
-                self._append_message(response)
-
-                if not tool_calls:
-                    return {"assistant": response, "tools_used": tools_used, "agent": self.current_agent}
-
-                requested = [
-                    n
-                    for tc in tool_calls
-                    if (n := tc.get("function", {}).get("name"))
-                ]
-                print(f"🔧 [{self.current_agent}] Tool request: {requested}")
-
-                for tc in tool_calls:
-                    tc_id = tc.get("id") or ""
-                    fn = tc.get("function") or {}
-                    name = fn.get("name")
-
-                    if not name:
-                        self._append_message({
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "content": "Erro: nome da ferramenta ausente na resposta do modelo.",
-                        })
-                        tools_used.append({
-                            "name": None,
-                            "arguments": {},
-                            "ok": False,
-                            "error": "nome da ferramenta ausente",
-                            "result_preview": None,
-                        })
-                        continue
-
-                    args = _parse_tool_arguments(fn.get("arguments"))
-
-                    if name == ROUTE_TO_SPECIALIST_TOOL_NAME and self.current_agent != "maestro":
-                        msg = (
-                            "Roteamento entre agentes só é feito pelo Maestro (pedido HTTP sem "
-                            "`target_agent`). Como agente especialista, não podes usar "
-                            "`route_to_specialist`. Resolve o pedido com as ferramentas MCP "
-                            "disponíveis ou explica ao utilizador o que não consegues fazer "
-                            "neste papel."
-                        )
-                        print(
-                            f"⛔ [{self.current_agent}] Bloqueado: {name} "
-                            "(apenas Maestro pode rotear)"
-                        )
-                        tools_used.append({
-                            "name": name,
-                            "arguments": args,
-                            "ok": False,
-                            "error": "route_to_specialist não permitido fora do Maestro",
-                            "result_preview": None,
-                        })
-                        self._append_message({
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "content": msg,
-                        })
-                        continue
-
-                    print(f"⚙️  [{self.current_agent}] Executing: {name}")
-
-                    try:
-                        mcp_result = await self.client.call_tool(name, args)
-                        content = _mcp_result_to_text(mcp_result)
-                        preview = content[:TOOL_RESULT_PREVIEW_MAX]
-                        if len(content) > TOOL_RESULT_PREVIEW_MAX:
-                            preview += "…"
-                        tools_used.append({
-                            "name": name,
-                            "arguments": args,
-                            "ok": True,
-                            "error": None,
-                            "result_preview": preview,
-                        })
-                    except Exception as e:
-                        content = f"Erro ao chamar a ferramenta: {e}"
-                        tools_used.append({
-                            "name": name,
-                            "arguments": args,
-                            "ok": False,
-                            "error": str(e),
-                            "result_preview": None,
-                        })
-
-                    self._append_message({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": content,
-                    })
+            out = await self._run_specialist_loop(
+                tools_payload, tools_used, step
+            )
+            if self._trace_run_id:
+                out["trace_run_id"] = self._trace_run_id
+            return out
 
         finally:
             self._cap_messages()
+            for m in self.messages:
+                m.pop("_orch_anchor", None)
+            tr_end = get_trace_logger()
+            if tr_end:
+                tr_end.record(
+                    "orchestrator.run.finally",
+                    messages_count=len(self.messages),
+                    current_agent=self.current_agent,
+                )
+            if trace_token is not None:
+                reset_trace_logger(trace_token)
+            self._trace_run_id = None

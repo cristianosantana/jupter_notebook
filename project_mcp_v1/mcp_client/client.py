@@ -8,6 +8,8 @@ from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
 from mcp.client.stdio import stdio_client  # pyright: ignore[reportMissingImports]
 from mcp.shared.context import RequestContext  # pyright: ignore[reportMissingImports]
 
+from app.agent_trace import get_trace_logger
+
 SamplingCallback = Callable[
     [RequestContext[Any, Any], mcp_types.CreateMessageRequestParams],
     Awaitable[
@@ -65,15 +67,38 @@ class Client:
         if not self.session:
             raise RuntimeError("Client not connected")
 
+        tr = get_trace_logger()
+        if tr:
+            tr.record("mcp.client.list_tools.request")
+
         result = await self.session.list_tools()
+        if tr:
+            tr.record(
+                "mcp.client.list_tools.response",
+                tool_names=[t.name for t in result.tools],
+                tool_count=len(result.tools),
+            )
         return result.tools
 
     async def call_tool(self, name: str, arguments: dict | None = None):
         if not self.session:
             raise RuntimeError("Client not connected")
 
+        tr = get_trace_logger()
+        meta = None
+        if tr:
+            meta = {"agent_trace_run_id": tr.run_id}
+            tr.record("mcp.client.call_tool.request", tool=name, arguments=arguments or {})
+
         result = await self.session.call_tool(
             name,
             arguments or {},
+            meta=meta,
         )
+        if tr:
+            try:
+                dumped = result.model_dump(mode="json")
+            except Exception as e:
+                dumped = {"error_serializing": str(e), "repr": repr(result)}
+            tr.record("mcp.client.call_tool.response", tool=name, result=dumped)
         return result

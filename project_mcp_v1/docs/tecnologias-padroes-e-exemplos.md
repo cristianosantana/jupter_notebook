@@ -145,16 +145,18 @@ Content-Type: application/json
 
 ### `run_analytics_query`
 
+Fluxo sugerido para o modelo: se o `query_id` não for óbvio, usar antes a tool **`list_analytics_queries`** (catálogo textual alinhado a `QUERY_REGISTRY`).
+
 Argumentos principais:
 
 | Argumento | Tipo | Notas |
 |-----------|------|-------|
 
-| `query_id` | string (enum) | Um dos 9 ids documentados em [estrutura-e-recursos.md](estrutura-e-recursos.md). |
+| `query_id` | string (enum) | Ids documentados em [estrutura-e-recursos.md](estrutura-e-recursos.md) e [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
 | `limit` | int | Máximo 10000 (clamp no servidor). |
 | `offset` | int | Paginação. |
-| `summarize` | bool | Se true, tenta MCP sampling para resumo (requer cliente com sampling). |
-| `date_from` / `date_to` | string opcional | **Obrigatórios** para `faturamento_ticket_concessionaria_periodo` (`YYYY-MM-DD`). |
+| `summarize` | bool | Se true, formato compacto + tentativa de MCP sampling. Para os query_id em `TABULAR_LEGACY_QUERY_IDS` (tabular clássico, 10 ids — inclui `performance_vendedor_mes` mensal e `performance_vendedor_ano`), o servidor **força** sempre o formato compacto mesmo com `summarize=false` (sem dataset bruto completo na resposta). |
+| `date_from` / `date_to` | string | **Obrigatórios para qualquer `query_id`** (`YYYY-MM-DD`); substituem `__MCP_DATE_FROM__` / `__MCP_DATE_TO__` no SQL do recurso `analytics://query/{query_id}`. |
 
 Exemplo de **argumentos** (como o LLM envia na `tool_call`):
 
@@ -168,7 +170,7 @@ Exemplo de **argumentos** (como o LLM envia na `tool_call`):
 }
 ```
 
-Corpo de retorno da tool: string JSON com `query_id`, `limit`, `offset`, `row_count`, `rows`, e opcionalmente `llm_summary`.
+Corpo de retorno da tool: string JSON. Modo compacto: `row_count`, `rows_sample`, opcionalmente `llm_summary`. Modo completo (só para query_id que não são tabulares legados e com `summarize=false`): inclui `rows` com até `limit` linhas.
 
 ---
 

@@ -128,7 +128,7 @@ Resposta:
     },
     {
       "name": "run_analytics_query",
-      "arguments": {"query_id": "performance_vendedor_periodo"},
+      "arguments": {"query_id": "performance_vendedor_mes"},
       "ok": true,
       "result_preview": "..."
     }

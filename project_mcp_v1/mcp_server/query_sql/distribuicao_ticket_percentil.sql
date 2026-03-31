@@ -1,3 +1,4 @@
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 WITH TicketCalculado AS (
     SELECT 
         con.nome AS concessionaria_nome,
@@ -8,7 +9,8 @@ WITH TicketCalculado AS (
     JOIN os_servicos oss ON oss.os_id = os.id
     JOIN concessionarias con ON os.concessionaria_id = con.id
     WHERE os.paga = 1 AND os.cancelada = 0
-    AND os.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    AND os.created_at >= __MCP_DATE_FROM__
+    AND os.created_at <= __MCP_DATE_TO__
     GROUP BY con.id, os.id
 ),
 Ranqueamento AS (

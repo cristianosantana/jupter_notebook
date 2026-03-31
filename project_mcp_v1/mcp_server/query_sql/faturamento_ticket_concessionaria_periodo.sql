@@ -1,3 +1,4 @@
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,

@@ -1,3 +1,4 @@
+-- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
     con.nome AS concessionaria_nome,
@@ -18,7 +19,8 @@ JOIN servicos s ON oss.servico_id = s.id
 WHERE 
     os.paga = 1 
     AND os.cancelada = 0
-    AND os.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH) -- Analisamos os últimos 6 meses para ter padrão
+    AND os.created_at >= __MCP_DATE_FROM__
+    AND os.created_at <= __MCP_DATE_TO__
 GROUP BY 
     con.id, 
     DAYOFWEEK(os.created_at), 
