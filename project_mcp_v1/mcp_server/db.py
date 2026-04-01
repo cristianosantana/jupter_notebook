@@ -6,11 +6,31 @@ import json
 import os
 from datetime import date, datetime, time
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
+
 from dotenv import load_dotenv
 import aiomysql  # pyright: ignore[reportMissingImports]
 
-load_dotenv()
+
+def _load_dotenv_for_mcp_process() -> None:
+    """
+    O subprocesso MCP herda ``MYSQL_*`` do pai; ``load_dotenv()`` sem ``override`` não corrige.
+
+    Carrega o primeiro ``.env`` existente entre a raiz do projecto (pai de ``mcp_server/``) e
+    ``Path.cwd()``, com ``override=True`` para o ficheiro mandar sobre o ambiente herdado.
+    """
+    for candidate in (
+        Path(__file__).resolve().parent.parent / ".env",
+        Path.cwd() / ".env",
+    ):
+        if candidate.is_file():
+            load_dotenv(candidate, override=True)
+            return
+    load_dotenv()
+
+
+_load_dotenv_for_mcp_process()
 
 _pool: aiomysql.Pool | None = None
 
@@ -33,6 +53,13 @@ async def get_pool() -> aiomysql.Pool:
     global _pool
     if _pool is not None:
         return _pool
+
+    try:
+        from app.config import get_settings, sync_mysql_env_from_settings
+
+        sync_mysql_env_from_settings(get_settings())
+    except Exception:
+        pass
 
     database = os.environ.get("MYSQL_DATABASE", "").strip()
     if not database:
@@ -94,8 +121,10 @@ def rows_to_compact_json_payload(
         "row_count": len(rows),
         "rows_sample": sample,
         "rows_sample_note": (
-            f"Amostra: {len(sample)} de {len(rows)} linhas (página limit={limit} offset={offset}); "
-            "dados completos: summarize=false com paginação offset."
+            f"Payload compacto: rows_sample tem {len(sample)} de {len(rows)} linhas desta página "
+            f"(limit={limit} offset={offset}). "
+            "Para análises tabular legacy, summarize=false continua compacto (não recebe todas as linhas aqui). "
+            "Para performance_vendedor_mes/ano e outras não legacy, summarize=false devolve o campo rows completo da página."
         ),
     }
     if summarized:
@@ -103,8 +132,9 @@ def rows_to_compact_json_payload(
     else:
         payload["llm_summary"] = None
         payload["note"] = (
-            "Resumo automático (MCP sampling) indisponível; baseie-se em rows_sample e row_count "
-            "ou chame run_analytics_query com summarize=false."
+            "Resumo MCP indisponível. Não trates rows_sample como ranking global nem dataset completo. "
+            "Se precisares de todas as linhas, usa query_id fora do conjunto tabular legacy com summarize=false "
+            "(ou paginação offset); ver list_analytics_queries."
         )
     return json.dumps(payload, ensure_ascii=False, default=_json_default)
 
@@ -139,6 +169,10 @@ def rows_to_json_payload(
         "offset": offset,
         "row_count": len(rows),
         "rows": rows,
+        "payload_note": (
+            "Campo rows contém todas as linhas desta página (até limit). "
+            "Se row_count == limit, pode haver mais dados: usar offset na próxima chamada."
+        ),
     }
     if summarized:
         payload["llm_summary"] = summarized

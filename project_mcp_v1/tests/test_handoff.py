@@ -1,12 +1,18 @@
 """Testes do handoff Maestro → especialista (ferramenta virtual route_to_specialist)."""
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from ai_provider.base import ModelProvider
-from app.orchestrator import ModularOrchestrator, _messages_with_skill
+from app.orchestrator import (
+    ENTITY_GLOSSARY_MCP_TOOL,
+    ModularOrchestrator,
+    _messages_with_skill,
+)
 from app.routing_tools import ROUTE_TO_SPECIALIST_TOOL_NAME
+from mcp.types import CallToolResult, TextContent  # pyright: ignore[reportMissingImports]
 
 
 _SKILLS = Path(__file__).resolve().parent.parent / "app" / "skills"
@@ -252,22 +258,60 @@ def test_messages_with_skill_omits_orch_internal_keys():
     assert user_part[0]["content"] == "pergunta"
 
 
-def test_run_strips_orch_anchor_after_finally():
+def test_prompt_skill_text_merges_glossary_block():
+    client = _mock_client()
+    orch = ModularOrchestrator(FakeModelDirect(), client, skills_dir=_SKILLS)
+    orch.current_skill = "CORPO_SKILL"
+    orch._entity_glossary = "## Glossário\n- id=1: X"
+    merged = orch._prompt_skill_text()
+    assert "CORPO_SKILL" in merged
+    assert "## Glossário" in merged
+
+
+def test_refresh_entity_glossary_disabled_leaves_empty(monkeypatch):
+    monkeypatch.setenv("ENTITY_GLOSSARY_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
     async def _run():
         client = _mock_client()
-        model = FakeModelDirect()
-        orch = ModularOrchestrator(model, client, skills_dir=_SKILLS)
-        await orch.load_tools()
-        await orch.run("Olá", target_agent="visualizador")
-        for m in orch.messages:
-            assert "_orch_anchor" not in m
+        orch = ModularOrchestrator(FakeModelDirect(), client, skills_dir=_SKILLS)
+        orch._entity_glossary = "old"
+        await orch._refresh_entity_glossary()
+        assert orch._entity_glossary == ""
 
     asyncio.run(_run())
+    get_settings.cache_clear()
 
 
-def test_messages_with_skill_omits_orch_internal_keys():
-    msgs = [{"role": "user", "content": "pergunta", "_orch_anchor": True}]
-    out = _messages_with_skill("SKILL", msgs)
-    assert not any("_orch_anchor" in m for m in out)
-    user_part = [m for m in out if m.get("role") == "user"]
-    assert user_part[0]["content"] == "pergunta"
+def test_refresh_entity_glossary_uses_mcp_tool(monkeypatch):
+    monkeypatch.setenv("ENTITY_GLOSSARY_ENABLED", "true")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    payload = json.dumps(
+        {"markdown": "## Glossário MCP\n- ok", "stats": {"concessionarias_count": 2}},
+        ensure_ascii=False,
+    )
+    mcp_res = CallToolResult(
+        content=[TextContent(type="text", text=payload)],
+        isError=False,
+    )
+
+    async def _run():
+        client = MagicMock()
+        client.session = object()
+        client.call_tool = AsyncMock(return_value=mcp_res)
+        orch = ModularOrchestrator(FakeModelDirect(), client, skills_dir=_SKILLS)
+        await orch._refresh_entity_glossary()
+        assert "Glossário MCP" in orch._entity_glossary
+        client.call_tool.assert_awaited_once()
+        call = client.call_tool.await_args
+        assert call is not None
+        assert call.args[0] == ENTITY_GLOSSARY_MCP_TOOL
+        assert "max_chars" in (call.args[1] or {})
+
+    asyncio.run(_run())
+    get_settings.cache_clear()

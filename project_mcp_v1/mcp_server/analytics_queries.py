@@ -7,7 +7,7 @@ from typing import Final
 
 QUERY_DIR: Final[Path] = Path(__file__).resolve().parent / "query_sql"
 
-# query_id tabular original: resposta à tool nunca deve enviar rows completas ao LLM (ver run_analytics_query).
+# query_id tabular legacy: resposta à tool sempre compacta (rows_sample), ver run_analytics_query.
 TABULAR_LEGACY_QUERY_IDS: Final[frozenset[str]] = frozenset(
     {
         "cross_selling",
@@ -15,11 +15,17 @@ TABULAR_LEGACY_QUERY_IDS: Final[frozenset[str]] = frozenset(
         "taxa_conversao_servico_concessionaria_vendedor",
         "servicos_vendidos_por_concessionaria",
         "sazonalidade_por_concessionaria",
-        "performance_vendedor_mes",
-        "performance_vendedor_ano",
         "faturamento_ticket_concessionaria_periodo",
         "distribuicao_ticket_percentil",
         "propenso_compra_hora_dia_servico",
+    }
+)
+
+# Tabular multi-linha: summarize=false devolve `rows` completos da página (não compacto legacy).
+TABULAR_FULL_ROWS_QUERY_IDS: Final[frozenset[str]] = frozenset(
+    {
+        "performance_vendedor_mes",
+        "performance_vendedor_ano",
     }
 )
 
@@ -144,8 +150,9 @@ GLOBAL_PERIOD_HELP = (
     "Todas as análises filtram por intervalo de datas: em run_analytics_query são obrigatórios "
     "date_from e date_to (YYYY-MM-DD). O recurso MCP analytics://query/{query_id} mostra o SQL com "
     "os placeholders __MCP_DATE_FROM__ e __MCP_DATE_TO__. "
-    "As análises em TABULAR_LEGACY_QUERY_IDS (tabular clássico; inclui performance_vendedor_mes mensal e performance_vendedor_ano, entre outras) "
-    "devolvem sempre payload compacto (amostra + resumo quando o sampling MCP existir), mesmo com summarize=false."
+    "Os query_id listados no catálogo como tabular legacy (cross_selling, sazonalidade, etc., ver marcação por análise) "
+    "devolvem sempre payload compacto (rows_sample + resumo quando o sampling MCP existir), mesmo com summarize=false. "
+    "performance_vendedor_mes e performance_vendedor_ano com summarize=false devolvem o campo rows com todas as linhas da página (até limit)."
 )
 
 QUERY_ID_PARAM_HELP = (
@@ -184,6 +191,10 @@ def format_catalog_for_model() -> str:
         if qid in TABULAR_LEGACY_QUERY_IDS:
             lines.append(
                 "- Formato: tabular no SQL; resposta da tool para o LLM é sempre compacta (amostra/resumo)."
+            )
+        elif qid in TABULAR_FULL_ROWS_QUERY_IDS:
+            lines.append(
+                "- Formato: tabular no SQL; com summarize=false a tool devolve o campo rows com todas as linhas da página (até limit); summarize=true fica compacto."
             )
         else:
             lines.append(

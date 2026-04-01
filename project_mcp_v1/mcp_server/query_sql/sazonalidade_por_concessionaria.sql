@@ -2,10 +2,9 @@
 WITH FaturamentoMensal AS (
     SELECT 
         con.id AS concessionaria_id,
-        con.nome AS concessionaria_nome,
         MONTH(os.created_at) AS mes_num,
         YEAR(os.created_at) AS ano_num,
-        MONTHNAME(os.created_at) AS mes_nome,
+        MAX(MONTHNAME(os.created_at)) AS mes_nome,
         SUM(oss.valor_venda_real) AS faturamento
     FROM os
     JOIN os_servicos oss ON oss.os_id = os.id
@@ -20,7 +19,6 @@ MediaHistoricaPorMes AS (
     -- Aqui calculamos a média de cada mês (Ex: Média de todos os meses 4)
     SELECT 
         concessionaria_id,
-        concessionaria_nome,
         mes_num,
         AVG(faturamento) AS media_historica_mes
     FROM FaturamentoMensal
@@ -28,7 +26,6 @@ MediaHistoricaPorMes AS (
 )
 SELECT 
     f.concessionaria_id,
-    f.concessionaria_nome,
     f.mes_num,
     f.mes_nome,
     f.ano_num,

@@ -1,7 +1,6 @@
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 WITH TicketCalculado AS (
     SELECT 
-        con.nome AS concessionaria_nome,
         con.id AS concessionaria_id,
         os.id AS os_id,
         SUM(oss.valor_venda_real) AS valor_total_os
@@ -16,7 +15,6 @@ WITH TicketCalculado AS (
 Ranqueamento AS (
     SELECT 
         concessionaria_id,
-        concessionaria_nome,
         valor_total_os,
         -- Divide as OSs em 4 grupos iguais por unidade
         NTILE(4) OVER (PARTITION BY concessionaria_id ORDER BY valor_total_os) AS quartil
@@ -24,7 +22,6 @@ Ranqueamento AS (
 )
 SELECT 
     concessionaria_id,
-    concessionaria_nome,
     CASE 
         WHEN quartil = 1 THEN '25% (Tickets Baixos)'
         WHEN quartil = 2 THEN '50% (Mediana)'

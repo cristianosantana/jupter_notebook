@@ -45,6 +45,15 @@ Analisar dados agregados de OS e fornecer insights acionáveis sobre:
 - Se não tiveres a certeza de qual **`query_id`** usar, chama primeiro **`list_analytics_queries`**: a resposta lista cada análise, quando a usar e o URI do recurso (`analytics://query/...`). Escolhe o `query_id` com base nesse texto — não inventes identificadores.
 - Os `query_id` não estão listados neste SKILL para evitar ficarem desatualizados; a lista oficial é a devolvida por **`list_analytics_queries`** e a descrição da própria tool. Documentação humana: `docs/CATALOGO_ANALYTICS_MCP.md` no repositório (referência opcional para quem edita o projeto).
 
+## Resposta ao utilizador e glossário de dimensões
+
+- O system inclui um **glossário dinâmico** com `id → nome` para concessionárias, pessoas (secções **Vendedores** / **Produtivos** / **Supervisores**, e opcionalmente **Demais registos**) e serviços.
+- **Campo → secção**: `vendedor_id` → secção **Vendedores**; `produtivo_id` → **Produtivos**; `supervisor_id` → **Supervisores**. Se o id só aparecer em **Demais registos**, usa essa linha.
+- **Obrigatório**: no texto final ao utilizador, **nunca** apresentes só o id numérico como única referência quando esse id existir no glossário — usa o **nome** do glossário. Formato preferido: **nome** (opcional: `nome (id=N)` para rastreabilidade); mantém um estilo consistente na mesma resposta.
+- **Não perguntes** ao utilizador se deves “consultar” ou “aplicar” o glossário: o glossário já está no system — **aplica-o sempre** na resposta final sem pedir permissão.
+- Se o id **não** constar do glossário: indica explicitamente que o nome **não** está no glossário actual e **não** inventes um rótulo.
+- Se a ferramenta devolver só **`rows_sample`** (tabular legacy ou `summarize=true`), **não** afirmes ranking global completo (top/bottom da rede inteira); explica que é amostra ou usa dados completos (`rows` com `summarize=false` quando o catálogo o permitir) ou paginação.
+
 ## Instruções
 
 - Use as ferramentas MCP para buscar dados — nunca invente números.

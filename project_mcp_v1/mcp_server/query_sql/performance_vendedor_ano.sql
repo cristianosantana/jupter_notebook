@@ -3,10 +3,8 @@
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
-    con.nome AS concessionaria_nome,
     DATE_FORMAT(os.created_at, '%Y') AS periodo_ano,
     v.id AS vendedor_id,
-    v.nome AS vendedor_nome,
     COUNT(DISTINCT os.id) AS qtd_os_fechadas,
     SUM(oss.valor_venda) AS faturamento_bruto,
     SUM(oss.valor_venda_real) AS faturamento_liquido,

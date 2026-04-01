@@ -14,11 +14,18 @@ import analytics_queries  # noqa: E402
 import sql_params  # noqa: E402
 
 
-def test_tabular_legacy_has_ten_ids():
-    assert len(analytics_queries.TABULAR_LEGACY_QUERY_IDS) == 10
+def test_tabular_legacy_excludes_performance_vendedor():
+    assert len(analytics_queries.TABULAR_LEGACY_QUERY_IDS) == 8
     assert "cross_selling" in analytics_queries.TABULAR_LEGACY_QUERY_IDS
     assert "propenso_compra_hora_dia_servico" in analytics_queries.TABULAR_LEGACY_QUERY_IDS
-    assert "performance_vendedor_ano" in analytics_queries.TABULAR_LEGACY_QUERY_IDS
+    assert "performance_vendedor_ano" not in analytics_queries.TABULAR_LEGACY_QUERY_IDS
+    assert "performance_vendedor_mes" not in analytics_queries.TABULAR_LEGACY_QUERY_IDS
+
+
+def test_tabular_full_rows_performance_vendedor():
+    assert analytics_queries.TABULAR_FULL_ROWS_QUERY_IDS == frozenset(
+        {"performance_vendedor_mes", "performance_vendedor_ano"}
+    )
 
 
 def test_json_batch_not_in_tabular_legacy():

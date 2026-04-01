@@ -1,12 +1,10 @@
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
-    con.nome AS concessionaria_nome,
     -- Tradução do número do dia para nome (1=Domingo, 2=Segunda...)
     DAYNAME(os.created_at) AS dia_semana,
     HOUR(os.created_at) AS hora_dia,
     s.id AS servico_id,
-    s.nome AS servico_nome,
     COUNT(DISTINCT os.id) AS qtd_vendas,
     SUM(oss.valor_venda_real) AS faturamento_total,
     -- Ranking para identificar o serviço "campeão" naquele horário
@@ -27,7 +25,7 @@ GROUP BY
     HOUR(os.created_at), 
     s.id
 ORDER BY 
-    con.nome, 
+    con.id, 
     DAYOFWEEK(os.created_at), 
     hora_dia, 
     qtd_vendas DESC;

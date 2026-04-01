@@ -2,7 +2,7 @@
 -- Serviços em OS (linhas) vs OS fechadas: taxa de conversão global e por concessionária.
 WITH Metricas_Por_Loja AS (
     SELECT
-        c.nome AS concessionaria_nome,
+        c.id AS concessionaria_id,
         COUNT(DISTINCT oss.id) AS total_servicos,
         COUNT(DISTINCT CASE WHEN os.fechada = 1 THEN os.id END) AS total_convertidos
     FROM os_servicos oss
@@ -10,7 +10,7 @@ WITH Metricas_Por_Loja AS (
     INNER JOIN concessionarias c ON os.concessionaria_id = c.id
     WHERE oss.created_at BETWEEN __MCP_DATE_FROM__ AND __MCP_DATE_TO__
       AND oss.deleted_at IS NULL
-    GROUP BY c.id, c.nome
+    GROUP BY c.id
 ),
 Totais_Globais AS (
     SELECT
@@ -27,7 +27,7 @@ SELECT
         'por_concessionaria', (
             SELECT JSON_ARRAYAGG(
                 JSON_OBJECT(
-                    'concessionaria', concessionaria_nome,
+                    'concessionaria_id', concessionaria_id,
                     'os_servicos', total_servicos,
                     'convertidos', total_convertidos,
                     'taxa_pct', ROUND((total_convertidos / NULLIF(total_servicos, 0)) * 100, 2)

@@ -9,6 +9,7 @@ Uso:
 """
 
 import asyncio
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -20,13 +21,14 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from ai_provider.openai_provider import OpenAIProvider
-from app.config import get_settings, resolve_agent_trace_dir
+from app.config import get_settings, resolve_agent_trace_dir, sync_mysql_env_from_settings
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
 from app.orchestrator import ModularOrchestrator, AgentType
 from app.session_store import SessionStore
 
+_logger = logging.getLogger(__name__)
 
 agent: ModularOrchestrator | None = None
 session_store: SessionStore | None = None
@@ -55,11 +57,7 @@ async def lifespan(app: FastAPI):
     else:
         os.environ.pop("AGENT_TRACE_DIR", None)
 
-    os.environ.setdefault("MYSQL_HOST", settings.mysql_host)
-    os.environ.setdefault("MYSQL_PORT", str(settings.mysql_port))
-    os.environ.setdefault("MYSQL_USER", settings.mysql_user)
-    os.environ.setdefault("MYSQL_PASSWORD", settings.mysql_password)
-    os.environ.setdefault("MYSQL_DATABASE", settings.mysql_database)
+    sync_mysql_env_from_settings(settings)
     oai = AsyncOpenAI(api_key=settings.openai_api_key or None)
     sampling_cb = build_openai_sampling_callback(
         oai,
@@ -77,8 +75,18 @@ async def lifespan(app: FastAPI):
     await agent.load_tools()
 
     if settings.postgres_enabled:
-        session_store = await SessionStore.create(settings)
-        await session_store.run_migrations(settings)
+        try:
+            session_store = await SessionStore.create(settings)
+            await session_store.run_migrations(settings)
+        except Exception as e:
+            session_store = None
+            _logger.warning(
+                "PostgreSQL indisponível — sessões persistidas desactivadas. "
+                "Crie a base %r (ou corrija POSTGRES_*) se precisar de histórico. Erro: %s",
+                settings.postgres_database,
+                e,
+                exc_info=True,
+            )
 
     yield
 
@@ -155,12 +163,16 @@ async def chat(request: ChatRequest):
                 if ca not in _AGENT_TYPES:
                     ca = "maestro"
                     msgs = []
-                agent.hydrate_session_state(ca, msgs)  # type: ignore[arg-type]
+                agent.hydrate_session_state(ca, msgs, session_id=sid)  # type: ignore[arg-type]
         else:
             if request.new_conversation:
                 await agent.reset_conversation()
 
-        out = await agent.run(request.message, target_agent=request.target_agent)
+        out = await agent.run(
+            request.message,
+            target_agent=request.target_agent,
+            session_id=sid,
+        )
         assistant = out["assistant"]
 
         if session_store is not None and sid is not None:

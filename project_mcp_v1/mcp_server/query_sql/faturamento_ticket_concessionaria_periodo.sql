@@ -1,7 +1,6 @@
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,
-    con.nome AS concessionaria_nome,
     DATE_FORMAT(os.created_at, '%Y-%m') AS periodo,
     -- Faturamento Real de Mão de Obra
     SUM(oss.valor_venda_real) AS faturamento_servicos,

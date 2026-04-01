@@ -39,6 +39,7 @@ class TestJsonDefault:
         out = json.loads(s)
         assert out["row_count"] == 1
         assert "2026" in out["rows"][0]["when"]
+        assert "payload_note" in out
 
 
 class TestCompactPayload:

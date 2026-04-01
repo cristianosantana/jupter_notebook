@@ -2,7 +2,7 @@
 -- Top 5 e bottom 5 vendedores por ticket médio (OS fechadas).
 WITH PerformanceVendedores AS (
     SELECT
-        f.nome AS vendedor_nome,
+        f.id AS vendedor_id,
         COUNT(DISTINCT os.id) AS qtd_vendas,
         ROUND(SUM(oss.valor_venda_real) / COUNT(DISTINCT os.id), 2) AS ticket_medio_real
     FROM os os
@@ -12,11 +12,11 @@ WITH PerformanceVendedores AS (
       AND os.fechada = 1
       AND os.deleted_at IS NULL
       AND (oss.cancelado = 0 OR oss.cancelado IS NULL)
-    GROUP BY f.id, f.nome
+    GROUP BY f.id
 ),
 Rankeado AS (
     SELECT
-        vendedor_nome,
+        vendedor_id,
         qtd_vendas,
         ticket_medio_real,
         ROW_NUMBER() OVER (ORDER BY ticket_medio_real DESC) AS ranking_top,
@@ -29,7 +29,7 @@ SELECT JSON_OBJECT(
         SELECT JSON_ARRAYAGG(
             JSON_OBJECT(
                 'ranking', ranking_top,
-                'nome', vendedor_nome,
+                'vendedor_id', vendedor_id,
                 'ticket_medio', ticket_medio_real,
                 'qtd_vendas', qtd_vendas
             )
@@ -39,7 +39,7 @@ SELECT JSON_OBJECT(
         SELECT JSON_ARRAYAGG(
             JSON_OBJECT(
                 'ranking', ranking_bottom,
-                'nome', vendedor_nome,
+                'vendedor_id', vendedor_id,
                 'ticket_medio', ticket_medio_real,
                 'qtd_vendas', qtd_vendas
             )

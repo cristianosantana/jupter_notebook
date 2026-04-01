@@ -2,14 +2,10 @@
 WITH ParesServicos AS (
     SELECT 
         con.id AS concessionaria_id,
-        con.nome AS concessionaria_nome,
         f.id AS vendedor_id,
-        f.nome AS vendedor_nome,
         DATE_FORMAT(os.created_at, '%Y-%m') AS periodo,
         s1.id AS servico_A_id,
-        s1.nome AS servico_A_nome,
         s2.id AS servico_B_id,
-        s2.nome AS servico_B_nome,
         COUNT(*) AS frequencia_combo,
         SUM(oss1.valor_venda_real + oss2.valor_venda_real) AS receita_combo
     FROM os_servicos oss1
@@ -30,14 +26,10 @@ WITH ParesServicos AS (
 )
 SELECT 
     concessionaria_id,
-    concessionaria_nome,
     vendedor_id,
-    vendedor_nome,
     periodo,
     servico_A_id,
-    servico_A_nome,
     servico_B_id,
-    servico_B_nome,
     frequencia_combo,
     receita_combo,
     -- Ranking para ver qual foi o combo campeão daquela unidade naquele mês específico

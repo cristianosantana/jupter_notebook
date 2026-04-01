@@ -8,11 +8,14 @@ Implementa:
 """
 
 import json
+import logging
 import time
 import re
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Literal
 from dataclasses import dataclass
+from uuid import UUID
 
 from ai_provider.base import ModelProvider
 from app.routing_tools import (
@@ -31,17 +34,20 @@ from app.config import get_settings, resolve_agent_trace_dir
 from mcp_client.client import Client
 from mcp.types import CallToolResult, Tool  # pyright: ignore[reportMissingImports]
 
+_logger_orch = logging.getLogger(__name__)
+
 # Configurações
 MAX_TOOL_ROUNDS = 24
 MAX_HISTORY_MESSAGES = 20
 MAX_MESSAGE_AGE_SECONDS = 7200.0
 TOOL_RESULT_PREVIEW_MAX = 500
-# Teto por mensagem tool enviada ao LLM (caracteres); evita estourar o orçamento com JSON enorme.
-TOOL_MESSAGE_CONTENT_MAX_CHARS = 32000
 # Margem extra no orçamento (metadados de pedido, imperfeição da estimativa char→token).
 CONTEXT_BUDGET_SAFETY_MARGIN = 768
 # ~3 caracteres por token: estimativa conservadora (podagem um pouco mais agressiva).
 CHARS_PER_TOKEN_ESTIMATE = 3
+ENTITY_GLOSSARY_MCP_TOOL = "get_entity_glossary_markdown"
+# Chave de cache quando não há session_id (PostgreSQL inactivo / pedido sem sessão).
+_GLOSSARY_CACHE_ANONYMOUS_KEY = UUID("00000000-0000-0000-0000-000000000001")
 
 # Enums
 AgentType = Literal["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
@@ -270,6 +276,39 @@ class ModularOrchestrator:
         self.current_agent: AgentType = "maestro"
         self.current_skill: str = ""
         self.current_metadata: SkillMetadata | None = None
+        self._entity_glossary: str = ""
+        self._entity_glossary_cache: OrderedDict[UUID, str] = OrderedDict()
+
+    @staticmethod
+    def _glossary_cache_key(session_id: UUID | None) -> UUID:
+        return session_id if session_id is not None else _GLOSSARY_CACHE_ANONYMOUS_KEY
+
+    def _glossary_cache_get(self, session_id: UUID | None) -> str | None:
+        st = get_settings()
+        if not st.entity_glossary_session_cache_enabled:
+            return None
+        key = self._glossary_cache_key(session_id)
+        val = self._entity_glossary_cache.get(key)
+        if val is None:
+            return None
+        self._entity_glossary_cache.move_to_end(key)
+        return val
+
+    def _glossary_cache_set(self, session_id: UUID | None, markdown: str) -> None:
+        st = get_settings()
+        if not st.entity_glossary_session_cache_enabled:
+            return
+        key = self._glossary_cache_key(session_id)
+        self._entity_glossary_cache[key] = markdown
+        self._entity_glossary_cache.move_to_end(key)
+        max_n = max(1, int(st.entity_glossary_session_cache_max))
+        while len(self._entity_glossary_cache) > max_n:
+            self._entity_glossary_cache.popitem(last=False)
+
+    def _glossary_cache_invalidate(self, session_id: UUID | None) -> None:
+        if not get_settings().entity_glossary_session_cache_enabled:
+            return
+        self._entity_glossary_cache.pop(self._glossary_cache_key(session_id), None)
 
     async def load_tools(self):
         """Carrega ferramentas do MCP server."""
@@ -289,17 +328,23 @@ class ModularOrchestrator:
         self.messages.clear()  # Limpa histórico ao trocar agente
         self._message_times.clear()
 
-    async def reset_conversation(self) -> None:
+    async def reset_conversation(self, session_id: UUID | None = None) -> None:
         """Limpa histórico e reposiciona no Maestro (novo tópico)."""
         self.messages.clear()
         self._message_times.clear()
+        self._entity_glossary = ""
         await self.set_agent("maestro")
+        if session_id is not None:
+            self._glossary_cache_invalidate(session_id)
+        else:
+            self._glossary_cache_invalidate(None)
 
     def hydrate_session_state(
         self,
         agent_type: AgentType,
         messages: list[dict[str, Any]],
         message_times: list[float] | None = None,
+        session_id: UUID | None = None,
     ) -> None:
         """
         Repõe histórico e agente sem `set_agent` (evita limpar mensagens ao trocar de sessão).
@@ -315,6 +360,117 @@ class ModularOrchestrator:
             self._message_times = list(message_times)
         else:
             self._message_times = [time.time() for _ in self.messages]
+        if session_id is not None:
+            cached = self._glossary_cache_get(session_id)
+            self._entity_glossary = cached.strip() if (cached and cached.strip()) else ""
+        else:
+            self._entity_glossary = ""
+
+    def _prompt_skill_text(self) -> str:
+        """SKILL efectivo para o modelo: corpo do SKILL + glossário de dimensões (se houver)."""
+        base = (self.current_skill or "").strip()
+        extra = (self._entity_glossary or "").strip()
+        if not extra:
+            return base
+        if not base:
+            return extra
+        return f"{base}\n\n{extra}".strip()
+
+    async def _refresh_entity_glossary(self, session_id: UUID | None = None) -> None:
+        st = get_settings()
+        tlog = get_trace_logger()
+        if not st.entity_glossary_enabled:
+            self._entity_glossary = ""
+            _logger_orch.info("entity_glossary skipped: entity_glossary_enabled=false")
+            if tlog:
+                tlog.record(
+                    "orchestrator.entity_glossary.skipped",
+                    reason="entity_glossary_enabled_false",
+                )
+            return
+        if self.client is None or self.client.session is None:
+            self._entity_glossary = ""
+            _logger_orch.warning("entity_glossary skipped: MCP client session not ready")
+            if tlog:
+                tlog.record(
+                    "orchestrator.entity_glossary.skipped",
+                    reason="mcp_session_not_ready",
+                )
+            return
+        cached = self._glossary_cache_get(session_id)
+        if cached is not None and cached.strip():
+            self._entity_glossary = cached
+            stats_out = {
+                "glossary_chars_in_memory": len(self._entity_glossary or ""),
+                "skill_base_chars": len(self.current_skill or ""),
+                "effective_system_text_chars": len(self._prompt_skill_text()),
+                "glossary_source": "session_cache",
+            }
+            _logger_orch.info(
+                "entity_glossary from session cache: chars=%s",
+                stats_out["glossary_chars_in_memory"],
+            )
+            if tlog:
+                tlog.record("orchestrator.entity_glossary.loaded", **stats_out)
+            return
+        try:
+            mcp_result = await self.client.call_tool(
+                ENTITY_GLOSSARY_MCP_TOOL,
+                {
+                    "max_chars": st.entity_glossary_max_chars,
+                    "include_demais_registos": st.entity_glossary_include_demais_registos,
+                },
+            )
+            raw = _mcp_result_to_text(mcp_result)
+            if mcp_result.isError:
+                raise RuntimeError(raw or "get_entity_glossary_markdown isError")
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise TypeError(f"glossário MCP: JSON inválido: {type(data)}")
+            if "markdown" not in data:
+                raise RuntimeError(str(data.get("error", "resposta MCP sem markdown")))
+            markdown = str(data.get("markdown", ""))
+            raw_stats = data.get("stats")
+            stats = raw_stats if isinstance(raw_stats, dict) else {}
+            self._entity_glossary = markdown
+            self._glossary_cache_set(session_id, markdown)
+            stats_out = {
+                **stats,
+                "glossary_chars_in_memory": len(self._entity_glossary or ""),
+                "skill_base_chars": len(self.current_skill or ""),
+                "effective_system_text_chars": len(self._prompt_skill_text()),
+                "glossary_source": "mcp_tool",
+            }
+            _logger_orch.info("entity_glossary loaded (counts/stats): %s", stats)
+            _logger_orch.info(
+                "entity_glossary fused into system text: glossary_chars=%s skill_chars=%s merged_chars=%s",
+                stats_out["glossary_chars_in_memory"],
+                stats_out["skill_base_chars"],
+                stats_out["effective_system_text_chars"],
+            )
+            if tlog:
+                tlog.record("orchestrator.entity_glossary.loaded", **stats_out)
+        except Exception as e:
+            self._entity_glossary = ""
+            err_s = str(e)
+            if "2003" in err_s or "Can't connect to MySQL" in err_s:
+                _logger_orch.warning(
+                    "entity_glossary load failed: MySQL inalcançável (Settings.mysql_host=%r). "
+                    "O subprocesso MCP carrega project_mcp_v1/.env com override; se o host no .env "
+                    "for localhost/127.0.0.1, o servidor MySQL tem de escutar aí ou altere MYSQL_HOST "
+                    "(ex.: nome do serviço Docker, IP da máquina). Erro: %s",
+                    st.mysql_host,
+                    e,
+                    exc_info=True,
+                )
+            else:
+                _logger_orch.warning("entity_glossary load failed: %s", e, exc_info=True)
+            if tlog:
+                tlog.record(
+                    "orchestrator.entity_glossary.failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
     def _append_message(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
@@ -382,7 +538,7 @@ class ModularOrchestrator:
             while self.messages:
                 if (
                     _estimate_prompt_tokens_messages_plus_skill(
-                        self.current_skill,
+                        self._prompt_skill_text(),
                         self.messages,
                     )
                     <= cap
@@ -450,6 +606,7 @@ class ModularOrchestrator:
         user_input: str,
         tools_used: list[dict[str, Any]],
         step: int,
+        session_id: UUID | None = None,
     ) -> tuple[dict[str, Any] | None, int]:
         """
         Loop do Maestro até handoff para especialista.
@@ -466,7 +623,10 @@ class ModularOrchestrator:
 
             self._cap_messages()
             response = await self.model.chat(
-                messages=_messages_with_skill(self.current_skill, self.messages),
+                messages=_messages_with_skill(
+                    self._prompt_skill_text(),
+                    self.messages,
+                ),
                 tools=MAESTRO_TOOLS_ONLY,
                 tool_choice=maestro_tool_choice,
             )
@@ -505,6 +665,13 @@ class ModularOrchestrator:
                 })
                 print(f"🎯 Handoff: maestro → {specialist}")
                 await self.set_agent(specialist)
+                stg = get_settings()
+                if (
+                    specialist == "analise_os"
+                    and stg.entity_glossary_enabled
+                    and stg.entity_glossary_on_handoff
+                ):
+                    await self._refresh_entity_glossary(session_id)
                 self._append_message({
                     "role": "user",
                     "content": user_input,
@@ -527,6 +694,13 @@ class ModularOrchestrator:
                     })
                     print(f"🎯 Handoff (fallback texto): maestro → {fb}")
                     await self.set_agent(fb)
+                    stg = get_settings()
+                    if (
+                        fb == "analise_os"
+                        and stg.entity_glossary_enabled
+                        and stg.entity_glossary_on_handoff
+                    ):
+                        await self._refresh_entity_glossary(session_id)
                     self._append_message({
                         "role": "user",
                         "content": user_input,
@@ -646,12 +820,13 @@ class ModularOrchestrator:
                 "result_preview": None,
             })
 
-        max_tool = TOOL_MESSAGE_CONTENT_MAX_CHARS
+        st_tool = get_settings()
+        max_tool = max(4096, int(st_tool.tool_message_content_max_chars))
         if len(content) > max_tool:
             content = (
                 content[:max_tool]
-                + "\n\n[Conteúdo truncado pelo orquestrador (limite de contexto). "
-                "Use summarize=true, menos linhas por query ou paginação offset.]"
+                + "\n\n[Conteúdo truncado pelo orquestrador (tool_message_content_max_chars). "
+                "Reduza limit/offset, summarize=true onde aplicável, ou aumente o teto em config.]"
             )
 
         self._append_message({
@@ -675,7 +850,10 @@ class ModularOrchestrator:
 
             self._cap_messages()
             response = await self.model.chat(
-                messages=_messages_with_skill(self.current_skill, self.messages),
+                messages=_messages_with_skill(
+                    self._prompt_skill_text(),
+                    self.messages,
+                ),
                 tools=tools_payload,
             )
 
@@ -712,7 +890,12 @@ class ModularOrchestrator:
             for tc in tool_calls:
                 await self._execute_single_tool_call(tc, tools_used)
 
-    async def run(self, user_input: str, target_agent: AgentType | None = None) -> dict[str, Any]:
+    async def run(
+        self,
+        user_input: str,
+        target_agent: AgentType | None = None,
+        session_id: UUID | None = None,
+    ) -> dict[str, Any]:
         """
         Executa agent loop.
 
@@ -747,6 +930,10 @@ class ModularOrchestrator:
             target_agent=target_agent,
         )
 
+        st0 = get_settings()
+        if st0.entity_glossary_enabled and not (self._entity_glossary or "").strip():
+            await self._refresh_entity_glossary(session_id)
+
         try:
             self._append_message({
                 "role": "user",
@@ -759,7 +946,7 @@ class ModularOrchestrator:
 
             if auto_route and self.current_agent == "maestro":
                 early, step = await self._run_maestro_routing_phase(
-                    user_input, tools_used, step
+                    user_input, tools_used, step, session_id=session_id
                 )
                 if early is not None:
                     if self._trace_run_id:

@@ -3,8 +3,7 @@
 WITH MetricasVendedores AS (
     SELECT
         f.id AS vendedor_id,
-        f.nome AS vendedor_nome,
-        c.nome AS concessionaria_nome,
+        c.id AS concessionaria_id,
         COUNT(DISTINCT os.id) AS total_os,
         SUM(CASE WHEN os.fechada THEN 1 ELSE 0 END) AS fechadas,
         SUM(CASE WHEN os.cancelada THEN 1 ELSE 0 END) AS canceladas
@@ -13,7 +12,7 @@ WITH MetricasVendedores AS (
     INNER JOIN concessionarias c ON os.concessionaria_id = c.id
     WHERE os.created_at BETWEEN __MCP_DATE_FROM__ AND __MCP_DATE_TO__
       AND os.deleted_at IS NULL
-    GROUP BY f.id, f.nome, c.id, c.nome
+    GROUP BY f.id, c.id
 ),
 Ranked AS (
     SELECT
@@ -27,9 +26,8 @@ SELECT
         'vendedores', JSON_ARRAYAGG(
             JSON_OBJECT(
                 'ranking', posicao_ranking,
-                'id', vendedor_id,
-                'nome', vendedor_nome,
-                'concessionaria', concessionaria_nome,
+                'vendedor_id', vendedor_id,
+                'concessionaria_id', concessionaria_id,
                 'qtd_os', total_os,
                 'qtd_fechada', fechadas,
                 'qtd_cancelada', canceladas,

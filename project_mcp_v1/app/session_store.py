@@ -5,6 +5,7 @@ Persistência PostgreSQL: utilizadores opcionais, sessões e mensagens (transcri
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -12,6 +13,9 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings
+
+# Nome da base de destino (CREATE DATABASE): só identificadores PostgreSQL seguros.
+_POSTGRES_DB_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
 
 def _jsonb_text(value: Any) -> str | None:
@@ -84,8 +88,49 @@ class SessionStore:
     def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
+    @staticmethod
+    async def _ensure_database_exists(settings: Settings) -> None:
+        """
+        Se ``postgres_database`` ainda não existir, cria-a (ligação à base ``postgres``).
+
+        Evita ``InvalidCatalogNameError`` no primeiro arranque local/Docker.
+        """
+        dbname = (settings.postgres_database or "").strip()
+        if not _POSTGRES_DB_NAME_RE.fullmatch(dbname):
+            raise ValueError(
+                "postgres_database deve ser um identificador PostgreSQL simples "
+                "(letra inicial, depois letras, dígitos ou _)."
+            )
+        maint = (settings.postgres_maintenance_database or "postgres").strip() or "postgres"
+        if not _POSTGRES_DB_NAME_RE.fullmatch(maint):
+            raise ValueError("postgres_maintenance_database inválido (mesmas regras que postgres_database).")
+        conn = await asyncpg.connect(
+            host=settings.postgres_host,
+            port=settings.postgres_port,
+            user=settings.postgres_user,
+            password=settings.postgres_password or None,
+            database=maint,
+        )
+        try:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM pg_database WHERE datname = $1",
+                dbname,
+            )
+            if row is None:
+                try:
+                    await conn.execute(f"CREATE DATABASE {dbname}")
+                except asyncpg.PostgresError as ex:
+                    # 42P04 = duplicate_database (corrida entre workers ou criação paralela)
+                    if getattr(ex, "sqlstate", None) == "42P04":
+                        pass
+                    else:
+                        raise
+        finally:
+            await conn.close()
+
     @classmethod
     async def create(cls, settings: Settings) -> SessionStore:
+        await cls._ensure_database_exists(settings)
         pool = await asyncpg.create_pool(
             host=settings.postgres_host,
             port=settings.postgres_port,

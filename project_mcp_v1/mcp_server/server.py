@@ -4,6 +4,9 @@ import sys
 _mcp_root = Path(__file__).resolve().parent
 if str(_mcp_root) not in sys.path:
     sys.path.insert(0, str(_mcp_root))
+_proj_root = _mcp_root.parent
+if str(_proj_root) not in sys.path:
+    sys.path.append(str(_proj_root))
 
 import json
 
@@ -101,9 +104,10 @@ _RUN_ANALYTICS_DESC = (
     "Dados já vêm agregados no SQL; devolve no máximo 10000 linhas por chamada. "
     "Use offset para paginar. "
     "Para qualquer query_id são obrigatórios date_from e date_to (YYYY-MM-DD), alinhados aos placeholders do recurso analytics://query/{query_id}. "
-    "As análises tabulares clássicas (cross_selling até propenso_compra_hora_dia_servico) devolvem sempre "
-    "JSON compacto (rows_sample + llm_summary se o sampling MCP existir), mesmo com summarize=false — não há envio do dataset completo ao cliente LLM. "
-    "Para os restantes query_id, summarize=true pede o mesmo formato compacto; summarize=false devolve todas as linhas da página (até limit). "
+    "Query_id em modo tabular legacy (ver list_analytics_queries: análises marcadas como resposta compacta) devolvem sempre "
+    "JSON compacto (rows_sample + llm_summary se o sampling MCP existir), mesmo com summarize=false — sem todas as linhas nesse payload. "
+    "performance_vendedor_mes e performance_vendedor_ano: com summarize=false o JSON inclui o campo rows com todas as linhas da página (até limit). "
+    "Demais query_id: summarize=true pede formato compacto; summarize=false devolve todas as linhas da página (até limit) no campo rows quando tabular. "
     "\n\n"
     + analytics_queries.QUERY_ID_PARAM_HELP
 )
@@ -217,6 +221,57 @@ async def run_analytics_query(
         result_chars=len(result),
     )
     return result
+
+
+@mcp.tool(
+    name="get_entity_glossary_markdown",
+    description=(
+        "Constrói o glossário de dimensões (MySQL) para o system prompt. "
+        "O orquestrador da API chama esta tool para não abrir MySQL no processo uvicorn."
+    ),
+)
+async def get_entity_glossary_markdown(
+    max_chars: int | None = None,
+    include_demais_registos: bool | None = None,
+    ctx: Context | None = None,
+) -> str:
+    rid = _trace_rid(ctx)
+    trace_record("mcp.server.tool.start", run_id=rid, tool="get_entity_glossary_markdown")
+    try:
+        from app.config import get_settings
+        from app.entity_glossary import build_entity_glossary_markdown
+
+        st = get_settings()
+        updates: dict[str, object] = {}
+        if max_chars is not None:
+            updates["entity_glossary_max_chars"] = max(256, int(max_chars))
+        if include_demais_registos is not None:
+            updates["entity_glossary_include_demais_registos"] = bool(include_demais_registos)
+        st_eff = st.model_copy(update=updates) if updates else st
+
+        markdown, stats = await build_entity_glossary_markdown(
+            st_eff,
+            run_wrapped_select=db.run_wrapped_select,
+        )
+        payload = json.dumps(
+            {"markdown": markdown, "stats": stats},
+            ensure_ascii=False,
+            default=str,
+        )
+    except Exception as e:
+        payload = json.dumps(
+            {"error": str(e), "error_type": type(e).__name__},
+            ensure_ascii=False,
+        )
+
+    trace_record(
+        "mcp.server.tool.end",
+        run_id=rid,
+        tool="get_entity_glossary_markdown",
+        result_preview=payload[:8000],
+        result_chars=len(payload),
+    )
+    return payload
 
 
 if __name__ == "__main__":

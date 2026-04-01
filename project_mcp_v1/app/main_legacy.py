@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from ai_provider.openai_provider import OpenAIProvider
-from app.config import get_settings
+from app.config import get_settings, sync_mysql_env_from_settings
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
@@ -23,11 +23,7 @@ async def lifespan(app: FastAPI):
 
     model = OpenAIProvider()
     settings = get_settings()
-    os.environ.setdefault("MYSQL_HOST", settings.mysql_host)
-    os.environ.setdefault("MYSQL_PORT", str(settings.mysql_port))
-    os.environ.setdefault("MYSQL_USER", settings.mysql_user)
-    os.environ.setdefault("MYSQL_PASSWORD", settings.mysql_password)
-    os.environ.setdefault("MYSQL_DATABASE", settings.mysql_database)
+    sync_mysql_env_from_settings(settings)
     oai = AsyncOpenAI(api_key=settings.openai_api_key or None)
     sampling_cb = build_openai_sampling_callback(
         oai,
