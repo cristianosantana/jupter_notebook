@@ -79,3 +79,22 @@ class TestCompactPayload:
         out = json.loads(s)
         assert out["row_count"] == 200
         assert len(out["rows_sample"]) == 10
+
+    def test_full_payload_has_all_rows_compact_has_sample_only(self) -> None:
+        """run_analytics_query usa rows_to_json_payload quando summarize=false."""
+        rows = [{"i": x} for x in range(50)]
+        full = json.loads(
+            db.rows_to_json_payload(rows, query_id="cross_selling", limit=100, offset=0)
+        )
+        assert full["row_count"] == 50
+        assert len(full["rows"]) == 50
+        assert "rows_sample" not in full
+        compact = json.loads(
+            db.rows_to_compact_json_payload(
+                rows, query_id="cross_selling", limit=100, offset=0, sample_size=20
+            )
+        )
+        assert compact["row_count"] == 50
+        assert len(compact["rows_sample"]) == 20
+        assert "rows" not in compact
+        assert "summarize=true" in compact["rows_sample_note"]

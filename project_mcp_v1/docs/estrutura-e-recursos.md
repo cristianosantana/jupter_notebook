@@ -52,7 +52,7 @@ project_mcp_v1/
 |------------------|--------------------|
 
 | `server.py` | **FastMCP**: registo de tools, recurso template de analytics, `mcp.run()` em modo stdio. |
-| `analytics_queries.py` | Catálogo `QUERY_REGISTRY`, `TABULAR_LEGACY_QUERY_IDS` (payload compacto obrigatório para LLM) e `GLOBAL_PERIOD_HELP`. Espelho em [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
+| `analytics_queries.py` | Catálogo `QUERY_REGISTRY`, `TABULAR_MULTIROW_QUERY_IDS` (tabular multi-linha no catálogo) e `GLOBAL_PERIOD_HELP`. Espelho em [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
 | `query_sql/` | **Fonte única** dos textos SQL servidos pelos recursos e executados pela tool (whitelist). |
 | `sql_params.py` | Substituição validada de placeholders (ex.: `__MCP_DATE_FROM__` / `__MCP_DATE_TO__`). |
 | `db.py` | Pool **aiomysql**, execução `SELECT * FROM (sql) LIMIT/OFFSET`, serialização JSON segura (ex.: `Decimal`). |
@@ -102,6 +102,8 @@ Cada linha corresponde a **uma** análise; o conteúdo do recurso é o ficheiro 
 | `performance_vendedor_mes` | KPIs de vendedor por **mês** (YYYY-MM): OS, faturamento, ticket, desconto, serviços por OS. |
 | `performance_vendedor_ano` | Mesmas KPIs agregadas por **ano civil** (YYYY) no intervalo de datas. |
 | `faturamento_ticket_concessionaria_periodo` | Faturamento de serviços, quantidade de OS e ticket médio por concessionária e mês. |
+| `faturamento_mensal_recebidos_pendentes` | Por mês de competência: OS distintas, total recebido, pendente e faturamento previsto (tabelas `caixas` / `caixas_pendentes`). |
+| `faturamento_mensal_recebidos_pendentes_por_concessionaria` | Igual à anterior com GROUP BY por concessionária (`concessionarias.nome`); uma linha por mês e loja. |
 | `distribuicao_ticket_percentil` | Distribuição de ticket por quartis (NTILE) por concessionária. |
 | `propenso_compra_hora_dia_servico` | Propensão de compra por hora, dia da semana e tipo de serviço. |
 | `volume_os_concessionaria_mom` | Volume de OS por concessionária com variação MoM; resultado JSON (`resultado`). Ver [30_QUERIES_OTIMIZADAS.md](30_QUERIES_OTIMIZADAS.md) Query 1. |

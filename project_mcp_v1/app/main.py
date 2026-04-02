@@ -9,13 +9,15 @@ Uso:
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from openai import AsyncOpenAI
@@ -99,6 +101,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="project_mcp_v1_modular", lifespan=lifespan)
 
+_st = get_settings()
+_cors = [o.strip() for o in (_st.cors_origins or "").split(",") if o.strip()]
+if not _cors:
+    _cors = ["http://localhost:5173"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -114,10 +128,9 @@ async def health():
     return {"status": "ok", "agent": agent.current_agent if agent else "not_initialized"}
 
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
+async def process_chat(request: ChatRequest) -> dict:
     """
-    Endpoint de chat com suporte a roteamento de agentes.
+    Lógica partilhada por ``POST /chat`` e ``POST /api/chat``.
 
     Por omissão mantém a thread: após handoff para um especialista, novas mensagens
     com ``target_agent`` omitido continuam com o mesmo agente e o histórico.
@@ -125,13 +138,6 @@ async def chat(request: ChatRequest):
     - ``new_conversation: true`` — limpa mensagens e recomeça pelo Maestro.
     - Com PostgreSQL activo: envia ``session_id`` nas mensagens seguintes; ``user_id`` é opcional.
       O transcript persistido inclui só a conversa com especialistas (não o roteamento do Maestro).
-
-    Exemplos:
-    - POST /chat {"message": "Análise semanal de OS"}
-      → Maestro roteia para agente_analise_os
-
-    - POST /chat {"message": "Agrupar concessionárias", "target_agent": "clusterizacao"}
-      → Direto para agente_clusterizacao
     """
     if agent is None:
         raise RuntimeError("Agent not initialized")
@@ -181,6 +187,12 @@ async def chat(request: ChatRequest):
                 await session_store.touch_session(sid, out["agent"])
             else:
                 await session_store.touch_session(sid)
+            tr = out.get("trace_run_id")
+            if tr:
+                await session_store.merge_session_metadata(
+                    sid,
+                    {"last_trace_run_id": str(tr)},
+                )
 
     payload: dict = {
         "reply": assistant["content"],
@@ -188,13 +200,83 @@ async def chat(request: ChatRequest):
         "agent_used": out["agent"],
     }
     tid = out.get("trace_run_id")
-    if tid:
-        payload["trace_run_id"] = tid
+    if tid is not None and str(tid).strip():
+        payload["trace_run_id"] = str(tid).strip()
+    else:
+        payload["trace_run_id"] = None
     if session_store is not None and sid is not None:
         payload["session_id"] = str(sid)
     if request.user_id is not None:
         payload["user_id"] = request.user_id
     return payload
+
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """Alias legado; preferir ``POST /api/chat`` no SmartChat."""
+    return await process_chat(request)
+
+
+api_router = APIRouter(prefix="/api")
+
+
+@api_router.post("/chat")
+async def api_chat(request: ChatRequest):
+    return await process_chat(request)
+
+
+@api_router.get("/sessions")
+async def api_list_sessions(user_id: str | None = None, limit: int = 50):
+    if session_store is None:
+        return {"sessions": [], "persistence_enabled": False}
+    sessions = await session_store.list_sessions(user_id=user_id, limit=limit)
+    return {"sessions": sessions, "persistence_enabled": True}
+
+
+def _session_metadata_as_dict(raw: object) -> dict:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+@api_router.get("/sessions/{session_id}")
+async def api_get_session(session_id: UUID):
+    if session_store is None:
+        raise HTTPException(status_code=503, detail="persistência de sessões inactiva")
+    row = await session_store.get_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session_id não encontrado")
+    msgs = await session_store.load_messages(session_id)
+    meta = _session_metadata_as_dict(row["metadata"])
+    trace_run_id = meta.get("last_trace_run_id")
+    if trace_run_id is not None:
+        trace_run_id = str(trace_run_id)
+    session_payload = {
+        "session_id": str(row["session_id"]),
+        "user_id": row["user_id"],
+        "current_agent": row["current_agent"],
+        "status": row["status"],
+        "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+        "last_active_at": row["last_active_at"].isoformat() if row["last_active_at"] else None,
+        "metadata": meta,
+    }
+    return {
+        "session": session_payload,
+        "messages": msgs,
+        "trace_run_id": trace_run_id,
+        "persistence_enabled": True,
+    }
+
+
+app.include_router(api_router)
 
 
 @app.post("/agent/set")

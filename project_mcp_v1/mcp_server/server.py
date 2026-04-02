@@ -35,6 +35,8 @@ QueryId = Literal[
     "performance_vendedor_mes",
     "performance_vendedor_ano",
     "faturamento_ticket_concessionaria_periodo",
+    "faturamento_mensal_recebidos_pendentes",
+    "faturamento_mensal_recebidos_pendentes_por_concessionaria",
     "distribuicao_ticket_percentil",
     "propenso_compra_hora_dia_servico",
     "volume_os_concessionaria_mom",
@@ -104,10 +106,9 @@ _RUN_ANALYTICS_DESC = (
     "Dados já vêm agregados no SQL; devolve no máximo 10000 linhas por chamada. "
     "Use offset para paginar. "
     "Para qualquer query_id são obrigatórios date_from e date_to (YYYY-MM-DD), alinhados aos placeholders do recurso analytics://query/{query_id}. "
-    "Query_id em modo tabular legacy (ver list_analytics_queries: análises marcadas como resposta compacta) devolvem sempre "
-    "JSON compacto (rows_sample + llm_summary se o sampling MCP existir), mesmo com summarize=false — sem todas as linhas nesse payload. "
-    "performance_vendedor_mes e performance_vendedor_ano: com summarize=false o JSON inclui o campo rows com todas as linhas da página (até limit). "
-    "Demais query_id: summarize=true pede formato compacto; summarize=false devolve todas as linhas da página (até limit) no campo rows quando tabular. "
+    "Com summarize=false o JSON inclui o campo rows com todas as linhas desta página (até limit) para qualquer análise tabular multi-linha; "
+    "análises com resultado JSON agregado (coluna resultado) também devolvem essas linhas em rows. "
+    "Com summarize=true a resposta fica compacta (rows_sample, notas e llm_summary se o sampling MCP existir). "
     "\n\n"
     + analytics_queries.QUERY_ID_PARAM_HELP
 )
@@ -159,9 +160,7 @@ async def run_analytics_query(
                 ensure_ascii=False,
             )
         else:
-            effective_compact = summarize or (
-                query_id in analytics_queries.TABULAR_LEGACY_QUERY_IDS
-            )
+            effective_compact = bool(summarize)
 
             summarized: str | None = None
             if effective_compact and ctx is not None:

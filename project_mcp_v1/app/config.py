@@ -29,9 +29,12 @@ class Settings(BaseSettings):
     postgres_maintenance_database: str = "postgres"
     postgres_auto_migrate: bool = True
 
+    # CORS (origens separadas por vírgula; ex.: frontend Vite em localhost:5173)
+    cors_origins: str = "http://localhost:5173"
+
     # Glossário dinâmico (MySQL) fundido no system junto ao SKILL
     entity_glossary_enabled: bool = True
-    entity_glossary_max_chars: int = 12_000
+    entity_glossary_max_chars: int = 24_000
     entity_glossary_on_handoff: bool = True
     # Pessoas no glossário: JOIN funcionario_cargos + cargos.funcionario_tipo_id (ver entity_glossary.py).
     entity_glossary_include_demais_registos: bool = True

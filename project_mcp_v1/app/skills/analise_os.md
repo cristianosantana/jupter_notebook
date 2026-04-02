@@ -52,7 +52,7 @@ Analisar dados agregados de OS e fornecer insights acionáveis sobre:
 - **Obrigatório**: no texto final ao utilizador, **nunca** apresentes só o id numérico como única referência quando esse id existir no glossário — usa o **nome** do glossário. Formato preferido: **nome** (opcional: `nome (id=N)` para rastreabilidade); mantém um estilo consistente na mesma resposta.
 - **Não perguntes** ao utilizador se deves “consultar” ou “aplicar” o glossário: o glossário já está no system — **aplica-o sempre** na resposta final sem pedir permissão.
 - Se o id **não** constar do glossário: indica explicitamente que o nome **não** está no glossário actual e **não** inventes um rótulo.
-- Se a ferramenta devolver só **`rows_sample`** (tabular legacy ou `summarize=true`), **não** afirmes ranking global completo (top/bottom da rede inteira); explica que é amostra ou usa dados completos (`rows` com `summarize=false` quando o catálogo o permitir) ou paginação.
+- Se a ferramenta devolver só **`rows_sample`** (tipicamente `summarize=true`), **não** afirmes ranking global completo (top/bottom da rede inteira); explica que é amostra ou pede dados completos com **`summarize=false`** (campo **`rows`**, até `limit`; paginar com `offset` se necessário).
 
 ## Instruções
 

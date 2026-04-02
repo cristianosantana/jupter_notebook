@@ -451,7 +451,6 @@ curl -X POST http://localhost:8000/chat \
 
 | Code | Significa | Ação |
 |------|-----------|------|
-
 | 200 | OK | Sucesso! |
 | 400 | Bad Request | Verifique JSON |
 | 404 | Not Found | Agente não existe |

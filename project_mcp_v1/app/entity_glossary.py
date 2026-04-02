@@ -7,6 +7,9 @@ não repete narrativa de RH. Ajustar ``_TIPO_*`` se os IDs de tipo mudarem na BD
 
 Filtros extra por tabela vêm de ``Settings`` (``.env``); por omissão vazios para schemas sem
 ``ativo``/``deleted_at``.
+
+Nomes de concessionárias e funcionários no markdown usam só o **primeiro token** (primeira palavra)
+para reduzir caracteres; serviços mantêm o nome completo.
 """
 
 from __future__ import annotations
@@ -43,6 +46,16 @@ def _all_mapped_funcionario_tipo_ids() -> tuple[int, ...]:
 
 def _sample_ids(rows: list[dict[str, Any]], n: int = 5) -> list[Any]:
     return [r.get("id") for r in rows[:n]]
+
+
+def _primeiro_nome_display(nome: Any) -> str:
+    """Primeira palavra do nome (concessionária ou pessoa); vazio se não houver texto."""
+    if nome is None:
+        return ""
+    s = str(nome).strip()
+    if not s:
+        return ""
+    return s.split()[0]
 
 
 def _sql_in_ints(ids: tuple[int, ...]) -> str:
@@ -120,24 +133,32 @@ async def build_entity_glossary_markdown(
     )
 
     conc = await _rows(q_conc)
+    serv = await _rows(q_serv)
+
     sections.append("### Concessionárias (`concessionaria_id`)")
-    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in conc)
+    sections.extend(f"- id={r['id']}: {_primeiro_nome_display(r.get('nome'))}" for r in conc)
+    sections.append("")
+
+    # Serviços antes das listas de pessoas: o truncamento global (entity_glossary_max_chars)
+    # corta pelo fim; assim `servico_id`→nome não desaparece quando Vendedores/Produtivos enchem o teto.
+    sections.append("### Serviços (`servico_id`)")
+    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in serv)
     sections.append("")
 
     mode = "role_sections_join"
     v_rows = await _rows(_sql_personas_por_funcionario_tipo(_TIPO_VENDEDOR, extra_fun))
     sections.append("### Vendedores (`vendedor_id`)")
-    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in v_rows)
+    sections.extend(f"- id={r['id']}: {_primeiro_nome_display(r.get('nome'))}" for r in v_rows)
     sections.append("")
 
     p_rows = await _rows(_sql_personas_por_funcionario_tipo(_TIPO_PRODUTIVO, extra_fun))
     sections.append("### Produtivos (`produtivo_id`)")
-    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in p_rows)
+    sections.extend(f"- id={r['id']}: {_primeiro_nome_display(r.get('nome'))}" for r in p_rows)
     sections.append("")
 
     s_rows = await _rows(_sql_personas_por_funcionario_tipo(_TIPO_SUPERVISOR, extra_fun))
     sections.append("### Supervisores (`supervisor_id`)")
-    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in s_rows)
+    sections.extend(f"- id={r['id']}: {_primeiro_nome_display(r.get('nome'))}" for r in s_rows)
     sections.append("")
 
     demais_rows: list[dict[str, Any]] = []
@@ -147,13 +168,10 @@ async def build_entity_glossary_markdown(
             sections.append(
                 "### Demais registos (sem cargo mapeado a vendedor / produtivo / supervisor)"
             )
-            sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in demais_rows)
+            sections.extend(
+                f"- id={r['id']}: {_primeiro_nome_display(r.get('nome'))}" for r in demais_rows
+            )
             sections.append("")
-
-    serv = await _rows(q_serv)
-    sections.append("### Serviços (`servico_id`)")
-    sections.extend(f"- id={r['id']}: {r.get('nome', '')}" for r in serv)
-    sections.append("")
 
     text = "\n".join(sections).strip()
     truncated = len(text) > max_chars

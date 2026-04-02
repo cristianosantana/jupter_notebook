@@ -22,21 +22,25 @@
 ### 1️⃣ **Claude** (Anthropic)
 
 #### Storage
+
 Session memory armazenado em `~/.claude/session-memory/[session-id].md` com extrações automáticas após ~10k tokens, depois a cada 5k tokens ou 3 tool calls.
 
 #### Filosofia
+
 - **On-demand memory**: Não pré-computa sumários automaticamente
 - **Markdown files**: Editáveis, transparentes, versionáveis
 - **CLAUDE.md**: Instruções persistentes entre sessões
 
 #### Fluxo
-```
+
+```txt
 User → Query → Context Injection (CLAUDE.md) → LLM → Session Summary Extraction
                                                     ↓
                                             ~/.claude/session-memory/
 ```
 
 #### User Tracking
+
 - Implícito em `~/.claude/` (desktop/local)
 - Para cloud: session_id UUID na API
 
@@ -47,10 +51,12 @@ User → Query → Context Injection (CLAUDE.md) → LLM → Session Summary Ext
 ### 2️⃣ **ChatGPT/OpenAI** (Escala Industrial)
 
 #### Storage
+
 OpenAI escala PostgreSQL com 100+ read replicas em regiões múltiplas, cada replica handle 10k-50k QPS. Usa logical replication (não física) via WAL decoding.
 
 #### Arquitetura de 3 Camadas
-```
+
+```txt
 ┌─────────────────────────────────┐
 │  Session Data (Redis)           │
 │  TTL: 1h, Hit rate: >95%        │
@@ -70,6 +76,7 @@ OpenAI escala PostgreSQL com 100+ read replicas em regiões múltiplas, cada rep
 ```
 
 #### User Tracking
+
 ```python
 # Redis Session Key Pattern
 key = f"chat:{user_id}:{session_id}"
@@ -83,9 +90,11 @@ session_data = {
 ```
 
 #### BD: PostgreSQL + Redis Hybrid
+
 ChatGPT Memory usa Redis como vector database para caching de histórico por sessão, com semantic search baseado em K-nearest neighbors (KNN) e diferentes distance metrics (L2, IP, COSINE).
 
 #### Cost Optimization
+
 OpenAI usa PgBouncer para multiplexar 1M+ conexões em ~100k físicas, evitando "too many clients" crashes. Jitter em TTLs evita "cache thundering herds".
 
 ---
@@ -93,15 +102,18 @@ OpenAI usa PgBouncer para multiplexar 1M+ conexões em ~100k físicas, evitando 
 ### 3️⃣ **Gemini** (Google/Vertex AI)
 
 #### Storage
+
 Gemini CLI usa GEMINI.md files em `~/.gemini/GEMINI.md` (global) e `./GEMINI.md` (projeto) com carregamento hierárquico, combined com session-based context (ephemeral) e memory tool para facts persistentes.
 
 #### Filosofia
+
 - **Context**: Ephemeral, short-term (conversa atual)
 - **Memory**: Persistent, user-controlled (GEMINI.md + Memory tool)
 - **Sessions**: Project-specific, auto-cleanup após 30 dias (default)
 
 #### Fluxo
-```
+
+```txt
 User → Query → Context (session) + Memory (GEMINI.md) → Gemini → Event Loop
                                                               ↓
                                                     SessionService (DB)
@@ -109,6 +121,7 @@ User → Query → Context (session) + Memory (GEMINI.md) → Gemini → Event L
 ```
 
 #### User Tracking
+
 ```python
 # Google ADK
 session_service = DatabaseSessionService(
@@ -121,6 +134,7 @@ memory_service = VertexAIMemoryBankService(
 ```
 
 #### BD: PostgreSQL + Google Vertex AI
+
 Google ADK usa DatabaseSessionService com PostgreSQL para sessions (short-term working memory) e VertexAIMemoryBankService para long-term memory.
 
 ---
@@ -131,7 +145,7 @@ Google ADK usa DatabaseSessionService com PostgreSQL para sessions (short-term w
 
 Para sua rede de 50-60 concessionárias + agentes:
 
-```
+```txt
 ┌─────────────────────────────────────────────────┐
 │  FastAPI Endpoint /chat                         │
 │  {"user_id": "concessionaria_001", message: ""} │
@@ -358,6 +372,7 @@ async def chat(request: ChatRequest):
 ## 📋 User_ID Strategy
 
 ### Opção 1: Numérico (Simples) ⭐ RECOMENDADO
+
 ```python
 user_id = 1  # 1-60 (concessionária ID)
 # Vantagens: Simples, match natural com seu banco
@@ -365,6 +380,7 @@ user_id = 1  # 1-60 (concessionária ID)
 ```
 
 ### Opção 2: UUID (Escalável)
+
 ```python
 user_id = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 # Vantagens: Escalável, seguro, único globalmente
@@ -372,6 +388,7 @@ user_id = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 ```
 
 ### Opção 3: Híbrida (Melhor)
+
 ```python
 user_id = f"conc_{concessionaria_id:03d}"  # conc_001 ... conc_060
 # Vantagens: Legível + escalável
@@ -395,22 +412,23 @@ CREATE TABLE users (
 ## 🔄 Session Lifecycle (Recomendado)
 
 ### Timeline
-```
-┌─ START ──────────────────────────────────────────────── END ──┐
-│  (user hits /chat)                          (user leaves/timeout)│
-│         ↓                                          ↓             │
-│   Redis Create                            Redis Delete          │
-│   Session (1h TTL)                        + Async to PostgreSQL │
-│         ↓                                                       │
-│   Execute Agent                                                │
-│   Update Redis (refresh TTL)                                  │
-│         ↓                                                       │
-│   Every N messages: ASYNC                                     │
-│   Write to PostgreSQL (conversations table)                   │
-│         ↓                                                       │
-│   Cleanup after 30 days (Cron Job)                           │
-│   Move archived sessions to cold storage                      │
-└────────────────────────────────────────────────────────────────┘
+
+```txt
+┌─ START ──────────────────────────────────────────────────── END ──┐
+│  (user hits /chat)                          (user leaves/timeout) │
+│         ↓                                          ↓              │
+│   Redis Create                            Redis Delete            │
+│   Session (1h TTL)                        + Async to PostgreSQL   │
+│         ↓                                                         │
+│   Execute Agent                                                   │
+│   Update Redis (refresh TTL)                                      │
+│         ↓                                                         │
+│   Every N messages: ASYNC                                         │
+│   Write to PostgreSQL (conversations table)                       │   
+│         ↓                                                         │
+│   Cleanup after 30 days (Cron Job)                                │
+│   Move archived sessions to cold storage                          │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ### Código: Background Task (PostgreSQL Async)
@@ -481,6 +499,7 @@ def cleanup_old_sessions():
 ## 📊 Performance Characteristics
 
 ### Latency (P95)
+
 | Operation | Claude | ChatGPT | Maestro (Recom.) |
 |-----------|--------|---------|------------------|
 | Redis get | <1ms | <1ms | **<1ms** |
@@ -489,7 +508,8 @@ def cleanup_old_sessions():
 | Full chat roundtrip | N/A | 2-3s | **1.5-2.5s** |
 
 ### Scaling (per concessionária)
-```
+
+```txt
 50-60 concurrent users
 ├─ Redis: ~500MB (50 sessions × 10MB each)
 ├─ PostgreSQL: ~100GB/year (conversations archived)
@@ -501,6 +521,7 @@ def cleanup_old_sessions():
 ## 🔐 Security Best Practices
 
 ### 1. User Isolation
+
 ```python
 # ALWAYS validate user_id from auth token
 @app.post("/chat")
@@ -511,6 +532,7 @@ async def chat(request: ChatRequest, user: User = Depends(get_current_user)):
 ```
 
 ### 2. Encryption at Rest
+
 ```sql
 -- PostgreSQL encryption (AWS RDS)
 CREATE DATABASE maestro ENCRYPTED;
@@ -522,6 +544,7 @@ encrypted_data = cipher.encrypt(sensitive_content.encode())
 ```
 
 ### 3. Rate Limiting per User
+
 ```python
 from fastapi_limiter import FastAPILimiter
 

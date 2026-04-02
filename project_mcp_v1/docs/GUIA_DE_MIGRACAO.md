@@ -223,7 +223,6 @@ O sistema usa esta tabela para decidir modelo:
 
 | Agente | Modelo | Razão |
 |--------|--------|-------|
-
 | maestro | Haiku | Rápido e barato para roteamento |
 | analise_os | Sonnet | Balanceado para análise de dados |
 | clusterizacao | **Opus** | **Complexo**: machine learning, 15 features |
@@ -278,7 +277,6 @@ result = await orchestrator.run("...", target_agent="visualizador")
 
 | Métrica | Antes (Monolítico) | Depois (Modular) | Melhoria |
 |---------|--------------------|------------------|----------|
-
 | **Token Overhead** | 40% | 10% | -75% ↓ |
 | **Latência** (roteamento) | - | ~100ms (Haiku) | ✅ Rápido |
 | **Cost/Query** | $X | $0.7X | -30% ↓ |

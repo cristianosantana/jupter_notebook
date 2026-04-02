@@ -962,7 +962,6 @@ async def run_analytics_query(
 
 | Query | Linhas | Tempo Esperado | Índices |
 |-------|--------|----------------|---------|
-
 | Q1-Q6 | Milhões | <2s | `idx_os_created_at` |
 | Q7-Q14 | Milhões | <3s | `idx_orcamento_itens` |
 | Q15-Q22 | Milhões | <5s | `idx_vendedor_created` |

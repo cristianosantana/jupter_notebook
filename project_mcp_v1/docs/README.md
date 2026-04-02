@@ -3,7 +3,8 @@
 ## O Que Mudou?
 
 ### ❌ Antes (Monolítico)
-```
+
+```txt
 User → Maestro (SKILL único genérico) → Todas as ferramentas sempre visíveis
                     ↓
             Token Overhead: 40%
@@ -12,7 +13,8 @@ User → Maestro (SKILL único genérico) → Todas as ferramentas sempre visív
 ```
 
 ### ✅ Depois (Modular)
-```
+
+```txt
 User → Maestro (Routing, Haiku) → Agente Especializado (seu SKILL + ferramentas)
                   ↓                         ↓
            Detecta tipo            Executa com contexto otimizado
@@ -25,7 +27,7 @@ User → Maestro (Routing, Haiku) → Agente Especializado (seu SKILL + ferramen
 
 ## 📂 Estrutura de Arquivos
 
-```
+```txt
 project_mcp_v1_modular/
 ├── app/
 │   ├── main.py                    # ⚠️ Antigo (manter para backward compat)
@@ -122,12 +124,15 @@ curl -X POST http://localhost:8000/chat \
 ## 📚 Arquivos Principais
 
 ### 1. **modular_orchestrator.py** (170 linhas)
+
 Implementa:
+
 - `SkillLoader`: Carrega SKILLs com YAML frontmatter + cache
 - `ModelRouter`: Mapeia agente → modelo (Haiku/Sonnet/Opus)
 - `ModularOrchestrator`: Agent loop com suporte a múltiplos agentes
 
 **Destaques:**
+
 ```python
 # Carregar SKILL com metadata
 skill_text, metadata = SkillLoader.load_skill("analise_os")
@@ -142,14 +147,18 @@ result = await orchestrator.run(user_input, target_agent="visualizador")
 ```
 
 ### 2. **main_modular.py** (FastAPI)
+
 Endpoints:
+
 - `POST /chat` - Chat com roteamento ou direto
 - `GET /agents` - Listar agentes e SKILLs
 - `POST /agent/set` - Mudar agente ativo (debug)
 - `GET /health` - Status
 
 ### 3. **SKILLs** (app/skills/*.md)
+
 Cada SKILL tem:
+
 ```yaml
 ---
 model: claude-sonnet-4.6
@@ -166,6 +175,7 @@ agent_type: analise_os
 ## 🎯 Casos de Uso
 
 ### Caso 1: Análise de OS
+
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Volume de OS última semana por concessionária"}'
@@ -175,6 +185,7 @@ curl -X POST http://localhost:8000/chat \
 ```
 
 ### Caso 2: Segmentação de Concessionárias
+
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Agrupe as unidades por eficiência operacional"}'
@@ -184,6 +195,7 @@ curl -X POST http://localhost:8000/chat \
 ```
 
 ### Caso 3: Visualização de Dados
+
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Gráfico de faturamento nos últimos 3 meses", "target_agent": "visualizador"}'
@@ -193,6 +205,7 @@ curl -X POST http://localhost:8000/chat \
 ```
 
 ### Caso 4: Forecasting
+
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Projete faturamento para próximos 3 meses", "target_agent": "projecoes"}'
@@ -206,7 +219,8 @@ curl -X POST http://localhost:8000/chat \
 ## 📊 Model Routing (Automático)
 
 | Agente | Modelo | Contexto | Custo/Query | Uso |
-|--------|--------|----------|------------|-----|
+|--------|--------|----------|-------------|-----|
+
 | **maestro** | Haiku | 50k | ~$0.001 | Roteamento rápido |
 | **analise_os** | Sonnet | 100k | ~$0.005 | Análise balanceada |
 | **clusterizacao** | **Opus** | 100k | ~$0.015 | ML complexo |
@@ -250,12 +264,14 @@ User Query
 ### Query: "Análise semanal de OS"
 
 **Antes (Monolítico):**
+
 - Modelo: GPT-4o (~$0.03/1k tokens)
 - Tokens Input: 3000 (skill + tools + history)
 - Tokens Output: 1500
 - **Total**: ~$0.14 + latência
 
 **Depois (Modular):**
+
 - Maestro: Haiku (~$0.002/1k tokens) - 200 tokens → $0.0004
 - analise_os: Sonnet (~$0.002/1k tokens) - 3000 tokens → $0.006
 - **Total**: ~$0.0064 + latência menor
@@ -269,6 +285,7 @@ User Query
 ### Adicionar Novo Agente
 
 1. Criar `app/skills/agente_novo.md`:
+
 ```yaml
 ---
 model: claude-sonnet-4.6
@@ -282,12 +299,14 @@ agent_type: agente_novo
 # Conteúdo do SKILL...
 ```
 
-2. Adicionar ao enum em `modular_orchestrator.py`:
+2.Adicionar ao enum em `modular_orchestrator.py`:
+
 ```python
 AgentType = Literal["maestro", "analise_os", ..., "agente_novo"]
 ```
 
-3. Adicionar ao `ModelRouter.ROUTING_TABLE`:
+3.Adicionar ao `ModelRouter.ROUTING_TABLE`:
+
 ```python
 ROUTING_TABLE = {
     ...,
@@ -295,7 +314,7 @@ ROUTING_TABLE = {
 }
 ```
 
-4. Atualizar `maestro.md` com nova opção de roteamento.
+4.Atualizar `maestro.md` com nova opção de roteamento.
 
 ---
 
@@ -327,15 +346,19 @@ ROUTING_TABLE = {
 ## 🚨 Troubleshooting
 
 ### Error: "SKILL not found"
+
 **Solução**: Verificar `app/skills/` tem 6 arquivos .md
 
 ### Error: "YAML frontmatter inválido"
+
 **Solução**: SKILL deve começar com `---` seguido de YAML válido
 
 ### Erro de routing
+
 **Solução**: Verificar que `target_agent` é um dos valores em `AgentType`
 
 ### Context budget excedido
+
 **Solução**: Aumentar budget em YAML frontmatter ou usar `MAX_HISTORY_MESSAGES`
 
 ---
@@ -343,6 +366,7 @@ ROUTING_TABLE = {
 ## 📞 Suporte
 
 Dúvidas? Referências:
+
 - `app/modular_orchestrator.py` - Código comentado
 - `app/main_modular.py` - Exemplos de uso
 - `GUIA_DE_MIGRACAO.md` - Migrando do antigo

@@ -200,6 +200,54 @@ class SessionStore:
                 session_id,
             )
 
+    async def list_sessions(
+        self,
+        *,
+        user_id: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Lista sessões por ``last_active_at`` descendente (máx. 100)."""
+        cap = min(max(limit, 1), 100)
+        async with self._pool.acquire() as conn:
+            if user_id:
+                rows = await conn.fetch(
+                    """
+                    SELECT session_id, user_id, current_agent, status,
+                           started_at, last_active_at
+                    FROM sessions
+                    WHERE user_id = $1 AND EXISTS (SELECT 1 FROM conversation_messages WHERE sessions.session_id = conversation_messages.session_id)
+                    ORDER BY last_active_at DESC
+                    LIMIT $2
+                    """,
+                    user_id,
+                    cap,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT session_id, user_id, current_agent, status,
+                           started_at, last_active_at
+                    FROM sessions
+                    WHERE EXISTS (SELECT 1 FROM conversation_messages WHERE sessions.session_id = conversation_messages.session_id)
+                    ORDER BY last_active_at DESC
+                    LIMIT $1
+                    """,
+                    cap,
+                )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "session_id": str(r["session_id"]),
+                    "user_id": r["user_id"],
+                    "current_agent": r["current_agent"],
+                    "status": r["status"],
+                    "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+                    "last_active_at": r["last_active_at"].isoformat() if r["last_active_at"] else None,
+                }
+            )
+        return out
+
     async def touch_session(self, session_id: UUID, current_agent: str | None = None) -> None:
         async with self._pool.acquire() as conn:
             if current_agent:
@@ -216,6 +264,26 @@ class SessionStore:
                     "UPDATE sessions SET last_active_at = NOW() WHERE session_id = $1",
                     session_id,
                 )
+
+    async def merge_session_metadata(
+        self,
+        session_id: UUID,
+        patch: dict[str, Any],
+    ) -> None:
+        """Funde chaves em ``sessions.metadata`` (JSONB)."""
+        if not patch:
+            return
+        payload = json.dumps(patch, ensure_ascii=False, default=str)
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE sessions
+                SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+                WHERE session_id = $1
+                """,
+                session_id,
+                payload,
+            )
 
     async def load_messages(self, session_id: UUID) -> list[dict[str, Any]]:
         async with self._pool.acquire() as conn:

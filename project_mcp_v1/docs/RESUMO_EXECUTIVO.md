@@ -11,6 +11,7 @@
 Transformação de um orquestrador **monolítico** para um sistema **modular e especializado**:
 
 ### Antes ❌
+
 - 1 SKILL único genérico
 - Todas as ferramentas sempre visíveis
 - 30-40% overhead de token
@@ -18,6 +19,7 @@ Transformação de um orquestrador **monolítico** para um sistema **modular e e
 - Debugging difícil
 
 ### Depois ✅
+
 - 1 SKILL para Maestro (roteador)
 - 5 SKILLs especializados (analistas)
 - 10% overhead de token
@@ -64,6 +66,7 @@ Transformação de um orquestrador **monolítico** para um sistema **modular e e
 ## 🏗️ Arquitetura Implementada
 
 ### Component 1: SkillLoader
+
 ```python
 class SkillLoader:
     - load_skill(agent_type) → (skill_text, SkillMetadata)
@@ -74,6 +77,7 @@ class SkillLoader:
 **Benefício**: Isolamento de contexto — cada agente carrega só seu SKILL
 
 ### Component 2: ModelRouter
+
 ```python
 class ModelRouter:
     maestro → haiku (rápido, roteamento)
@@ -87,6 +91,7 @@ class ModelRouter:
 **Benefício**: Otimização automática de custo-benefício por tarefa
 
 ### Component 3: ModularOrchestrator
+
 ```python
 class ModularOrchestrator:
     - async set_agent(agent_type)
@@ -102,7 +107,7 @@ class ModularOrchestrator:
 
 ### Scenario 1: Query Aberta (Maestro Roteia)
 
-```
+```txt
 User: "Quais concessionárias têm melhor performance?"
   ↓
 [Maestro - Haiku, 50k tokens]
@@ -123,7 +128,7 @@ User: "Quais concessionárias têm melhor performance?"
 
 ### Scenario 2: Query Específica (Direct)
 
-```
+```txt
 User: "Visualize faturamento dos últimos 3 meses"
   ├─ target_agent = "visualizador" (specified)
   ↓
@@ -184,18 +189,21 @@ User: "Visualize faturamento dos últimos 3 meses"
 ## 🎯 Benefícios por Stakeholder
 
 ### Para Cristiano (Desenvolvedor)
+
 - ✅ Código modular e testável (cada agente isolado)
 - ✅ Hot-swap de agentes (mudar sem quebrar tudo)
 - ✅ Debugging granular (logs por agente)
 - ✅ Extensibilidade (adicionar novo agente = 1 arquivo)
 
 ### Para Produto (PM)
+
 - ✅ Custo 95% menor (pode fazer 150+ análises/dia vs. 7)
 - ✅ Latência 30% menor (melhor UX)
 - ✅ Escalabilidade (6 agentes especializados vs. 1 genérico)
 - ✅ Qualidade de resposta (modelos específicos por tarefa)
 
 ### Para Negócio (CEO)
+
 - ✅ Economia de $1,608/ano em API costs
 - ✅ Maior throughput (150+ queries/dia)
 - ✅ Diferencial competitivo (análise Blue Ocean)
@@ -206,18 +214,21 @@ User: "Visualize faturamento dos últimos 3 meses"
 ## 📚 Documentação Estrutura
 
 ### 1. ARQUITETURA_MODULAR.docx (Ler Primeiro! 📌)
+
 - Problema vs. Solução (tabela comparativa)
 - Arquitetura detalhada com diagramas
 - Benefícios mensuráveis
 - Implementação step-by-step
 
 ### 2. README_MODULAR.md (Quick Start)
+
 - O que mudou?
 - Estrutura de arquivos
 - Quick start em 3 minutos
 - Casos de uso
 
 ### 3. GUIA_DE_MIGRACAO.md (Operacional)
+
 - Como começar
 - Health checks
 - Endpoint por endpoint
@@ -225,12 +236,14 @@ User: "Visualize faturamento dos últimos 3 meses"
 - Troubleshooting
 
 ### 4. EXEMPLOS_HTTP.md (Hands-on)
+
 - 25+ exemplos curl
 - Exemplos Python
 - Benchmarks reais
 - Debugging tips
 
 ### 5. RESUMO_EXECUTIVO.md (Este arquivo)
+
 - Visão geral de tudo
 - Checklist de implementação
 - Análise de ROI
@@ -273,21 +286,25 @@ pytest test_modular_orchestrator.py --cov=app.modular_orchestrator
 ## 🚀 Deployment Path
 
 ### Fase 1: Setup (Hoje)
+
 - [x] Arquivos de código prontos
 - [x] Documentação completa
 - [x] Testes criados
 
 ### Fase 2: Validação (Esta semana)
+
 - [ ] Executar testes localmente
 - [ ] Testar endpoints com curl
 - [ ] Validar performance vs. baseline
 
 ### Fase 3: Staging (Próxima semana)
+
 - [ ] Deploy em staging
 - [ ] Teste de carga
 - [ ] Validação de custo real
 
 ### Fase 4: Produção (2 semanas)
+
 - [ ] Blue-green deployment
 - [ ] Monitor de performance
 - [ ] Rollback plan (manter main.py antigo)
@@ -329,18 +346,21 @@ curl http://localhost:8000/agents
 ## 📞 Próximas Ações Recomendadas
 
 ### Curto Prazo (Esta semana)
+
 1. Ler **ARQUITETURA_MODULAR.docx**
 2. Executar `pytest` para validar
 3. Testar endpoints com exemplos em **EXEMPLOS_HTTP.md**
 4. Verificar performance vs. baseline
 
 ### Médio Prazo (Próximas 2-4 semanas)
+
 1. Integrar testes em CI/CD pipeline
 2. Implementar observabilidade (logs/métricas)
 3. Deploy em staging
 4. Treinamento de equipe
 
 ### Longo Prazo (1-3 meses)
+
 1. MCP Prompts como primitivo (reutilizar instruções)
 2. Cache de resultados por query_id
 3. Async job queue para análises pesadas
@@ -369,7 +389,7 @@ curl http://localhost:8000/agents
 
 ### Estrutura Final
 
-```
+```txt
 project_mcp_v1/
 ├── app/
 │   ├── modular_orchestrator.py    [✨ NOVO]

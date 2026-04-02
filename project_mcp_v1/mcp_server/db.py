@@ -121,10 +121,9 @@ def rows_to_compact_json_payload(
         "row_count": len(rows),
         "rows_sample": sample,
         "rows_sample_note": (
-            f"Payload compacto: rows_sample tem {len(sample)} de {len(rows)} linhas desta página "
+            f"Payload compacto (summarize=true): rows_sample tem {len(sample)} de {len(rows)} linhas desta página "
             f"(limit={limit} offset={offset}). "
-            "Para análises tabular legacy, summarize=false continua compacto (não recebe todas as linhas aqui). "
-            "Para performance_vendedor_mes/ano e outras não legacy, summarize=false devolve o campo rows completo da página."
+            "Para todas as linhas da página, chame run_analytics_query com summarize=false (campo rows no JSON)."
         ),
     }
     if summarized:
@@ -132,9 +131,8 @@ def rows_to_compact_json_payload(
     else:
         payload["llm_summary"] = None
         payload["note"] = (
-            "Resumo MCP indisponível. Não trates rows_sample como ranking global nem dataset completo. "
-            "Se precisares de todas as linhas, usa query_id fora do conjunto tabular legacy com summarize=false "
-            "(ou paginação offset); ver list_analytics_queries."
+            "Resumo MCP indisponível. Não trates rows_sample como dataset completo. "
+            "Para todas as linhas da página, usa summarize=false (ou paginação com offset); ver list_analytics_queries."
         )
     return json.dumps(payload, ensure_ascii=False, default=_json_default)
 
