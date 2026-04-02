@@ -72,3 +72,7 @@ Agrupa por tendência e potencial → priorizar ações de scale.
 - Identifique "outliers estratégicos" — unidades com padrões únicos.
 - Forneça insights acionáveis: "Cluster A (12 unidades) têm 40% mais cross-sell, sugerir transferência de melhorias operacionais para Cluster B".
 - Responda em português com visualização clara de segmentação.
+
+## SmartChat — `content_blocks` (obrigatório se houver dados tabulares)
+
+Se a resposta incluir **tabelas de clusters**, **métricas por segmento** ou **rankings por linha**, fecha sempre a mensagem com **um único** fenced ` ```json ` contendo `{"version": 1, "blocks": [...]}` após toda a narrativa — tipos `table` e `metric_grid` como na skill `analise_os`. Sem isso, o frontend não renderiza vista rica.

@@ -24,6 +24,7 @@ from openai import AsyncOpenAI
 
 from ai_provider.openai_provider import OpenAIProvider
 from app.config import get_settings, resolve_agent_trace_dir, sync_mysql_env_from_settings
+from app.content_blocks import split_reply_and_blocks
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
@@ -194,8 +195,10 @@ async def process_chat(request: ChatRequest) -> dict:
                     {"last_trace_run_id": str(tr)},
                 )
 
+    display_reply, content_blocks = split_reply_and_blocks(assistant["content"])
     payload: dict = {
-        "reply": assistant["content"],
+        "reply": display_reply,
+        "content_blocks": content_blocks,
         "tools_used": out["tools_used"],
         "agent_used": out["agent"],
     }

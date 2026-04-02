@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SubmitEvent } from 'react'
+import type { ReactNode, SubmitEvent } from 'react'
+
+type ContentBlock =
+  | { type: 'paragraph'; text: string }
+  | { type: 'heading'; level?: 1 | 2 | 3; text: string }
+  | {
+      type: 'table'
+      columns: string[]
+      rows: (string | number | boolean | null)[][]
+    }
+  | {
+      type: 'metric_grid'
+      items: { label: string; value: string }[]
+    }
+
+type ContentBlocksPayload = { version: 1; blocks: ContentBlock[] }
 
 type ChatMessage =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string }
+  | {
+      role: 'assistant'
+      content: string
+      contentBlocks?: ContentBlocksPayload | null
+    }
 
 type SessionRow = {
   session_id: string
@@ -16,6 +35,7 @@ type SessionRow = {
 
 type ChatResponse = {
   reply: string
+  content_blocks?: ContentBlocksPayload | null
   tools_used: unknown[]
   agent_used: string
   trace_run_id?: string | null
@@ -150,6 +170,552 @@ const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   },
 ]
 
+/** Divide uma linha em células por `|` (vazios omitidos). */
+function splitPipeCells(line: string): string[] {
+  return line.split('|').map((c) => c.trim()).filter((c) => c.length > 0)
+}
+
+function countPipes(s: string): number {
+  return (s.match(/\|/g) ?? []).length
+}
+
+/** Pelo menos dois pipes e duas células não vazias — padrão tipo `| Jun 1 | Jul 2 |`. */
+function isPipeDenseLine(s: string): boolean {
+  return countPipes(s) >= 2 && splitPipeCells(s).length >= 2
+}
+
+/**
+ * Separa texto introdutório do primeiro `|` quando o resto continua a ser tabular.
+ */
+function extractPipeTableFromLine(line: string): {
+  caption: string | null
+  pipeLine: string
+} {
+  const trimmed = line.trim()
+  if (!isPipeDenseLine(trimmed)) {
+    return { caption: null, pipeLine: trimmed }
+  }
+  const firstPipe = trimmed.indexOf('|')
+  const preamble = trimmed.slice(0, firstPipe).trim()
+  const rest = trimmed.slice(firstPipe).trim()
+  if (!isPipeDenseLine(rest)) {
+    return { caption: null, pipeLine: trimmed }
+  }
+  return {
+    caption: preamble.length > 0 ? preamble : null,
+    pipeLine: rest,
+  }
+}
+
+/** Células no formato mês + valor (ex.: `Jun 199.550`, `Oct 200.`, `Jan R$ 1.234,56`). */
+const PIPE_CELL_MONTH_VALUE =
+  /^([A-Za-zÀ-ú]{3,})\s+(?:R\$\s*)?([\d\s.,]+(?:\s*[%‰])?)$/
+
+function tryMonthValueSemanticTable(
+  matrix: string[][],
+): { headers: string[]; values: string[] } | null {
+  if (matrix.length !== 1) return null
+  const cells = matrix[0]
+  const headers: string[] = []
+  const values: string[] = []
+  for (const c of cells) {
+    const m = c.trim().match(PIPE_CELL_MONTH_VALUE)
+    if (!m) return null
+    headers.push(m[1])
+    values.push(m[2].trim())
+  }
+  return headers.length >= 2 ? { headers, values } : null
+}
+
+function PipeTableView({ rows }: { rows: string[] }) {
+  const matrix = rows.map((r) => splitPipeCells(r))
+  if (matrix.length === 0 || matrix.every((r) => r.length === 0)) return null
+  const maxCols = Math.max(...matrix.map((r) => r.length), 1)
+  const semantic = tryMonthValueSemanticTable(matrix)
+
+  const wrap = (inner: ReactNode) => (
+    <div className="my-3 overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/[0.03]">
+      {inner}
+    </div>
+  )
+
+  if (semantic) {
+    return wrap(
+      <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            {semantic.headers.map((h, hi) => (
+              <th
+                key={hi}
+                className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700"
+              >
+                {renderInlineBold(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="bg-white">
+            {semantic.values.map((v, vi) => (
+              <td
+                key={vi}
+                className="border-t border-slate-100 px-3 py-2.5 tabular-nums font-medium text-slate-900"
+              >
+                {renderInlineBold(v)}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>,
+    )
+  }
+
+  return wrap(
+    <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+      <tbody>
+        {matrix.map((row, ri) => (
+          <tr
+            key={ri}
+            className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/70"
+          >
+            {Array.from({ length: maxCols }, (_, ci) => (
+              <td
+                key={ci}
+                className="px-3 py-2 align-top text-slate-700 [&:not(:last-child)]:border-r border-slate-100"
+              >
+                {row[ci] != null && row[ci] !== ''
+                  ? renderInlineBold(row[ci])
+                  : '—'}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>,
+  )
+}
+
+/** Realça `**negrito**` estilo Markdown comum nas respostas do modelo. */
+function renderInlineBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return parts.map((part, i) => {
+    const m = part.match(/^\*\*([^*]+)\*\*$/)
+    if (m) {
+      return (
+        <strong key={i} className="font-semibold text-slate-900">
+          {m[1]}
+        </strong>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
+type AssistantChunk =
+  | { kind: 'spacer' }
+  | { kind: 'heading'; level: 1 | 2 | 3; text: string }
+  | { kind: 'numbered'; raw: string }
+  | { kind: 'bullets'; items: string[] }
+  | { kind: 'paragraph'; lines: string[] }
+  | { kind: 'choice'; letter: string; rest: string }
+  | { kind: 'pipe_table'; rows: string[]; caption: string | null }
+
+function parseAssistantChunks(lines: string[]): AssistantChunk[] {
+  const chunks: AssistantChunk[] = []
+  let i = 0
+  while (i < lines.length) {
+    const trimmed = lines[i].trim()
+    if (!trimmed) {
+      chunks.push({ kind: 'spacer' })
+      i++
+      continue
+    }
+    const mdHeading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+    if (mdHeading) {
+      const n = mdHeading[1].length as 1 | 2 | 3
+      chunks.push({ kind: 'heading', level: n, text: mdHeading[2] })
+      i++
+      continue
+    }
+    if (/^(?:\d+\)|\d+\.\s)/.test(trimmed)) {
+      chunks.push({ kind: 'numbered', raw: trimmed })
+      i++
+      continue
+    }
+    const choice = trimmed.match(/^\(([A-Za-z])\)\s*(.*)$/)
+    if (choice && choice[2].length > 0) {
+      chunks.push({
+        kind: 'choice',
+        letter: choice[1].toUpperCase(),
+        rest: choice[2],
+      })
+      i++
+      continue
+    }
+    if (/^[-•*]\s/.test(trimmed)) {
+      const items: string[] = []
+      while (i < lines.length) {
+        const t = lines[i].trim()
+        if (/^[-•*]\s/.test(t)) {
+          items.push(t.replace(/^[-•*]\s+/, ''))
+          i++
+        } else break
+      }
+      chunks.push({ kind: 'bullets', items })
+      continue
+    }
+    if (isPipeDenseLine(trimmed)) {
+      const first = extractPipeTableFromLine(trimmed)
+      const rows: string[] = [first.pipeLine]
+      const caption = first.caption
+      i++
+      while (i < lines.length) {
+        const t = lines[i].trim()
+        if (!t) break
+        if (!isPipeDenseLine(t)) break
+        const next = extractPipeTableFromLine(t)
+        if (next.caption) break
+        rows.push(next.pipeLine)
+        i++
+      }
+      chunks.push({ kind: 'pipe_table', rows, caption })
+      continue
+    }
+    const paraLines: string[] = []
+    while (i < lines.length) {
+      const t = lines[i].trim()
+      if (!t) break
+      if (
+        /^(#{1,3})\s+/.test(t) ||
+        /^(?:\d+\)|\d+\.\s)/.test(t) ||
+        /^\([A-Za-z]\)\s/.test(t) ||
+        /^[-•*]\s/.test(t) ||
+        isPipeDenseLine(t)
+      ) {
+        break
+      }
+      paraLines.push(t)
+      i++
+    }
+    chunks.push({ kind: 'paragraph', lines: paraLines })
+  }
+  return chunks
+}
+
+function NumberedBlock({ raw }: { raw: string }) {
+  const segments = raw
+    .split(/\s+[—–]\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const [head, ...rest] = segments
+  return (
+    <div className="rounded-xl border border-slate-200/90 border-l-4 border-l-sky-500 bg-white py-3.5 pl-4 pr-3.5 shadow-sm ring-1 ring-slate-900/[0.03]">
+      {head ? (
+        <p className="text-[0.9375rem] font-semibold leading-snug text-slate-900">
+          {renderInlineBold(head)}
+        </p>
+      ) : null}
+      {rest.length > 0 ? (
+        <ul className="mt-3 flex list-none flex-col gap-2 pl-0 sm:flex-row sm:flex-wrap">
+          {rest.map((seg, si) => (
+            <li
+              key={si}
+              className="rounded-lg border border-slate-200/80 bg-slate-50 px-3 py-2 text-[0.8125rem] font-medium leading-snug text-slate-700"
+            >
+              {renderInlineBold(seg)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Agrupa linhas em parágrafos, secções e listas para leitura confortável
+ * (hierarquia, ritmo vertical, negrito e cartões para rankings).
+ */
+function AssistantMessageBody({ content }: { content: string }) {
+  const lines = content.split('\n')
+  let chunks = parseAssistantChunks(lines)
+  while (chunks.length > 0 && chunks[0].kind === 'spacer') {
+    chunks = chunks.slice(1)
+  }
+  while (chunks.length > 0 && chunks[chunks.length - 1].kind === 'spacer') {
+    chunks = chunks.slice(0, -1)
+  }
+  const collapsed: AssistantChunk[] = []
+  for (const c of chunks) {
+    if (
+      c.kind === 'spacer' &&
+      collapsed.length > 0 &&
+      collapsed[collapsed.length - 1].kind === 'spacer'
+    ) {
+      continue
+    }
+    collapsed.push(c)
+  }
+  chunks = collapsed
+  return (
+    <div className="assistant-message max-w-[min(100%,68ch)] text-[0.9375rem] leading-[1.7] tracking-normal text-slate-800">
+      {chunks.map((chunk, idx) => {
+        const key = `c-${idx}`
+        switch (chunk.kind) {
+          case 'spacer':
+            return <div key={key} className="h-4 shrink-0" aria-hidden />
+          case 'heading': {
+            const cls =
+              chunk.level === 1
+                ? 'text-lg font-bold tracking-tight text-slate-900'
+                : chunk.level === 2
+                  ? 'text-base font-bold tracking-tight text-slate-900'
+                  : 'text-sm font-semibold tracking-tight text-slate-800'
+            const Tag = chunk.level === 1 ? 'h3' : chunk.level === 2 ? 'h4' : 'h5'
+            return (
+              <Tag
+                key={key}
+                className={`${cls} mt-6 scroll-mt-4 border-b border-slate-200/90 pb-2 first:mt-0`}
+              >
+                {renderInlineBold(chunk.text)}
+              </Tag>
+            )
+          }
+          case 'numbered':
+            return (
+              <div key={key} className="mt-4 first:mt-0">
+                <NumberedBlock raw={chunk.raw} />
+              </div>
+            )
+          case 'bullets':
+            return (
+              <ul
+                key={key}
+                className="my-4 list-none space-y-2.5 rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50/95 to-white px-4 py-3.5 shadow-sm"
+              >
+                {chunk.items.map((item, bi) => (
+                  <li
+                    key={bi}
+                    className="relative pl-6 text-[0.875rem] leading-relaxed text-slate-700 before:absolute before:left-0 before:top-[0.35em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-sky-500 before:content-['']"
+                  >
+                    {renderInlineBold(item)}
+                  </li>
+                ))}
+              </ul>
+            )
+          case 'choice':
+            return (
+              <div
+                key={key}
+                className="my-3 flex gap-3 rounded-xl border border-indigo-200/70 bg-indigo-50/50 px-3 py-3 sm:items-start"
+              >
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white shadow-sm"
+                  aria-hidden
+                >
+                  {chunk.letter}
+                </span>
+                <p className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed text-slate-700">
+                  {renderInlineBold(chunk.rest)}
+                </p>
+              </div>
+            )
+          case 'pipe_table':
+            return (
+              <div key={key} className="my-4 first:mt-0">
+                {chunk.caption ? (
+                  <p className="mb-2 text-[0.875rem] leading-relaxed text-slate-600">
+                    {renderInlineBold(chunk.caption)}
+                  </p>
+                ) : null}
+                <PipeTableView rows={chunk.rows} />
+              </div>
+            )
+          case 'paragraph':
+            return (
+              <p
+                key={key}
+                className="my-3 text-slate-700 first:mt-0 last:mb-0 [&:not(:last-child)]:mb-4"
+              >
+                {chunk.lines.map((ln, li) => (
+                  <span key={li} className="block [&:not(:first-child)]:mt-2">
+                    {renderInlineBold(ln)}
+                  </span>
+                ))}
+              </p>
+            )
+          default:
+            return null
+        }
+      })}
+    </div>
+  )
+}
+
+function formatCell(v: string | number | boolean | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'boolean') return v ? 'sim' : 'não'
+  return String(v)
+}
+
+function isContentBlock(b: unknown): b is ContentBlock {
+  if (!b || typeof b !== 'object') return false
+  const t = (b as { type?: string }).type
+  switch (t) {
+    case 'paragraph':
+      return typeof (b as { text?: unknown }).text === 'string'
+    case 'heading': {
+      const h = b as { level?: unknown; text?: unknown }
+      const lv = h.level
+      return (
+        typeof h.text === 'string' &&
+        (lv === undefined || lv === 1 || lv === 2 || lv === 3)
+      )
+    }
+    case 'table': {
+      const tb = b as { columns?: unknown; rows?: unknown }
+      return Array.isArray(tb.columns) && Array.isArray(tb.rows)
+    }
+    case 'metric_grid': {
+      const mg = b as { items?: unknown }
+      if (!Array.isArray(mg.items)) return false
+      return (mg.items as unknown[]).every(
+        (it) =>
+          it &&
+          typeof it === 'object' &&
+          typeof (it as { label?: unknown }).label === 'string' &&
+          typeof (it as { value?: unknown }).value === 'string',
+      )
+    }
+    default:
+      return false
+  }
+}
+
+function parseContentBlocks(raw: unknown): ContentBlocksPayload | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (o.version !== 1 || !Array.isArray(o.blocks)) return null
+  const blocks = o.blocks.filter(isContentBlock)
+  if (blocks.length === 0) return null
+  return { version: 1, blocks }
+}
+
+function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
+  return (
+    <div className="content-blocks space-y-4 border-t border-slate-200/90 pt-4 mt-1">
+      {blocks.map((block, i) => {
+        const key = `b-${i}`
+        switch (block.type) {
+          case 'paragraph':
+            return (
+              <p
+                key={key}
+                className="text-[0.9375rem] leading-7 text-slate-700 whitespace-pre-wrap"
+              >
+                {block.text}
+              </p>
+            )
+          case 'heading': {
+            const level = block.level ?? 2
+            const cls =
+              level === 1
+                ? 'text-lg font-bold text-slate-900'
+                : level === 2
+                  ? 'text-base font-semibold text-slate-900'
+                  : 'text-sm font-semibold text-slate-800'
+            const Tag = level === 1 ? 'h3' : level === 2 ? 'h4' : 'h5'
+            return (
+              <Tag key={key} className={cls}>
+                {block.text}
+              </Tag>
+            )
+          }
+          case 'table':
+            return (
+              <div
+                key={key}
+                className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"
+              >
+                <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      {block.columns.map((col, ci) => (
+                        <th
+                          key={ci}
+                          className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700"
+                        >
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, ri) => (
+                      <tr
+                        key={ri}
+                        className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/60"
+                      >
+                        {block.columns.map((_, ci) => (
+                          <td key={ci} className="px-3 py-2 align-top tabular-nums">
+                            {formatCell(row[ci])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          case 'metric_grid':
+            return (
+              <ul
+                key={key}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 list-none p-0 m-0"
+              >
+                {block.items.map((item, mi) => (
+                  <li
+                    key={mi}
+                    className="rounded-xl border border-slate-200/95 bg-slate-50/90 px-3 py-2.5 shadow-sm"
+                  >
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      {item.label}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold tabular-nums text-slate-900">
+                      {item.value}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          default:
+            return null
+        }
+      })}
+    </div>
+  )
+}
+
+function StructuredAssistantMessage({
+  content,
+  contentBlocks,
+}: {
+  content: string
+  contentBlocks?: ContentBlocksPayload | null
+}) {
+  const hasBlocks =
+    contentBlocks != null && contentBlocks.blocks.length > 0
+  if (!hasBlocks) {
+    return <AssistantMessageBody content={content} />
+  }
+  return (
+    <div className="assistant-structured space-y-4">
+      {content.trim() ? <AssistantMessageBody content={content} /> : null}
+      <ContentBlocksView blocks={contentBlocks.blocks} />
+    </div>
+  )
+}
+
 function PipelineDots() {
   return (
     <div className="mb-2 flex gap-1.5" aria-hidden>
@@ -237,7 +803,8 @@ function mapStoredMessages(raw: StoredMsg[]): ChatMessage[] {
     const c = contentToString(m.content)
     if (r === 'tool') continue
     if (r === 'user') out.push({ role: 'user', content: c })
-    else if (r === 'assistant') out.push({ role: 'assistant', content: c })
+    else if (r === 'assistant')
+      out.push({ role: 'assistant', content: c, contentBlocks: null })
     else out.push({ role: 'assistant', content: `[${r}] ${c}` })
   }
   return out
@@ -378,9 +945,14 @@ export default function App() {
       }
 
       const raw = (await res.json()) as Record<string, unknown> & ChatResponse
+      const contentBlocks = parseContentBlocks(raw.content_blocks)
       setMessages((m) => [
         ...m,
-        { role: 'assistant', content: raw.reply ?? '' },
+        {
+          role: 'assistant',
+          content: raw.reply ?? '',
+          contentBlocks,
+        },
       ])
       if (raw.session_id) setSessionId(String(raw.session_id))
       if (raw.trace_run_id) setTraceRunId(String(raw.trace_run_id))
@@ -551,17 +1123,24 @@ export default function App() {
               {messages.map((msg, i) => (
                 <div
                   key={`${i}-${msg.role}`}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${msg.role === 'user'
-                        ? 'bg-slate-800 text-white'
-                        : 'border border-slate-200 bg-slate-50 text-slate-800'
+                    className={`rounded-2xl ${msg.role === 'user'
+                        ? 'max-w-[85%] bg-slate-800 px-4 py-2.5 text-sm leading-relaxed text-white'
+                        : 'w-full min-w-0 max-w-[min(100%,48rem)] border border-slate-200/90 bg-gradient-to-b from-slate-50/95 to-white px-4 py-4 text-slate-800 shadow-sm ring-1 ring-slate-900/[0.04] sm:px-6 sm:py-5'
                       }`}
                   >
-                    <span className="block whitespace-pre-wrap break-words">
-                      {msg.content}
-                    </span>
+                    {msg.role === 'user' ? (
+                      <span className="block whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </span>
+                    ) : (
+                      <StructuredAssistantMessage
+                        content={msg.content}
+                        contentBlocks={msg.contentBlocks}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
