@@ -1,0 +1,210 @@
+"""
+Cache de tools MCP por sessão (metadata.mcp_tool_cache) e digest para o system.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+from typing import Any
+
+from app.config import Settings, get_settings
+
+ENTITY_GLOSSARY_TOOL = "get_entity_glossary_markdown"
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_mcp_arguments(args: dict[str, Any] | None) -> dict[str, Any]:
+    if not args:
+        return {}
+    out: dict[str, Any] = {}
+    for k in sorted(args.keys()):
+        v = args[k]
+        if v is None:
+            continue
+        if isinstance(v, dict):
+            nested = normalize_mcp_arguments(v)
+            if nested:
+                out[k] = nested
+        elif isinstance(v, list):
+            out[k] = [_normalize_list_item(x) for x in v]
+        else:
+            out[k] = v
+    return out
+
+
+def _normalize_list_item(x: Any) -> Any:
+    if isinstance(x, dict):
+        return normalize_mcp_arguments(x)
+    if isinstance(x, list):
+        return [_normalize_list_item(y) for y in x]
+    return x
+
+
+def canonical_json(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def mcp_cache_key(tool_name: str, args: dict[str, Any] | None) -> str:
+    norm = normalize_mcp_arguments(args or {})
+    payload = f"{tool_name}\n{canonical_json(norm)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def find_cache_entry(
+    metadata: dict[str, Any],
+    cache_key: str,
+) -> dict[str, Any] | None:
+    block = metadata.get("mcp_tool_cache") or {}
+    entries = block.get("entries") or []
+    for e in entries:
+        if e.get("cache_key") == cache_key:
+            return e
+    return None
+
+
+def append_cache_entry(
+    metadata: dict[str, Any],
+    *,
+    cache_key: str,
+    tool_name: str,
+    args: dict[str, Any],
+    result_text: str,
+    settings: Settings | None = None,
+) -> None:
+    st = settings or get_settings()
+    cap = max(1024, int(st.mcp_cache_entry_max_chars))
+    text = (
+        result_text
+        if len(result_text) <= cap
+        else (result_text[:cap] + "\n\n[truncado mcp_cache_entry_max_chars]")
+    )
+    block = metadata.setdefault("mcp_tool_cache", {})
+    lst = block.setdefault("entries", [])
+    row_count: int | None = None
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            if "rows" in data and isinstance(data["rows"], list):
+                row_count = len(data["rows"])
+            elif "queries" in data and isinstance(data["queries"], list):
+                row_count = len(data["queries"])
+    except (json.JSONDecodeError, TypeError):
+        pass
+    lst.append(
+        {
+            "cache_key": cache_key,
+            "tool_name": tool_name,
+            "args": args,
+            "executed_at": _utc_iso(),
+            "result_stored": "full" if len(result_text) <= cap else "truncated",
+            "result_text": text,
+            "row_count": row_count,
+        }
+    )
+
+
+def _truncate(s: str, max_len: int) -> str:
+    s = s.strip()
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
+def _digest_one_entry(
+    e: dict[str, Any],
+    max_per: int,
+) -> list[str]:
+    tn = str(e.get("tool_name") or "?")
+    args = e.get("args") or {}
+    raw = str(e.get("result_text") or "")
+    lines: list[str] = []
+    args_s = canonical_json(args)
+    if len(args_s) > 220:
+        args_s = args_s[:220] + "…"
+    rc = e.get("row_count")
+    rc_bit = f" · linhas≈{rc}" if rc is not None else ""
+
+    if tn == "run_analytics_query":
+        snippet = raw
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                rows = data.get("rows")
+                cols = data.get("columns")
+                if isinstance(rows, list) and rows:
+                    snippet = f"colunas={cols!r} amostra={json.dumps(rows[:3], ensure_ascii=False)[:600]}"
+        except (json.JSONDecodeError, TypeError):
+            pass
+        lines.append(f"### {tn}{rc_bit}")
+        lines.append(f"- args: `{args_s}`")
+        lines.append(f"- prévia: {_truncate(snippet, max_per)}")
+    elif tn == "list_analytics_queries":
+        lines.append(f"### {tn}{rc_bit}")
+        lines.append(f"- args: `{args_s}`")
+        lines.append(f"- prévia: {_truncate(raw, max_per)}")
+    elif tn == ENTITY_GLOSSARY_TOOL:
+        lines.append(f"### {tn}{rc_bit}")
+        lines.append(f"- args: `{args_s}`")
+        lines.append(f"- prévia (markdown truncado): {_truncate(raw, max_per)}")
+    else:
+        lines.append(f"### {tn}{rc_bit}")
+        lines.append(f"- args: `{args_s}`")
+        lines.append(f"- prévia: {_truncate(raw, max_per)}")
+    return lines
+
+
+def build_mcp_cache_digest_section(
+    metadata: dict[str, Any],
+    settings: Settings | None = None,
+) -> str:
+    st = settings or get_settings()
+    max_section = max(500, int(st.mcp_cache_digest_max_chars))
+    max_entries = max(1, int(st.mcp_cache_digest_max_entries))
+    max_per = max(200, int(st.mcp_cache_digest_max_chars_per_entry))
+    block = metadata.get("mcp_tool_cache") or {}
+    entries: list[dict[str, Any]] = list(block.get("entries") or [])
+    if not entries:
+        return ""
+    tail = entries[-max_entries:]
+    parts: list[str] = [
+        "## Ferramentas MCP já executadas nesta sessão (digest)",
+        "",
+        "Reutiliza resultados em cache quando repetires a mesma tool com os mesmos argumentos normalizados; consulta este digest antes de nova chamada MCP.",
+        "",
+    ]
+    for e in tail:
+        parts.extend(_digest_one_entry(e, max_per))
+        parts.append("")
+    out = "\n".join(parts).strip()
+    if len(out) > max_section:
+        out = out[:max_section] + "\n\n[digest truncado mcp_cache_digest_section_max_chars]"
+    return out
+
+
+def entries_fingerprint(entries: list[dict[str, Any]]) -> str:
+    keys = sorted(str(e.get("cache_key", "")) for e in entries)
+    return hashlib.sha256("\n".join(keys).encode("utf-8")).hexdigest()
+
+
+def get_or_reuse_llm_digest_cache(
+    metadata: dict[str, Any],
+    entries: list[dict[str, Any]],
+    new_digest_markdown: str,
+    settings: Settings | None = None,
+) -> str:
+    st = settings or get_settings()
+    if not st.mcp_cache_digest_llm_reuse_hash:
+        return new_digest_markdown
+    h = entries_fingerprint(entries)
+    slot = metadata.setdefault("mcp_digest_llm_cache", {})
+    if slot.get("entries_hash") == h and slot.get("digest_markdown"):
+        return str(slot["digest_markdown"])
+    slot["entries_hash"] = h
+    slot["digest_markdown"] = new_digest_markdown
+    slot["generated_at"] = _utc_iso()
+    return new_digest_markdown
