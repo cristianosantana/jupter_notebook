@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from ai_provider.base import ModelProvider
+from app.config import Settings
 from app.orchestrator import (
-    ENTITY_GLOSSARY_MCP_TOOL,
     ModularOrchestrator,
     _messages_with_skill,
 )
@@ -29,6 +29,7 @@ class FakeModelHandoff(ModelProvider):
         messages,
         tools=None,
         tool_choice=None,
+        model_override=None,
     ):
         self.calls += 1
         if self.calls == 1:
@@ -58,7 +59,7 @@ class FakeModelHandoff(ModelProvider):
 class FakeModelDirect(ModelProvider):
     """Uma única resposta final (sem roteamento)."""
 
-    async def chat(self, messages, tools=None, tool_choice=None):
+    async def chat(self, messages, tools=None, tool_choice=None, model_override=None):
         assert tool_choice is None
         return {
             "role": "assistant",
@@ -111,7 +112,7 @@ class FakeModelTriesDelegateFromSpecialist(ModelProvider):
     def __init__(self) -> None:
         self.calls = 0
 
-    async def chat(self, messages, tools=None, tool_choice=None):
+    async def chat(self, messages, tools=None, tool_choice=None, model_override=None):
         self.calls += 1
         if self.calls == 1:
             return {
@@ -163,7 +164,7 @@ class FakeModelHandoffThenSecondTurn(ModelProvider):
     def __init__(self) -> None:
         self.calls = 0
 
-    async def chat(self, messages, tools=None, tool_choice=None):
+    async def chat(self, messages, tools=None, tool_choice=None, model_override=None):
         self.calls += 1
         if self.calls == 1:
             assert tool_choice is not None
@@ -198,8 +199,18 @@ class FakeModelHandoffThenSecondTurn(ModelProvider):
         }
 
 
-def test_auto_route_continues_specialist_on_second_message():
+def test_auto_route_continues_specialist_on_second_message(monkeypatch):
     """Segundo POST sem target_agent não volta ao Maestro nem limpa o contexto relevante."""
+
+    # O fake conta chamadas ao modelo; desliga chamadas LLM extra (F3, memory, observador, digest LLM).
+    monkeypatch.setenv("OBSERVER_AGENT_ENABLED", "false")
+    monkeypatch.setenv("PIPELINE_VERIFIER_ENABLED", "false")
+    monkeypatch.setenv("PIPELINE_COMPOSITOR_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_PROMPTS_ENABLED", "false")
+    monkeypatch.setenv("MCP_CACHE_DIGEST_LLM_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
 
     async def _run():
         client = _mock_client()
@@ -212,7 +223,10 @@ def test_auto_route_continues_specialist_on_second_message():
         out2 = await orch.run("Último trimestre.", target_agent=None)
         return out1, out2, model.calls
 
-    out1, out2, n_calls = asyncio.run(_run())
+    try:
+        out1, out2, n_calls = asyncio.run(_run())
+    finally:
+        get_settings.cache_clear()
 
     assert out1["agent"] == "analise_os"
     assert "Qual período" in (out1["assistant"].get("content") or "")
@@ -263,7 +277,7 @@ def test_prompt_skill_text_merges_glossary_block():
     orch = ModularOrchestrator(FakeModelDirect(), client, skills_dir=_SKILLS)
     orch.current_skill = "CORPO_SKILL"
     orch._entity_glossary = "## Glossário\n- id=1: X"
-    merged = orch._prompt_skill_text()
+    merged = orch._build_system_text_sync()
     assert "CORPO_SKILL" in merged
     assert "## Glossário" in merged
 
@@ -310,7 +324,7 @@ def test_refresh_entity_glossary_uses_mcp_tool(monkeypatch):
         client.call_tool.assert_awaited_once()
         call = client.call_tool.await_args
         assert call is not None
-        assert call.args[0] == ENTITY_GLOSSARY_MCP_TOOL
+        assert call.args[0] == Settings().entity_glossary_mcp_tool
         assert "max_chars" in (call.args[1] or {})
 
     asyncio.run(_run())

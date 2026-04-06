@@ -32,26 +32,26 @@ def build_openai_sampling_callback(client: "AsyncOpenAI", model: str):
         params: types.CreateMessageRequestParams,
     ) -> types.CreateMessageResult | types.ErrorData:
         tr = get_trace_logger()
+        oai_messages: list[dict[str, str]] = []
+        if params.systemPrompt:
+            oai_messages.append({"role": "system", "content": params.systemPrompt})
+        for m in params.messages:
+            oai_messages.append(
+                {"role": m.role, "content": _sampling_content_to_text(m.content)}
+            )
+        total_chars = sum(len(m.get("content") or "") for m in oai_messages)
         if tr:
             tr.record(
                 "mcp.sampling.request",
+                llm_phase="mcp_sampling",
                 system_prompt=params.systemPrompt,
                 max_tokens=params.maxTokens,
                 temperature=params.temperature,
-                messages_summary=[
-                    {"role": m.role, "content_len": len(_sampling_content_to_text(m.content))}
-                    for m in params.messages
-                ],
+                messages=oai_messages,
+                message_count=len(oai_messages),
+                total_chars=total_chars,
             )
         try:
-            oai_messages: list[dict[str, str]] = []
-            if params.systemPrompt:
-                oai_messages.append({"role": "system", "content": params.systemPrompt})
-            for m in params.messages:
-                oai_messages.append(
-                    {"role": m.role, "content": _sampling_content_to_text(m.content)}
-                )
-
             resp = await client.chat.completions.create(
                 model=model,
                 messages=oai_messages,
@@ -69,14 +69,16 @@ def build_openai_sampling_callback(client: "AsyncOpenAI", model: str):
             if tr:
                 tr.record(
                     "mcp.sampling.response",
+                    llm_phase="mcp_sampling",
                     model=resp.model or model,
-                    text_preview=text[:8000],
+                    text=text,
                     text_chars=len(text),
+                    stop_reason="endTurn",
                 )
             return msg
         except Exception as e:
             if tr:
-                tr.record("mcp.sampling.error", error=str(e))
+                tr.record("mcp.sampling.error", llm_phase="mcp_sampling", error=str(e))
             return types.ErrorData(
                 code=types.INVALID_REQUEST,
                 message=f"sampling OpenAI falhou: {e}",

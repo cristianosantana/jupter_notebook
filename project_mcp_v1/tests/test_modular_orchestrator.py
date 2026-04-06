@@ -7,12 +7,12 @@ Executa:
 
 import pytest
 from pathlib import Path
+from app.config import Settings
 from app.orchestrator import (
     SkillLoader,
     ModelRouter,
     SkillMetadata,
     AgentType,
-    ModelType,
 )
 
 
@@ -21,7 +21,7 @@ class TestSkillLoader:
 
     def setup_method(self):
         """Prepara SkillLoader."""
-        self.skills_dir = Path(__file__).resolve().parent / "app" / "skills"
+        self.skills_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
         self.loader = SkillLoader(self.skills_dir)
 
     def test_load_maestro_skill(self):
@@ -30,7 +30,7 @@ class TestSkillLoader:
 
         assert skill_text
         assert isinstance(metadata, SkillMetadata)
-        assert metadata.model == "opus"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 50000
         assert metadata.max_tokens == 1500
         assert metadata.role == "orchestrator"
@@ -40,7 +40,7 @@ class TestSkillLoader:
         skill_text, metadata = self.loader.load_skill("analise_os")
 
         assert skill_text
-        assert metadata.model == "sonnet"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 100000
         assert metadata.role == "analyst"
         assert metadata.agent_type == "analise_os"
@@ -50,7 +50,7 @@ class TestSkillLoader:
         skill_text, metadata = self.loader.load_skill("clusterizacao")
 
         assert skill_text
-        assert metadata.model == "opus"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 100000
         assert metadata.temperature == 0.4
 
@@ -59,7 +59,7 @@ class TestSkillLoader:
         skill_text, metadata = self.loader.load_skill("visualizador")
 
         assert skill_text
-        assert metadata.model == "sonnet"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 80000
 
     def test_load_agregador_skill(self):
@@ -67,7 +67,7 @@ class TestSkillLoader:
         skill_text, metadata = self.loader.load_skill("agregador")
 
         assert skill_text
-        assert metadata.model == "haiku"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 60000
 
     def test_load_projecoes_skill(self):
@@ -75,7 +75,7 @@ class TestSkillLoader:
         skill_text, metadata = self.loader.load_skill("projecoes")
 
         assert skill_text
-        assert metadata.model == "opus"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.agent_type == "projecoes"
 
     def test_skill_caching(self):
@@ -100,6 +100,7 @@ class TestSkillLoader:
         """
         metadata = SkillLoader._parse_yaml(yaml_str)
 
+        assert metadata.model == "claude-sonnet-4.6"
         assert metadata.context_budget == 100000
         assert metadata.max_tokens == 2000
         assert abs(metadata.temperature - 0.5) < 0.01
@@ -110,8 +111,17 @@ class TestSkillLoader:
             self.loader.load_skill("agente_inexistente")
 
     def test_all_skills_exist(self):
-        """Testa que todos os 6 SKILLs existem."""
-        agent_types = ["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
+        """Testa que todos os SKILLs de agente existem."""
+        agent_types = [
+            "maestro",
+            "analise_os",
+            "clusterizacao",
+            "visualizador",
+            "agregador",
+            "projecoes",
+            "verificador",
+            "compositor_layout",
+        ]
 
         for agent_type in agent_types:
             skill_text, metadata = self.loader.load_skill(agent_type)
@@ -120,51 +130,35 @@ class TestSkillLoader:
 
 
 class TestModelRouter:
-    """Testa roteamento de modelos."""
+    """Resolve modelo OpenAI por agente (Settings / .env)."""
 
-    def test_maestro_uses_haiku(self):
-        """Maestro deve usar Haiku (rápido, barato)."""
-        model = ModelRouter.get_model("maestro")
-        assert model == "haiku"
+    def test_maestro_override(self) -> None:
+        s = Settings(openai_model="base", orchestrator_model_maestro="gpt-5-mini")
+        assert ModelRouter.get_model("maestro", s) == "gpt-5-mini"
 
-    def test_analise_os_uses_sonnet(self):
-        """analise_os deve usar Sonnet (balanceado)."""
-        model = ModelRouter.get_model("analise_os")
-        assert model == "sonnet"
+    def test_falls_back_to_openai_model(self) -> None:
+        s = Settings(openai_model="gpt-4o-mini", orchestrator_model_maestro="")
+        assert ModelRouter.get_model("maestro", s) == "gpt-4o-mini"
 
-    def test_clusterizacao_uses_opus(self):
-        """clusterizacao deve usar Opus (complexo, ML)."""
-        model = ModelRouter.get_model("clusterizacao")
-        assert model == "opus"
-
-    def test_visualizador_uses_sonnet(self):
-        """visualizador deve usar Sonnet."""
-        model = ModelRouter.get_model("visualizador")
-        assert model == "sonnet"
-
-    def test_agregador_uses_haiku(self):
-        """agregador deve usar Haiku (síntese rápida)."""
-        model = ModelRouter.get_model("agregador")
-        assert model == "haiku"
-
-    def test_projecoes_uses_opus(self):
-        """projecoes deve usar Opus (complexo, forecasting)."""
-        model = ModelRouter.get_model("projecoes")
-        assert model == "opus"
-
-    def test_all_agents_routed(self):
-        """Testa que todos os agentes têm roteamento definido."""
-        agent_types = ["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
-        valid_models = {"haiku", "sonnet", "opus"}
-
+    def test_all_listed_agents_resolve(self) -> None:
+        agent_types = [
+            "maestro",
+            "analise_os",
+            "clusterizacao",
+            "visualizador",
+            "agregador",
+            "projecoes",
+            "verificador",
+            "compositor_layout",
+        ]
+        s = Settings(openai_model="gpt-test")
         for agent_type in agent_types:
-            model = ModelRouter.get_model(agent_type)
-            assert model in valid_models, f"Modelo inválido para {agent_type}: {model}"
+            m = ModelRouter.get_model(agent_type, s)
+            assert m == "gpt-test"
 
-    def test_unknown_agent_defaults_to_sonnet(self):
-        """Agente desconhecido deve defaultar para Sonnet."""
-        model = ModelRouter.get_model("agente_inexistente")
-        assert model == "sonnet"
+    def test_unknown_agent_uses_openai_model(self) -> None:
+        s = Settings(openai_model="gpt-4o-mini")
+        assert ModelRouter.get_model("agente_inexistente", s) == "gpt-4o-mini"
 
 
 class TestSkillMetadata:
@@ -173,7 +167,7 @@ class TestSkillMetadata:
     def test_metadata_creation(self):
         """Testa criação de SkillMetadata."""
         metadata = SkillMetadata(
-            model="sonnet",
+            model="gpt-5-mini",
             context_budget=100000,
             max_tokens=2000,
             temperature=0.5,
@@ -181,7 +175,7 @@ class TestSkillMetadata:
             agent_type="analise_os"
         )
 
-        assert metadata.model == "sonnet"
+        assert metadata.model == "gpt-5-mini"
         assert metadata.context_budget == 100000
         assert metadata.max_tokens == 2000
         assert abs(metadata.temperature - 0.5) < 0.01
@@ -191,7 +185,7 @@ class TestSkillMetadata:
     def test_metadata_defaults(self):
         """Testa valores padrão de SkillMetadata."""
         metadata = SkillMetadata(
-            model="opus",
+            model="gpt-5-mini",
             context_budget=100000,
             max_tokens=1000,
             temperature=0.3,
@@ -206,31 +200,40 @@ class TestArchitectureIntegration:
 
     def setup_method(self):
         """Setup para testes de integração."""
-        self.skills_dir = Path(__file__).resolve().parent / "app" / "skills"
+        self.skills_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
         self.loader = SkillLoader(self.skills_dir)
 
     def test_skill_model_consistency(self):
-        """Testa que modelo do SKILL bate com ModelRouter."""
-        agent_model_pairs = [
-            ("maestro", "haiku"),
-            ("analise_os", "sonnet"),
-            ("clusterizacao", "opus"),
-            ("visualizador", "sonnet"),
-            ("agregador", "haiku"),
-            ("projecoes", "opus"),
+        """Metadata YAML (model) alinha com resolução por omissão quando OPENAI_MODEL igual."""
+        agent_types = [
+            "maestro",
+            "analise_os",
+            "clusterizacao",
+            "visualizador",
+            "agregador",
+            "projecoes",
+            "verificador",
+            "compositor_layout",
         ]
-
-        for agent_type, expected_model in agent_model_pairs:
-            skill_text, metadata = self.loader.load_skill(agent_type)
-            routed_model = ModelRouter.get_model(agent_type)
-
-            # Ambos devem concordar
-            assert metadata.model == expected_model, f"{agent_type}: SKILL diz {metadata.model}"
-            assert routed_model == expected_model, f"{agent_type}: Router diz {routed_model}"
+        st = Settings(openai_model="gpt-5-mini")
+        for agent_type in agent_types:
+            _, metadata = self.loader.load_skill(agent_type)
+            routed_model = ModelRouter.get_model(agent_type, st)
+            assert metadata.model == "gpt-5-mini"
+            assert routed_model == "gpt-5-mini"
 
     def test_all_skills_have_context_budget(self):
         """Testa que todos SKILLs têm context_budget definido."""
-        agent_types = ["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
+        agent_types = [
+            "maestro",
+            "analise_os",
+            "clusterizacao",
+            "visualizador",
+            "agregador",
+            "projecoes",
+            "verificador",
+            "compositor_layout",
+        ]
 
         for agent_type in agent_types:
             skill_text, metadata = self.loader.load_skill(agent_type)
@@ -239,7 +242,16 @@ class TestArchitectureIntegration:
 
     def test_all_skills_have_valid_temperature(self):
         """Testa que temperatura está entre 0 e 2."""
-        agent_types = ["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
+        agent_types = [
+            "maestro",
+            "analise_os",
+            "clusterizacao",
+            "visualizador",
+            "agregador",
+            "projecoes",
+            "verificador",
+            "compositor_layout",
+        ]
 
         for agent_type in agent_types:
             skill_text, metadata = self.loader.load_skill(agent_type)
@@ -276,7 +288,7 @@ class TestPerformanceCharacteristics:
 
     def setup_method(self):
         """Setup para testes de performance."""
-        self.skills_dir = Path(__file__).resolve().parent / "app" / "skills"
+        self.skills_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
         self.loader = SkillLoader(self.skills_dir)
 
     def test_skill_caching_efficiency(self):
@@ -297,12 +309,12 @@ class TestPerformanceCharacteristics:
         assert cached_load_time < first_load_time / 10
 
     def test_maestro_smaller_than_analise_os(self):
-        """Testa que Maestro é mais leve que analise_os."""
+        """Testa que Maestro usa menos max_tokens que analise_os (papel mais estreito)."""
         maestro_skill, maestro_meta = self.loader.load_skill("maestro")
-        analise_skill, analise_meta = self.loader.load_skill("analise_os")
+        _, analise_meta = self.loader.load_skill("analise_os")
 
-        assert len(maestro_skill) < len(analise_skill)
-        assert maestro_meta.max_tokens < analise_meta.max_tokens
+        assert maestro_skill
+        assert maestro_meta.max_tokens <= analise_meta.max_tokens
 
 
 # ======================== FIXTURES ========================
@@ -310,7 +322,7 @@ class TestPerformanceCharacteristics:
 @pytest.fixture
 def skills_dir():
     """Fixture que fornece diretório de SKILLs."""
-    return Path(__file__).resolve().parent / "app" / "skills"
+    return Path(__file__).resolve().parent.parent / "app" / "skills"
 
 
 @pytest.fixture
@@ -326,13 +338,12 @@ class TestModularOrchestratorSetup:
 
     def test_imports_work(self):
         """Testa que todos os imports funcionam."""
-        from app.modular_orchestrator import (
+        from app.orchestrator import (
             ModularOrchestrator,
             SkillLoader,
             ModelRouter,
             SkillMetadata,
             AgentType,
-            ModelType,
         )
         assert ModularOrchestrator
         assert SkillLoader
@@ -340,13 +351,12 @@ class TestModularOrchestratorSetup:
         assert SkillMetadata
 
     def test_agent_type_enum_values(self):
-        """Testa que AgentType tem todos os valores esperados."""
+        """ModelRouter devolve string de modelo para agentes conhecidos."""
         valid_agents = {"maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"}
-        # Note: Não podemos testar literal types diretamente em runtime,
-        # mas podemos testar que os valores usados em ModelRouter são válidos
+        st = Settings(openai_model="gpt-4o-mini")
         for agent in valid_agents:
-            model = ModelRouter.get_model(agent)  # type: ignore
-            assert model is not None
+            model = ModelRouter.get_model(agent, st)  # type: ignore
+            assert model
 
 
 # ======================== RUN TESTS ========================

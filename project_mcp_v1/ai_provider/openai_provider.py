@@ -3,7 +3,7 @@ from typing import Any, List, Dict
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
-from app.agent_trace import get_trace_logger
+from app.agent_trace import get_trace_llm_phase, get_trace_logger
 from app.config import get_settings
 from ai_provider.base import ModelProvider
 
@@ -67,10 +67,11 @@ class OpenAIProvider(ModelProvider):
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]] | None = None,
         tool_choice: Any | None = None,
+        model_override: str | None = None,
     ) -> Dict[str, Any]:
 
         kwargs: Dict[str, Any] = {
-            "model": self.model,
+            "model": (model_override or "").strip() or self.model,
             "messages": messages,
         }
         if tools:
@@ -79,13 +80,15 @@ class OpenAIProvider(ModelProvider):
             kwargs["tool_choice"] = tool_choice
 
         tr = get_trace_logger()
+        llm_phase = get_trace_llm_phase()
         if tr:
             tr.record(
                 "llm.request",
-                model=self.model,
+                model=kwargs["model"],
                 messages=messages,
                 tools=tools,
                 tool_choice=tool_choice,
+                llm_phase=llm_phase,
             )
 
         response = await self.client.chat.completions.create(**kwargs)
@@ -95,5 +98,6 @@ class OpenAIProvider(ModelProvider):
                 "llm.response",
                 model=response.model,
                 assistant_message=out,
+                llm_phase=llm_phase,
             )
         return out

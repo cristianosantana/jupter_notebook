@@ -9,6 +9,7 @@ class ModelProvider(ABC):
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]] | None = None,
         tool_choice: Any | None = None,
+        model_override: str | None = None,
     ) -> Dict[str, Any]:
         """
         Recebe mensagens e opcionalmente ferramentas.

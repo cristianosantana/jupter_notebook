@@ -65,7 +65,7 @@ def test_hydrate_session_state_preserves_messages():
     from ai_provider.base import ModelProvider
 
     class Dummy(ModelProvider):
-        async def chat(self, messages, tools=None, tool_choice=None):
+        async def chat(self, messages, tools=None, tool_choice=None, model_override=None):
             return {"role": "assistant", "content": "ok", "tool_calls": None}
 
     async def _run():

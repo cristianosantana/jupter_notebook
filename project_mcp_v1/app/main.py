@@ -37,16 +37,6 @@ agent: ModularOrchestrator | None = None
 session_store: SessionStore | None = None
 orchestrator_lock = asyncio.Lock()
 
-_AGENT_TYPES: frozenset[str] = frozenset({
-    "maestro",
-    "analise_os",
-    "clusterizacao",
-    "visualizador",
-    "agregador",
-    "projecoes",
-})
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global agent, session_store
@@ -57,8 +47,12 @@ async def lifespan(app: FastAPI):
     if trace_root is not None:
         trace_root.mkdir(parents=True, exist_ok=True)
         os.environ["AGENT_TRACE_DIR"] = str(trace_root)
+        os.environ["AGENT_TRACE_MAX_FIELD_CHARS"] = str(
+            int(settings.agent_trace_max_field_chars)
+        )
     else:
         os.environ.pop("AGENT_TRACE_DIR", None)
+        os.environ.pop("AGENT_TRACE_MAX_FIELD_CHARS", None)
 
     sync_mysql_env_from_settings(settings)
     oai = AsyncOpenAI(api_key=settings.openai_api_key or None)
@@ -143,7 +137,10 @@ async def process_chat(request: ChatRequest) -> dict:
     if agent is None:
         raise RuntimeError("Agent not initialized")
 
+    settings = get_settings()
     sid: UUID | None = None
+
+    session_metadata: dict = {}
 
     async with orchestrator_lock:
         if session_store:
@@ -155,34 +152,42 @@ async def process_chat(request: ChatRequest) -> dict:
                 await session_store.create_session(nsid, request.user_id)
                 await agent.reset_conversation()
                 sid = nsid
+                session_metadata = {}
             elif request.session_id is None:
                 nsid = uuid.uuid4()
                 await session_store.create_session(nsid, request.user_id)
                 await agent.reset_conversation()
                 sid = nsid
+                session_metadata = {}
             else:
                 row = await session_store.get_session(request.session_id)
                 if row is None:
                     raise HTTPException(status_code=404, detail="session_id não encontrado")
                 sid = request.session_id
+                raw_meta = row.get("metadata")
+                session_metadata = dict(raw_meta) if isinstance(raw_meta, dict) else {}
                 msgs = await session_store.load_messages(sid)
                 ca = row["current_agent"]
-                if ca not in _AGENT_TYPES:
+                if ca not in settings.orchestrator_agent_types_frozenset:
                     ca = "maestro"
                     msgs = []
                 agent.hydrate_session_state(ca, msgs, session_id=sid)  # type: ignore[arg-type]
         else:
             if request.new_conversation:
                 await agent.reset_conversation()
+            session_metadata = {}
 
+        meta_for_run = session_metadata if session_store is not None and sid is not None else None
         out = await agent.run(
             request.message,
             target_agent=request.target_agent,
             session_id=sid,
+            session_metadata=meta_for_run,
         )
         assistant = out["assistant"]
 
         if session_store is not None and sid is not None:
+            await session_store.update_session_metadata(sid, session_metadata)
             if out["agent"] != "maestro":
                 await session_store.replace_conversation_messages(sid, agent.messages)
                 await session_store.touch_session(sid, out["agent"])
@@ -307,7 +312,16 @@ async def list_agents():
         raise RuntimeError("Agent not initialized")
 
     agents_info = {}
-    agent_types = ["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
+    agent_types = [
+        "maestro",
+        "analise_os",
+        "clusterizacao",
+        "visualizador",
+        "agregador",
+        "projecoes",
+        "verificador",
+        "compositor_layout",
+    ]
 
     for agent_type in agent_types:
         try:
