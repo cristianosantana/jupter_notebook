@@ -1,0 +1,16 @@
+[theme]
+primaryColor = "#0284c7"
+backgroundColor = "#f1f5f9"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1e293b"
+fontSansSerif = "system-ui, 'Segoe UI', sans-serif"
+
+# Fundo da sidebar fixo (evita flash / fundo claro após rerun ao interagir na main, ex. cartões).
+[theme.sidebar]
+backgroundColor = "#0f172a"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#e2e8f0"
+primaryColor = "#0284c7"
+
+[server]
+headless = true

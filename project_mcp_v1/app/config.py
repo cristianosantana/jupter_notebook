@@ -73,10 +73,13 @@ class Settings(BaseSettings):
     )
 
     cors_origins: str = Field(
-        default="http://localhost:5173",
+        default=(
+            "http://localhost:5173,http://127.0.0.1:5173,"
+            "http://localhost:8501,http://127.0.0.1:8501"
+        ),
         description=(
             "Origens permitidas pelo FastAPI CORSMiddleware, separadas por vírgula "
-            "(ex.: frontend Vite em http://localhost:5173)."
+            "(Vite em :5173; Streamlit SmartChat em :8501)."
         ),
     )
 
