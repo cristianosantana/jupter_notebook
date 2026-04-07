@@ -4,6 +4,9 @@ Cada linha vai para ``AGENT_TRACE_DIR / YYYYMMDD / <hora local> / {run_id}_serve
 ex.: ``.../20260315/8/`` ou ``.../20260315/13/`` (hora 0–23 no fuso do sistema, sem zero à esquerda).
 
 A hora e o campo ``ts`` usam o **relógio local** (``TZ`` / timezone do SO), não UTC.
+
+Truncagem: variável de ambiente ``AGENT_TRACE_MAX_FIELD_CHARS`` (definida pela app no arranque).
+Se ausente, usa 600_000. Se **0 ou negativo**, não trunca strings (análise completa).
 """
 
 from __future__ import annotations
@@ -15,7 +18,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 _lock = threading.Lock()
-_MAX = 200_000
+_DEFAULT_MAX = 600_000
+
+
+def _max_field_chars() -> int:
+    raw = os.environ.get("AGENT_TRACE_MAX_FIELD_CHARS", "").strip()
+    if not raw:
+        return _DEFAULT_MAX
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_MAX
 
 
 def _now_local() -> datetime:
@@ -31,9 +44,12 @@ def _date_hour_dirs_local() -> tuple[str, str]:
 
 
 def _truncate(s: str) -> str:
-    if len(s) <= _MAX:
+    m = _max_field_chars()
+    if m <= 0:
         return s
-    return s[:_MAX] + f"\n… [truncado {len(s)}→{_MAX}]"
+    if len(s) <= m:
+        return s
+    return s[:m] + f"\n… [truncado {len(s)}→{m}]"
 
 
 def _sanitize(v: Any) -> Any:

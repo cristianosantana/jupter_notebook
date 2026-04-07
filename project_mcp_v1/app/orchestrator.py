@@ -3,21 +3,35 @@ Orquestrador Modular para Maestro de Agentes.
 
 Implementa:
 1. SkillLoader: Carrega SKILLs dinamicamente com YAML frontmatter
-2. ModelRouter: Roteamento inteligente de modelo (Haiku → Sonnet → Opus)
+2. ModelRouter: resolve o modelo OpenAI por agente (``Settings`` / ``.env``)
 3. ModularOrchestrator: Agent loop com decomposição de tasks
 """
 
+import asyncio
 import json
 import logging
 import time
 import re
 from collections import OrderedDict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 from dataclasses import dataclass
 from uuid import UUID
 
 from ai_provider.base import ModelProvider
+from app.memory_prompts import (
+    maybe_update_session_notes,
+    maybe_update_conversation_summary,
+)
+from app.mcp_session_cache import (
+    append_cache_entry,
+    build_mcp_cache_digest_section,
+    find_cache_entry,
+    mcp_cache_key,
+    entries_fingerprint,
+)
+from app.prompt_assembly import build_effective_system_text
 from app.routing_tools import (
     MAESTRO_TOOLS_ONLY,
     ROUTE_TO_SPECIALIST_TOOL_NAME,
@@ -26,38 +40,36 @@ from app.routing_tools import (
 )
 from app.agent_trace import (
     AgentTraceLogger,
+    activate_openai_chat_stats_for_run,
     get_trace_logger,
+    llm_phase_context,
     reset_trace_logger,
     set_trace_logger,
+    take_openai_chat_stats,
 )
-from app.config import get_settings, resolve_agent_trace_dir
+from app.config import Settings, get_settings, resolve_agent_trace_dir
 from mcp_client.client import Client
 from mcp.types import CallToolResult, Tool  # pyright: ignore[reportMissingImports]
 
 _logger_orch = logging.getLogger(__name__)
 
-# Configurações
-MAX_TOOL_ROUNDS = 24
-MAX_HISTORY_MESSAGES = 20
-MAX_MESSAGE_AGE_SECONDS = 7200.0
-TOOL_RESULT_PREVIEW_MAX = 500
-# Margem extra no orçamento (metadados de pedido, imperfeição da estimativa char→token).
-CONTEXT_BUDGET_SAFETY_MARGIN = 768
-# ~3 caracteres por token: estimativa conservadora (podagem um pouco mais agressiva).
-CHARS_PER_TOKEN_ESTIMATE = 3
-ENTITY_GLOSSARY_MCP_TOOL = "get_entity_glossary_markdown"
-# Chave de cache quando não há session_id (PostgreSQL inactivo / pedido sem sessão).
-_GLOSSARY_CACHE_ANONYMOUS_KEY = UUID("00000000-0000-0000-0000-000000000001")
-
-# Enums
-AgentType = Literal["maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"]
-ModelType = Literal["haiku", "sonnet", "opus"]
+# Tipos de agente (alinhado com ``Settings.orchestrator_agent_types``; manter sincronizado).
+AgentType = Literal[
+    "maestro",
+    "analise_os",
+    "clusterizacao",
+    "visualizador",
+    "agregador",
+    "projecoes",
+    "verificador",
+    "compositor_layout",
+]
 
 
 @dataclass
 class SkillMetadata:
     """Metadados extraídos do frontmatter YAML do SKILL."""
-    model: ModelType
+    model: str
     context_budget: int
     max_tokens: int
     temperature: float
@@ -119,8 +131,10 @@ class SkillLoader:
                 else:
                     data[key] = value
 
+        raw_model = str(data.get("model", "sonnet")).strip().lower()
+
         return SkillMetadata(
-            model=data.get("model", "sonnet").split("-")[1].lower(),  # Extract "sonnet" from "claude-sonnet-4.6"
+            model=raw_model,
             context_budget=data.get("context_budget", 100000),
             max_tokens=data.get("max_tokens", 2000),
             temperature=data.get("temperature", 0.5),
@@ -130,21 +144,13 @@ class SkillLoader:
 
 
 class ModelRouter:
-    """Mapeia AgentType → Modelo baseado em complexidade."""
-
-    ROUTING_TABLE = {
-        "maestro": "haiku",           # Rápido + barato (roteamento)
-        "analise_os": "sonnet",       # Balanceado
-        "clusterizacao": "opus",      # Complexo (machine learning)
-        "visualizador": "sonnet",     # Visualização
-        "agregador": "haiku",         # Síntese simples
-        "projecoes": "opus",          # Complexo (forecasting)
-    }
+    """Resolve o identificador do modelo OpenAI por agente (``Settings`` / ``.env``)."""
 
     @staticmethod
-    def get_model(agent_type: AgentType) -> ModelType:
-        """Retorna modelo ideal para agente."""
-        return ModelRouter.ROUTING_TABLE.get(agent_type, "sonnet")
+    def get_model(agent_type: AgentType | str, settings: Settings | None = None) -> str:
+        """Nome do modelo na API (override por agente ou ``openai_model``)."""
+        st = settings or get_settings()
+        return st.effective_model_for_agent(str(agent_type))
 
 
 def _parse_tool_arguments(raw: Any) -> dict[str, Any]:
@@ -203,7 +209,8 @@ def _messages_with_skill(
 def _estimate_tokens_from_text(text: str) -> int:
     if not text:
         return 0
-    return max(1, (len(text) + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE)
+    cpt = max(1, int(get_settings().orchestrator_chars_per_token_estimate))
+    return max(1, (len(text) + cpt - 1) // cpt)
 
 
 def _estimate_tokens_for_message(msg: dict[str, Any]) -> int:
@@ -278,10 +285,14 @@ class ModularOrchestrator:
         self.current_metadata: SkillMetadata | None = None
         self._entity_glossary: str = ""
         self._entity_glossary_cache: OrderedDict[UUID, str] = OrderedDict()
+        self._session_metadata: dict[str, Any] | None = None
+        self._session_id_for_cache: UUID | None = None
 
     @staticmethod
     def _glossary_cache_key(session_id: UUID | None) -> UUID:
-        return session_id if session_id is not None else _GLOSSARY_CACHE_ANONYMOUS_KEY
+        if session_id is not None:
+            return session_id
+        return get_settings().orchestrator_glossary_cache_anonymous_key()
 
     def _glossary_cache_get(self, session_id: UUID | None) -> str | None:
         st = get_settings()
@@ -366,15 +377,257 @@ class ModularOrchestrator:
         else:
             self._entity_glossary = ""
 
-    def _prompt_skill_text(self) -> str:
-        """SKILL efectivo para o modelo: corpo do SKILL + glossário de dimensões (se houver)."""
-        base = (self.current_skill or "").strip()
-        extra = (self._entity_glossary or "").strip()
-        if not extra:
+    def _session_meta(self) -> dict[str, Any]:
+        return self._session_metadata if self._session_metadata is not None else {}
+
+    def _use_mcp_session_cache(self) -> bool:
+        return self._session_metadata is not None and self._session_id_for_cache is not None
+
+    def _utc_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _observer_append(self, event_type: str, detail: Any) -> None:
+        st = get_settings()
+        if not st.observer_agent_enabled:
+            return
+        if self._session_metadata is None:
+            return
+        slot = self._session_metadata.setdefault("observer_log", {})
+        ents = slot.setdefault("entries", [])
+        ents.append(
+            {
+                "ts": self._utc_iso(),
+                "event_type": event_type,
+                "agent": self.current_agent,
+                "detail": detail,
+            }
+        )
+        cap = max(10, int(st.observer_log_max_entries))
+        if len(ents) > cap:
+            del ents[0 : len(ents) - cap]
+
+    def _build_system_text_sync(self) -> str:
+        """System para orçamento de poda (digest Python apenas, sem LLM)."""
+        st = get_settings()
+        digest = build_mcp_cache_digest_section(self._session_meta(), st)
+        tp_payload = MAESTRO_TOOLS_ONLY if self.current_agent == "maestro" else None
+        return build_effective_system_text(
+            agent=self.current_agent,
+            skill_body=self.current_skill or "",
+            entity_glossary_markdown=self._entity_glossary or "",
+            mcp_digest_markdown=digest,
+            session_metadata=self._session_meta(),
+            tools_openai_payload=tp_payload,
+            mcp_tools=self.tools,
+            settings=st,
+        )
+
+    async def _digest_for_system_async(self) -> str:
+        st = get_settings()
+        md = self._session_meta()
+        base = build_mcp_cache_digest_section(md, st)
+        entries = (md.get("mcp_tool_cache") or {}).get("entries") or []
+        if not st.mcp_cache_digest_llm_enabled or not entries:
             return base
-        if not base:
-            return extra
-        return f"{base}\n\n{extra}".strip()
+        fp = entries_fingerprint(entries)
+        cached = md.get("mcp_digest_llm_cache") or {}
+        if (
+            st.mcp_cache_digest_llm_reuse_hash
+            and cached.get("entries_hash") == fp
+            and cached.get("digest_markdown")
+        ):
+            return str(cached["digest_markdown"])
+        trig = (st.mcp_cache_digest_llm_trigger or "").strip().lower()
+        if trig == "when_base_too_long" and len(base) < int(st.mcp_cache_digest_llm_min_chars_to_run):
+            return base
+        refined = await self._llm_refine_mcp_digest(base)
+        if refined:
+            slot = md.setdefault("mcp_digest_llm_cache", {})
+            slot["entries_hash"] = fp
+            slot["digest_markdown"] = refined[: int(st.mcp_cache_digest_llm_max_output_chars)]
+            slot["generated_at"] = self._utc_iso()
+            return str(slot["digest_markdown"])
+        return base
+
+    async def _llm_refine_mcp_digest(self, base_digest: str) -> str | None:
+        st = get_settings()
+        path = Path(__file__).resolve().parent / "prompts" / "internal" / "mcp_digest_editor.md"
+        if not path.is_file():
+            return None
+        system = path.read_text(encoding="utf-8").strip()
+        budget = int(st.mcp_cache_digest_llm_max_output_chars)
+        user = (
+            f"Orçamento máximo de saída: {budget} caracteres.\n\n"
+            f"Digest base:\n\n{base_digest[:8000]}"
+        )
+        model_o = (st.mcp_cache_digest_llm_model or "").strip() or None
+        try:
+            with llm_phase_context("mcp_digest_llm"):
+                resp = await asyncio.wait_for(
+                    self.model.chat(
+                        [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        tools=None,
+                        model_override=model_o,
+                    ),
+                    timeout=float(st.mcp_cache_digest_llm_timeout_seconds),
+                )
+            return str((resp or {}).get("content") or "").strip() or None
+        except (asyncio.TimeoutError, Exception) as e:
+            _logger_orch.warning("mcp digest LLM refine failed: %s", e)
+            self._observer_append(
+                "mcp_digest_llm_failed",
+                {
+                    "error": type(e).__name__,
+                    "timeout": isinstance(e, asyncio.TimeoutError),
+                },
+            )
+            return None
+
+    async def _build_system_text_async(self) -> str:
+        st = get_settings()
+        digest = await self._digest_for_system_async()
+        tp_payload = MAESTRO_TOOLS_ONLY if self.current_agent == "maestro" else None
+        return build_effective_system_text(
+            agent=self.current_agent,
+            skill_body=self.current_skill or "",
+            entity_glossary_markdown=self._entity_glossary or "",
+            mcp_digest_markdown=digest,
+            session_metadata=self._session_meta(),
+            tools_openai_payload=tp_payload,
+            mcp_tools=self.tools,
+            settings=st,
+        )
+
+    async def _observer_narrative(self, user_input: str, tools_used: list[dict[str, Any]]) -> None:
+        st = get_settings()
+        if not st.observer_agent_enabled or self._session_metadata is None:
+            return
+        path = Path(__file__).resolve().parent / "prompts" / "internal" / "observer.md"
+        if not path.is_file():
+            return
+        system = path.read_text(encoding="utf-8").strip()
+        payload = {
+            "user_excerpt": user_input[:2000],
+            "agent_final": self.current_agent,
+            "tools_used": tools_used[-40:],
+            "observer_events": (self._session_metadata.get("observer_log") or {}).get("entries", [])[-80:],
+        }
+        user = json.dumps(payload, ensure_ascii=False)[:120_000]
+        model_o = (st.observer_agent_model or "").strip() or None
+        try:
+            with llm_phase_context("observer_narrative"):
+                resp = await self.model.chat(
+                    [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    tools=None,
+                    model_override=model_o,
+                )
+            text = str((resp or {}).get("content") or "").strip()
+            if not text:
+                return
+            cap = max(500, int(st.observer_narrative_max_chars))
+            if len(text) > cap:
+                text = text[:cap] + "…"
+            slot = self._session_metadata.setdefault("observer_log", {})
+            narr = slot.setdefault("narratives", [])
+            narr.append(
+                {
+                    "ts": self._utc_iso(),
+                    "markdown": text,
+                }
+            )
+            nmax = max(1, int(st.observer_narratives_max))
+            if len(narr) > nmax:
+                del narr[0 : len(narr) - nmax]
+        except Exception as e:
+            _logger_orch.warning("observer narrative failed: %s", e)
+
+    async def _run_f3_pipeline(
+        self,
+        result: dict[str, Any],
+        user_input: str,
+    ) -> dict[str, Any]:
+        st = get_settings()
+        md = self._session_meta()
+        if self.current_agent == "maestro":
+            return result
+        assistant = result.get("assistant") or {}
+        text = str(assistant.get("content") or "")
+        digest = build_mcp_cache_digest_section(md, st)
+
+        if st.pipeline_verifier_enabled:
+            try:
+                v_skill, _ = self.skill_loader.load_skill("verificador")
+            except (FileNotFoundError, ValueError):
+                v_skill = "Verificador: valida números contra digest e responde VEREDITO: APROVADO|PARCIAL|REPROVADO."
+            depth = (st.verification_depth or "smoke").strip()
+            v_user = (
+                f"Profundidade: {depth}\n\n"
+                f"Pedido utilizador:\n{user_input[:4000]}\n\n"
+                f"Resposta candidata:\n{text[:12000]}\n\n"
+                f"Digest MCP:\n{digest[:8000]}"
+            )
+            try:
+                mo_v = st.resolve_orchestrator_model_for_agent("verificador")
+                with llm_phase_context("pipeline_verifier"):
+                    v_resp = await self.model.chat(
+                        [
+                            {"role": "system", "content": v_skill},
+                            {"role": "user", "content": v_user},
+                        ],
+                        tools=None,
+                        model_override=mo_v,
+                    )
+                verdict = str((v_resp or {}).get("content") or "").strip()
+                if verdict:
+                    md["verification_status"] = verdict[:2000]
+                    md["verification_raw"] = verdict
+                    self._observer_append("pipeline_verifier", {"chars": len(verdict)})
+            except Exception as e:
+                _logger_orch.warning("verifier pipeline failed: %s", e)
+
+        if st.pipeline_compositor_enabled:
+            allow = True
+            vs = str(md.get("verification_status") or "")
+            if st.pipeline_verifier_enabled and "REPROVADO" in vs.upper():
+                allow = False
+            if allow:
+                try:
+                    c_skill, _ = self.skill_loader.load_skill("compositor_layout")
+                except (FileNotFoundError, ValueError):
+                    c_skill = (
+                        "Compositor: devolve **só** JSON válido "
+                        '{"version":1,"blocks":[{"type":"p","markdown":"..."}]}'
+                    )
+                c_user = f"Texto aprovado ou candidato:\n{text[:16000]}"
+                try:
+                    mo_c = st.resolve_orchestrator_model_for_agent("compositor_layout")
+                    with llm_phase_context("pipeline_compositor"):
+                        c_resp = await self.model.chat(
+                            [
+                                {"role": "system", "content": c_skill},
+                                {"role": "user", "content": c_user},
+                            ],
+                            tools=None,
+                            model_override=mo_c,
+                        )
+                    raw = str((c_resp or {}).get("content") or "").strip()
+                    try:
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, dict) and "blocks" in parsed:
+                            md["layout_blocks"] = parsed
+                            self._observer_append("pipeline_compositor", {"blocks": len(parsed.get("blocks") or [])})
+                    except json.JSONDecodeError:
+                        md["layout_blocks"] = {"version": 1, "raw": raw[:8000]}
+                except Exception as e:
+                    _logger_orch.warning("compositor pipeline failed: %s", e)
+
+        return result
 
     async def _refresh_entity_glossary(self, session_id: UUID | None = None) -> None:
         st = get_settings()
@@ -403,7 +656,7 @@ class ModularOrchestrator:
             stats_out = {
                 "glossary_chars_in_memory": len(self._entity_glossary or ""),
                 "skill_base_chars": len(self.current_skill or ""),
-                "effective_system_text_chars": len(self._prompt_skill_text()),
+                "effective_system_text_chars": len(self._build_system_text_sync()),
                 "glossary_source": "session_cache",
             }
             _logger_orch.info(
@@ -413,13 +666,44 @@ class ModularOrchestrator:
             if tlog:
                 tlog.record("orchestrator.entity_glossary.loaded", **stats_out)
             return
+        gql_args = {
+            "max_chars": st.entity_glossary_max_chars,
+            "include_demais_registos": st.entity_glossary_include_demais_registos,
+        }
+        gname = st.entity_glossary_mcp_tool
+        if self._use_mcp_session_cache() and self._session_metadata is not None:
+            ck_g = mcp_cache_key(gname, gql_args)
+            hit_g = find_cache_entry(self._session_metadata, ck_g)
+            if hit_g and hit_g.get("result_text"):
+                try:
+                    data_g = json.loads(str(hit_g["result_text"]))
+                    if isinstance(data_g, dict) and "markdown" in data_g:
+                        markdown_g = str(data_g.get("markdown", ""))
+                        self._entity_glossary = markdown_g
+                        self._glossary_cache_set(session_id, markdown_g)
+                        self._observer_append(
+                            "tool_cache_hit",
+                            {"tool": gname},
+                        )
+                        stats_out = {
+                            "glossary_chars_in_memory": len(self._entity_glossary or ""),
+                            "skill_base_chars": len(self.current_skill or ""),
+                            "effective_system_text_chars": len(self._build_system_text_sync()),
+                            "glossary_source": "mcp_session_cache",
+                        }
+                        _logger_orch.info(
+                            "entity_glossary from mcp_tool_cache: chars=%s",
+                            stats_out["glossary_chars_in_memory"],
+                        )
+                        if tlog:
+                            tlog.record("orchestrator.entity_glossary.loaded", **stats_out)
+                        return
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass
         try:
             mcp_result = await self.client.call_tool(
-                ENTITY_GLOSSARY_MCP_TOOL,
-                {
-                    "max_chars": st.entity_glossary_max_chars,
-                    "include_demais_registos": st.entity_glossary_include_demais_registos,
-                },
+                gname,
+                gql_args,
             )
             raw = _mcp_result_to_text(mcp_result)
             if mcp_result.isError:
@@ -434,11 +718,20 @@ class ModularOrchestrator:
             stats = raw_stats if isinstance(raw_stats, dict) else {}
             self._entity_glossary = markdown
             self._glossary_cache_set(session_id, markdown)
+            if self._use_mcp_session_cache() and self._session_metadata is not None and not mcp_result.isError:
+                append_cache_entry(
+                    self._session_metadata,
+                    cache_key=mcp_cache_key(gname, gql_args),
+                    tool_name=gname,
+                    args=gql_args,
+                    result_text=raw,
+                )
+                self._observer_append("tool_call", {"tool": gname, "source": "mcp"})
             stats_out = {
                 **stats,
                 "glossary_chars_in_memory": len(self._entity_glossary or ""),
                 "skill_base_chars": len(self.current_skill or ""),
-                "effective_system_text_chars": len(self._prompt_skill_text()),
+                "effective_system_text_chars": len(self._build_system_text_sync()),
                 "glossary_source": "mcp_tool",
             }
             _logger_orch.info("entity_glossary loaded (counts/stats): %s", stats)
@@ -505,11 +798,12 @@ class ModularOrchestrator:
             return None
         reserved_out = max(0, meta.max_tokens)
         tools_est = self._estimate_tools_tokens()
+        margin = max(0, int(get_settings().orchestrator_context_budget_safety_margin))
         available = (
             meta.context_budget
             - reserved_out
             - tools_est
-            - CONTEXT_BUDGET_SAFETY_MARGIN
+            - margin
         )
         # Mantém um mínimo para não esvaziar o histórico por arredondamento agressivo.
         return max(256, available)
@@ -519,8 +813,9 @@ class ModularOrchestrator:
         if len(self.messages) != len(self._message_times):
             self._message_times = [time.time() for _ in self.messages]
 
+        st = get_settings()
         now = time.time()
-        cutoff = now - MAX_MESSAGE_AGE_SECONDS
+        cutoff = now - float(st.orchestrator_max_message_age_seconds)
 
         while (
             self.messages
@@ -538,7 +833,7 @@ class ModularOrchestrator:
             while self.messages:
                 if (
                     _estimate_prompt_tokens_messages_plus_skill(
-                        self._prompt_skill_text(),
+                        self._build_system_text_sync(),
                         self.messages,
                     )
                     <= cap
@@ -550,7 +845,8 @@ class ModularOrchestrator:
                 self._message_times.pop(0)
                 self._strip_leading_orphan_tools()
 
-        while len(self.messages) > MAX_HISTORY_MESSAGES:
+        max_hist = max(1, int(st.orchestrator_max_history_messages))
+        while len(self.messages) > max_hist:
             if self.messages[0].get("_orch_anchor"):
                 break
             self.messages.pop(0)
@@ -614,22 +910,28 @@ class ModularOrchestrator:
         devolvê-la imediatamente; caso contrário segue para o loop do especialista.
         """
         maestro_tool_choice = self._maestro_tool_choice_dict()
+        st_m = get_settings()
+        max_rounds_m = max(1, int(st_m.orchestrator_max_tool_rounds))
+        mo_maestro = st_m.resolve_orchestrator_model_for_agent("maestro")
         while self.current_agent == "maestro":
             step += 1
-            if step > MAX_TOOL_ROUNDS:
+            if step > max_rounds_m:
                 raise RuntimeError(
-                    f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
+                    f"Limite de {max_rounds_m} rodadas do agente excedido."
                 )
 
             self._cap_messages()
-            response = await self.model.chat(
-                messages=_messages_with_skill(
-                    self._prompt_skill_text(),
-                    self.messages,
-                ),
-                tools=MAESTRO_TOOLS_ONLY,
-                tool_choice=maestro_tool_choice,
-            )
+            sys_t = await self._build_system_text_async()
+            with llm_phase_context("orchestrator:maestro"):
+                response = await self.model.chat(
+                    messages=_messages_with_skill(
+                        sys_t,
+                        self.messages,
+                    ),
+                    tools=MAESTRO_TOOLS_ONLY,
+                    tool_choice=maestro_tool_choice,
+                    model_override=mo_maestro,
+                )
             tool_calls = response.get("tool_calls") or []
             tlm = get_trace_logger()
             if tlm:
@@ -664,6 +966,7 @@ class ModularOrchestrator:
                     "result_preview": f"handoff → {specialist}",
                 })
                 print(f"🎯 Handoff: maestro → {specialist}")
+                self._observer_append("handoff", {"to": specialist, "args": args})
                 await self.set_agent(specialist)
                 stg = get_settings()
                 if (
@@ -693,6 +996,7 @@ class ModularOrchestrator:
                         "result_preview": f"handoff (fallback texto) → {fb}",
                     })
                     print(f"🎯 Handoff (fallback texto): maestro → {fb}")
+                    self._observer_append("handoff", {"to": fb, "reason": "fallback_text_token"})
                     await self.set_agent(fb)
                     stg = get_settings()
                     if (
@@ -797,19 +1101,69 @@ class ModularOrchestrator:
 
         print(f"⚙️  [{self.current_agent}] Executing: {name}")
 
+        st_exec = get_settings()
+        preview_cap = max(1, int(st_exec.orchestrator_tool_result_preview_max))
+
+        use_cache = self._use_mcp_session_cache() and name != ROUTE_TO_SPECIALIST_TOOL_NAME
+        ck_tool = mcp_cache_key(name, args) if use_cache else ""
+
+        if use_cache and self._session_metadata is not None:
+            hit = find_cache_entry(self._session_metadata, ck_tool)
+            if hit and hit.get("result_text"):
+                self._observer_append(
+                    "tool_cache_hit",
+                    {"tool": name, "cache_key_prefix": ck_tool[:16]},
+                )
+                content = "[cache_hit]\n" + str(hit["result_text"])
+                preview = content[:preview_cap]
+                if len(content) > preview_cap:
+                    preview += "…"
+                tools_used.append({
+                    "name": name,
+                    "arguments": args,
+                    "ok": True,
+                    "error": None,
+                    "result_preview": preview,
+                    "cache_hit": True,
+                })
+                st_tool = get_settings()
+                max_tool = max(4096, int(st_tool.tool_message_content_max_chars))
+                if len(content) > max_tool:
+                    content = (
+                        content[:max_tool]
+                        + "\n\n[Conteúdo truncado pelo orquestrador (tool_message_content_max_chars). "
+                        "Reduza limit/offset, summarize=true onde aplicável, ou aumente o teto em config.]"
+                    )
+                self._append_message({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": content,
+                })
+                return
+
         try:
+            self._observer_append("tool_cache_miss", {"tool": name})
             mcp_result = await self.client.call_tool(name, args)
             content = _mcp_result_to_text(mcp_result)
-            preview = content[:TOOL_RESULT_PREVIEW_MAX]
-            if len(content) > TOOL_RESULT_PREVIEW_MAX:
+            preview = content[:preview_cap]
+            if len(content) > preview_cap:
                 preview += "…"
             tools_used.append({
                 "name": name,
                 "arguments": args,
-                "ok": True,
-                "error": None,
+                "ok": not mcp_result.isError,
+                "error": None if not mcp_result.isError else (content or "isError"),
                 "result_preview": preview,
             })
+            if use_cache and self._session_metadata is not None and not mcp_result.isError:
+                append_cache_entry(
+                    self._session_metadata,
+                    cache_key=ck_tool,
+                    tool_name=str(name),
+                    args=args,
+                    result_text=content,
+                )
+                self._observer_append("tool_call", {"tool": name, "source": "mcp"})
         except Exception as e:
             content = f"Erro ao chamar a ferramenta: {e}"
             tools_used.append({
@@ -819,6 +1173,7 @@ class ModularOrchestrator:
                 "error": str(e),
                 "result_preview": None,
             })
+            self._observer_append("error", {"tool": name, "error": str(e)})
 
         st_tool = get_settings()
         max_tool = max(4096, int(st_tool.tool_message_content_max_chars))
@@ -841,21 +1196,27 @@ class ModularOrchestrator:
         tools_used: list[dict[str, Any]],
         step: int,
     ) -> dict[str, Any]:
+        st_sp = get_settings()
+        max_rounds_sp = max(1, int(st_sp.orchestrator_max_tool_rounds))
         while True:
             step += 1
-            if step > MAX_TOOL_ROUNDS:
+            if step > max_rounds_sp:
                 raise RuntimeError(
-                    f"Limite de {MAX_TOOL_ROUNDS} rodadas do agente excedido."
+                    f"Limite de {max_rounds_sp} rodadas do agente excedido."
                 )
 
             self._cap_messages()
-            response = await self.model.chat(
-                messages=_messages_with_skill(
-                    self._prompt_skill_text(),
-                    self.messages,
-                ),
-                tools=tools_payload,
-            )
+            sys_t = await self._build_system_text_async()
+            mo_spec = st_sp.resolve_orchestrator_model_for_agent(self.current_agent)
+            with llm_phase_context(f"orchestrator:specialist:{self.current_agent}"):
+                response = await self.model.chat(
+                    messages=_messages_with_skill(
+                        sys_t,
+                        self.messages,
+                    ),
+                    tools=tools_payload,
+                    model_override=mo_spec,
+                )
 
             tool_calls = response.get("tool_calls")
             if tool_calls:
@@ -895,6 +1256,7 @@ class ModularOrchestrator:
         user_input: str,
         target_agent: AgentType | None = None,
         session_id: UUID | None = None,
+        session_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Executa agent loop.
@@ -902,7 +1264,12 @@ class ModularOrchestrator:
         Se ``target_agent`` for None, o Maestro corre primeiro (só tool virtual
         ``route_to_specialist``), faz handoff para o especialista e só então
         expõe ferramentas MCP.
+
+        ``session_metadata`` é mutado in-place quando PostgreSQL persiste a sessão
+        (cache MCP, observador, pipeline F3, memory).
         """
+        self._session_metadata = session_metadata
+        self._session_id_for_cache = session_id
         auto_route = target_agent is None
         tools_used: list[dict[str, Any]] = []
 
@@ -912,12 +1279,15 @@ class ModularOrchestrator:
         trace_root = resolve_agent_trace_dir(st)
         if trace_root is not None:
             trace_root.mkdir(parents=True, exist_ok=True)
+            sid_str = str(session_id) if session_id is not None else None
             tr0 = AgentTraceLogger.start_run(
                 trace_root,
                 max_value_chars=st.agent_trace_max_field_chars,
+                session_id=sid_str,
             )
             self._trace_run_id = tr0.run_id
             trace_token = set_trace_logger(tr0)
+            activate_openai_chat_stats_for_run()
             tr0.record(
                 "orchestrator.run.start",
                 user_input=user_input,
@@ -949,6 +1319,32 @@ class ModularOrchestrator:
                     user_input, tools_used, step, session_id=session_id
                 )
                 if early is not None:
+                    early = await self._run_f3_pipeline(early, user_input)
+                    st_mem = get_settings()
+                    if self._session_metadata is not None:
+                        await maybe_update_session_notes(
+                            self.model,
+                            self._session_metadata,
+                            json.dumps(
+                                {
+                                    "last_agent": early.get("agent"),
+                                    "user_excerpt": user_input[:1200],
+                                },
+                                ensure_ascii=False,
+                            ),
+                            st_mem,
+                        )
+                        excerpt = "\n".join(
+                            str(m.get("content") or "")[:500]
+                            for m in self.messages[-8:]
+                        )
+                        await maybe_update_conversation_summary(
+                            self.model,
+                            self._session_metadata,
+                            excerpt,
+                            st_mem,
+                        )
+                    await self._observer_narrative(user_input, tools_used)
                     if self._trace_run_id:
                         early["trace_run_id"] = self._trace_run_id
                     return early
@@ -956,6 +1352,32 @@ class ModularOrchestrator:
             out = await self._run_specialist_loop(
                 tools_payload, tools_used, step
             )
+            out = await self._run_f3_pipeline(out, user_input)
+            st_mem = get_settings()
+            if self._session_metadata is not None:
+                await maybe_update_session_notes(
+                    self.model,
+                    self._session_metadata,
+                    json.dumps(
+                        {
+                            "last_agent": out.get("agent"),
+                            "user_excerpt": user_input[:1200],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    st_mem,
+                )
+                excerpt = "\n".join(
+                    str(m.get("content") or "")[:500]
+                    for m in self.messages[-8:]
+                )
+                await maybe_update_conversation_summary(
+                    self.model,
+                    self._session_metadata,
+                    excerpt,
+                    st_mem,
+                )
+            await self._observer_narrative(user_input, tools_used)
             if self._trace_run_id:
                 out["trace_run_id"] = self._trace_run_id
             return out
@@ -964,8 +1386,14 @@ class ModularOrchestrator:
             self._cap_messages()
             for m in self.messages:
                 m.pop("_orch_anchor", None)
+            oai_stats = take_openai_chat_stats()
             tr_end = get_trace_logger()
             if tr_end:
+                if oai_stats is not None and oai_stats.calls_initiated > 0:
+                    tr_end.record(
+                        "openai.chat_completions.summary",
+                        **oai_stats.to_summary_fields(),
+                    )
                 tr_end.record(
                     "orchestrator.run.finally",
                     messages_count=len(self.messages),
@@ -974,3 +1402,5 @@ class ModularOrchestrator:
             if trace_token is not None:
                 reset_trace_logger(trace_token)
             self._trace_run_id = None
+            self._session_metadata = None
+            self._session_id_for_cache = None

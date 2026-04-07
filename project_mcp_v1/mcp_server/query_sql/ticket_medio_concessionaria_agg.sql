@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Ticket médio e dispersão por concessionária (JSON)."
+when_to_use: |
+  Ticket médio, mín/máx, desvio padrão e faturamento por concessionária em OS fechadas.
+output_shape: json_aggregate
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 -- Ticket médio e estatísticas por concessionária (OS fechadas, linhas de serviço fechadas).
 WITH Valor_Por_OS AS (

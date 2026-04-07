@@ -52,8 +52,9 @@ project_mcp_v1/
 |------------------|--------------------|
 
 | `server.py` | **FastMCP**: registo de tools, recurso template de analytics, `mcp.run()` em modo stdio. |
-| `analytics_queries.py` | Catálogo `QUERY_REGISTRY`, `TABULAR_MULTIROW_QUERY_IDS` (tabular multi-linha no catálogo) e `GLOBAL_PERIOD_HELP`. Espelho em [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
-| `query_sql/` | **Fonte única** dos textos SQL servidos pelos recursos e executados pela tool (whitelist). |
+| `analytics_queries.py` | Constrói `QUERY_REGISTRY` e `TABULAR_MULTIROW_QUERY_IDS` a partir dos cabeçalhos YAML em `query_sql/*.sql`; `GLOBAL_PERIOD_HELP` e `format_catalog_for_model`. Espelho em [CATALOGO_ANALYTICS_MCP.md](CATALOGO_ANALYTICS_MCP.md). |
+| `query_sql/` | SQL executável + cabeçalho `/* @mcp_query_meta */` (YAML: `resource_description`, `when_to_use`, `output_shape`, opcional `not_confused_with`). |
+| `query_sql_meta.py` | Parser do cabeçalho YAML; usado por `analytics_queries.py` e `scripts/check_analytics_sql_meta.py`. |
 | `sql_params.py` | Substituição validada de placeholders (ex.: `__MCP_DATE_FROM__` / `__MCP_DATE_TO__`). |
 | `db.py` | Pool **aiomysql**, execução `SELECT * FROM (sql) LIMIT/OFFSET`, serialização JSON segura (ex.: `Decimal`). |
 

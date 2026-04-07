@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Top 5 e bottom 5 vendedores por ticket médio (JSON)."
+when_to_use: |
+  Destaques e caudas de desempenho por ticket médio por vendedor.
+output_shape: json_aggregate
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 -- Top 5 e bottom 5 vendedores por ticket médio (OS fechadas).
 WITH PerformanceVendedores AS (

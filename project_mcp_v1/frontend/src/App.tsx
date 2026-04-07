@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, SubmitEvent } from 'react'
+import {
+  extractTsvTableFromProse,
+  peekTsvDataRowCount,
+  stripDuplicateConcessionariaList,
+  type ExtractedTsvTable,
+} from './dedupeAssistantProse'
+import {
+  formatTableCell,
+  inferTableCellKind,
+  tableCellTooltip,
+} from './tableCellFormat'
 
 type ContentBlock =
   | { type: 'paragraph'; text: string }
@@ -69,6 +80,10 @@ const PIPELINE_STEPS = [
 
 type EmptyStateTopic = {
   id: string
+  /** Título curto no card (estilo “chip” / Gemini). */
+  title: string
+  icon: string
+  /** Texto completo enviado ao assistente ao clicar. */
   text: string
 }
 
@@ -76,54 +91,80 @@ type EmptyStateTopic = {
 const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   {
     id: 'servicos-mix',
+    icon: '🧩',
+    title: 'Mix de serviços',
     text: 'Quais serviços mais vendidos, participação no faturamento por linha, mix por unidade.',
   },
   {
     id: 'sazonalidade',
+    icon: '📅',
+    title: 'Sazonalidade',
     text: 'Sazonalidade, meses mais fortes, variação ao longo do ano por concessionária.',
   },
   {
     id: 'performance-vendedor-mes',
+    icon: '👤',
+    title: 'Vendedores por mês',
     text: 'Ranking de vendedores por mês, ticket médio, desconto médio, produtividade mensal por unidade.',
   },
   {
     id: 'performance-vendedor-ano',
+    icon: '🏆',
+    title: 'Vendedores no ano',
     text: 'Ranking anual de vendedores, faturamento/ticket/desconto agregados por ano no intervalo date_from–date_to.',
   },
   {
     id: 'faturamento-ticket-periodo',
+    icon: '💶',
+    title: 'Faturamento e ticket',
     text: 'Faturamento mão de obra/serviços, ticket médio por OS, volume por unidade num intervalo de datas.',
   },
   {
     id: 'distribuicao-ticket',
+    icon: '📊',
+    title: 'Distribuição de tickets',
     text: 'Segmentação por tamanho de ticket, quartis, perfil premium vs baixo ticket.',
   },
   {
     id: 'propensao-temporal',
+    icon: '⏰',
+    title: 'Melhor hora para vender',
     text: 'Melhor hora/dia para vender, padrão temporal de compra por serviço.',
   },
   {
     id: 'volume-os-mom',
+    icon: '📆',
+    title: 'Volume mensal de OS',
     text: 'Volume mensal de OS, abertas/fechadas/canceladas, taxa de cancelamento e variação mês a mês.',
   },
   {
     id: 'volume-os-vendedor',
+    icon: '📋',
+    title: 'OS por vendedor',
     text: 'Ranking de vendedores por quantidade de OS, fechamentos e taxa de fechamento.',
   },
   {
     id: 'ticket-concessionaria',
+    icon: '🏪',
+    title: 'Ticket por concessionária',
     text: 'Ticket médio, mín/máx, desvio padrão e faturamento por concessionária em OS fechadas.',
   },
   {
     id: 'ticket-vendedor-top-bottom',
+    icon: '⬆️',
+    title: 'Top e cauda (ticket)',
     text: 'Destaques e caudas de desempenho por ticket médio por vendedor.',
   },
   {
     id: 'conversao-servicos-os',
+    icon: '🔗',
+    title: 'Serviços → OS fechadas',
     text: 'Quantidade de serviços (itens) vs OS fechadas; taxa global e por concessionária.',
   },
   {
     id: 'faturamento-mensal-macro',
+    icon: '📈',
+    title: 'Faturamento macro (mês)',
     text:
       '1) Visão geral de faturamento (macro): quanto a empresa produziu/vendeu num mês ' +
       '(coluna «Faturamento Total Previsto» — serviços da competência, pago na hora + a receber); ' +
@@ -131,6 +172,8 @@ const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   },
   {
     id: 'faturamento-mensal-recebiveis',
+    icon: '💳',
+    title: 'Recebidos vs pendentes',
     text:
       '2) Inadimplência e recebíveis: quanto já entrou no caixa (Total Recebido) vs. ' +
       'valor ainda na rua — promessas não quitadas (Total Pendente); leitura da proporção pendente ' +
@@ -138,6 +181,8 @@ const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   },
   {
     id: 'faturamento-mensal-kpis',
+    icon: '📐',
+    title: 'KPIs mensais (OS / taxas)',
     text:
       '3) Volume operacional: quantas OS únicas geraram cobrança no mês (sem duplicar por pagamentos parciais). ' +
       'KPIs derivados (conta ou Excel): ticket médio mensal = Faturamento Total Previsto ÷ Qtd. OS; ' +
@@ -146,6 +191,8 @@ const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   },
   {
     id: 'faturamento-mensal-recebidos-pendentes-por-concessionaria',
+    icon: '🗺️',
+    title: 'Faturamento por loja',
     text: 'Mesma lógica que faturamento_mensal_recebidos_pendentes, mas com GROUP BY por concessionária. ' +
       'Curva ABC por unidade (quem mais fatura por mês; ORDER BY faturamento total DESC). ' +
       'Risco de inadimplência por cliente: comparar Total Pendente vs Faturamento Total Previsto por loja. ' +
@@ -154,21 +201,65 @@ const EMPTY_STATE_TOPICS: EmptyStateTopic[] = [
   },
   {
     id: 'curva-abc-por-concessionaria',
+    icon: '🔤',
+    title: 'Curva ABC por unidade',
     text: 'Curva ABC por unidade (quem mais fatura por mês; ORDER BY faturamento total DESC). ',
   },
   {
     id: 'risco-inadimplencia-por-concessionaria',
+    icon: '⚠️',
+    title: 'Risco de inadimplência',
     text: 'Risco de inadimplência por cliente: comparar Total Pendente vs Faturamento Total Previsto por loja. ',
   },
   {
     id: 'volume-operacional-por-concessionaria',
+    icon: '⚙️',
+    title: 'Volume operacional',
     text: 'Volume operacional: Qtd. OS vs faturamento entre concessionárias (eficiência relativa). ',
   },
   {
     id: 'use-faturamento-mensal-recebidos-pendentes',
+    icon: '🌐',
+    title: 'Agregado global (mês)',
     text: 'Use faturamento_mensal_recebidos_pendentes quando precisar só do agregado mensal global (sem quebra por loja).',
   },
 ]
+
+function topicCardPreview(text: string, maxLen = 110): string {
+  const t = text.trim()
+  if (t.length <= maxLen) return t
+  return `${t.slice(0, maxLen - 1).trim()}…`
+}
+
+function EmptyStateTopicCard({
+  topic,
+  onPick,
+}: {
+  topic: EmptyStateTopic
+  onPick: (t: EmptyStateTopic) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(topic)}
+      className="group flex w-full flex-col rounded-2xl border border-slate-200/95 bg-white p-4 text-left shadow-sm ring-1 ring-slate-900/[0.03] transition hover:border-sky-400/80 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+    >
+      <div className="flex items-start gap-3">
+        <span className="text-2xl leading-none select-none" aria-hidden>
+          {topic.icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block font-semibold text-[0.9375rem] leading-snug text-slate-900 group-hover:text-sky-800">
+            {topic.title}
+          </span>
+          <p className="mt-1.5 text-[0.75rem] leading-relaxed text-slate-500 line-clamp-3">
+            {topicCardPreview(topic.text)}
+          </p>
+        </div>
+      </div>
+    </button>
+  )
+}
 
 /** Divide uma linha em células por `|` (vazios omitidos). */
 function splitPipeCells(line: string): string[] {
@@ -234,14 +325,14 @@ function PipeTableView({ rows }: { rows: string[] }) {
   const semantic = tryMonthValueSemanticTable(matrix)
 
   const wrap = (inner: ReactNode) => (
-    <div className="my-3 overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/[0.03]">
+    <div className="my-3 mx-auto w-max max-w-full rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/[0.03]">
       {inner}
     </div>
   )
 
   if (semantic) {
     return wrap(
-      <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+      <table className="w-max min-w-0 text-left text-[0.8125rem] text-slate-800">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
             {semantic.headers.map((h, hi) => (
@@ -260,8 +351,10 @@ function PipeTableView({ rows }: { rows: string[] }) {
               <td
                 key={vi}
                 className="border-t border-slate-100 px-3 py-2.5 tabular-nums font-medium text-slate-900"
+                data-cell-kind={inferTableCellKind(v)}
+                title={tableCellTooltip(v)}
               >
-                {renderInlineBold(v)}
+                {renderInlineBold(formatTableCell(v))}
               </td>
             ))}
           </tr>
@@ -271,23 +364,29 @@ function PipeTableView({ rows }: { rows: string[] }) {
   }
 
   return wrap(
-    <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+    <table className="w-max min-w-0 text-left text-[0.8125rem] text-slate-800">
       <tbody>
         {matrix.map((row, ri) => (
           <tr
             key={ri}
             className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/70"
           >
-            {Array.from({ length: maxCols }, (_, ci) => (
-              <td
-                key={ci}
-                className="px-3 py-2 align-top text-slate-700 [&:not(:last-child)]:border-r border-slate-100"
-              >
-                {row[ci] != null && row[ci] !== ''
-                  ? renderInlineBold(row[ci])
-                  : '—'}
-              </td>
-            ))}
+            {Array.from({ length: maxCols }, (_, ci) => {
+              const cell = row[ci]
+              const empty = cell == null || cell === ''
+              return (
+                <td
+                  key={ci}
+                  className="px-3 py-2 align-top text-slate-700 [&:not(:last-child)]:border-r border-slate-100"
+                  data-cell-kind={empty ? 'empty' : inferTableCellKind(cell)}
+                  title={empty ? undefined : tableCellTooltip(cell)}
+                >
+                  {empty
+                    ? '—'
+                    : renderInlineBold(formatTableCell(cell))}
+                </td>
+              )
+            })}
           </tr>
         ))}
       </tbody>
@@ -456,8 +555,9 @@ function AssistantMessageBody({ content }: { content: string }) {
     collapsed.push(c)
   }
   chunks = collapsed
+  const prose = 'mx-auto w-full max-w-[68ch]'
   return (
-    <div className="assistant-message max-w-[min(100%,68ch)] text-[0.9375rem] leading-[1.7] tracking-normal text-slate-800">
+    <div className="assistant-message w-full text-[0.9375rem] leading-[1.7] tracking-normal text-slate-800">
       {chunks.map((chunk, idx) => {
         const key = `c-${idx}`
         switch (chunk.kind) {
@@ -472,76 +572,80 @@ function AssistantMessageBody({ content }: { content: string }) {
                   : 'text-sm font-semibold tracking-tight text-slate-800'
             const Tag = chunk.level === 1 ? 'h3' : chunk.level === 2 ? 'h4' : 'h5'
             return (
-              <Tag
-                key={key}
-                className={`${cls} mt-6 scroll-mt-4 border-b border-slate-200/90 pb-2 first:mt-0`}
-              >
-                {renderInlineBold(chunk.text)}
-              </Tag>
+              <div key={key} className={prose}>
+                <Tag
+                  className={`${cls} mt-6 scroll-mt-4 border-b border-slate-200/90 pb-2 first:mt-0`}
+                >
+                  {renderInlineBold(chunk.text)}
+                </Tag>
+              </div>
             )
           }
           case 'numbered':
             return (
-              <div key={key} className="mt-4 first:mt-0">
+              <div key={key} className={`mt-4 first:mt-0 ${prose}`}>
                 <NumberedBlock raw={chunk.raw} />
               </div>
             )
           case 'bullets':
             return (
-              <ul
-                key={key}
-                className="my-4 list-none space-y-2.5 rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50/95 to-white px-4 py-3.5 shadow-sm"
-              >
-                {chunk.items.map((item, bi) => (
-                  <li
-                    key={bi}
-                    className="relative pl-6 text-[0.875rem] leading-relaxed text-slate-700 before:absolute before:left-0 before:top-[0.35em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-sky-500 before:content-['']"
-                  >
-                    {renderInlineBold(item)}
-                  </li>
-                ))}
-              </ul>
+              <div key={key} className={prose}>
+                <ul className="my-4 list-none space-y-2.5 rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50/95 to-white px-4 py-3.5 shadow-sm">
+                  {chunk.items.map((item, bi) => (
+                    <li
+                      key={bi}
+                      className="relative pl-6 text-[0.875rem] leading-relaxed text-slate-700 before:absolute before:left-0 before:top-[0.35em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-sky-500 before:content-['']"
+                    >
+                      {renderInlineBold(item)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )
           case 'choice':
             return (
-              <div
-                key={key}
-                className="my-3 flex gap-3 rounded-xl border border-indigo-200/70 bg-indigo-50/50 px-3 py-3 sm:items-start"
-              >
-                <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white shadow-sm"
-                  aria-hidden
-                >
-                  {chunk.letter}
-                </span>
-                <p className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed text-slate-700">
-                  {renderInlineBold(chunk.rest)}
-                </p>
+              <div key={key} className={prose}>
+                <div className="my-3 flex gap-3 rounded-xl border border-indigo-200/70 bg-indigo-50/50 px-3 py-3 sm:items-start">
+                  <span
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white shadow-sm"
+                    aria-hidden
+                  >
+                    {chunk.letter}
+                  </span>
+                  <p className="min-w-0 flex-1 text-[0.9375rem] leading-relaxed text-slate-700">
+                    {renderInlineBold(chunk.rest)}
+                  </p>
+                </div>
               </div>
             )
           case 'pipe_table':
             return (
-              <div key={key} className="my-4 first:mt-0">
+              <div key={key} className="my-4 w-full first:mt-0">
                 {chunk.caption ? (
-                  <p className="mb-2 text-[0.875rem] leading-relaxed text-slate-600">
+                  <p
+                    className={`mb-2 text-[0.875rem] leading-relaxed text-slate-600 ${prose}`}
+                  >
                     {renderInlineBold(chunk.caption)}
                   </p>
                 ) : null}
-                <PipeTableView rows={chunk.rows} />
+                <div className="flex w-full justify-center">
+                  <div className="min-w-0 max-w-full">
+                    <PipeTableView rows={chunk.rows} />
+                  </div>
+                </div>
               </div>
             )
           case 'paragraph':
             return (
-              <p
-                key={key}
-                className="my-3 text-slate-700 first:mt-0 last:mb-0 [&:not(:last-child)]:mb-4"
-              >
-                {chunk.lines.map((ln, li) => (
-                  <span key={li} className="block [&:not(:first-child)]:mt-2">
-                    {renderInlineBold(ln)}
-                  </span>
-                ))}
-              </p>
+              <div key={key} className={prose}>
+                <p className="my-3 text-slate-700 first:mt-0 last:mb-0 [&:not(:last-child)]:mb-4">
+                  {chunk.lines.map((ln, li) => (
+                    <span key={li} className="block [&:not(:first-child)]:mt-2">
+                      {renderInlineBold(ln)}
+                    </span>
+                  ))}
+                </p>
+              </div>
             )
           default:
             return null
@@ -549,12 +653,6 @@ function AssistantMessageBody({ content }: { content: string }) {
       })}
     </div>
   )
-}
-
-function formatCell(v: string | number | boolean | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  if (typeof v === 'boolean') return v ? 'sim' : 'não'
-  return String(v)
 }
 
 function isContentBlock(b: unknown): b is ContentBlock {
@@ -566,9 +664,16 @@ function isContentBlock(b: unknown): b is ContentBlock {
     case 'heading': {
       const h = b as { level?: unknown; text?: unknown }
       const lv = h.level
+      const n = lv === undefined ? 2 : Number(lv)
       return (
         typeof h.text === 'string' &&
-        (lv === undefined || lv === 1 || lv === 2 || lv === 3)
+        (lv === undefined ||
+          lv === 1 ||
+          lv === 2 ||
+          lv === 3 ||
+          n === 1 ||
+          n === 2 ||
+          n === 3)
       )
     }
     case 'table': {
@@ -591,30 +696,107 @@ function isContentBlock(b: unknown): b is ContentBlock {
   }
 }
 
+/** Normaliza chaves comuns geradas pelo modelo (casing, aliases). */
+function normalizeContentBlockRaw(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const o = raw as Record<string, unknown>
+  const out: Record<string, unknown> = { ...o }
+  if (typeof out.type === 'string') {
+    out.type = out.type.trim().toLowerCase()
+  }
+  if (out.type === 'table') {
+    if (out.columns == null && o.Columns != null) out.columns = o.Columns
+    if (out.rows == null && o.Rows != null) out.rows = o.Rows
+  }
+  if (out.type === 'metric_grid' && out.items == null && o.Items != null) {
+    out.items = o.Items
+  }
+  if (out.type === 'heading' && out.level != null) {
+    const n = Number(out.level)
+    if (n === 1 || n === 2 || n === 3) out.level = n
+  }
+  return out
+}
+
 function parseContentBlocks(raw: unknown): ContentBlocksPayload | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  if (o.version !== 1 || !Array.isArray(o.blocks)) return null
-  const blocks = o.blocks.filter(isContentBlock)
+  const ver = o.version
+  if (ver !== 1 && ver !== '1') return null
+  if (!Array.isArray(o.blocks)) return null
+  const blocks = o.blocks
+    .map(normalizeContentBlockRaw)
+    .filter(isContentBlock) as ContentBlock[]
   if (blocks.length === 0) return null
   return { version: 1, blocks }
 }
 
+/**
+ * Extrai `content_blocks` de um fence ```json no texto (espelha o backend).
+ * Remove o fence do texto mostrado para não “partir” o layout com JSON cru.
+ */
+function extractReplyContentBlocks(reply: string): {
+  displayText: string
+  payload: ContentBlocksPayload | null
+} {
+  if (!reply?.trim()) {
+    return { displayText: reply, payload: null }
+  }
+  const text = reply
+  const re = /```(?:json)?\s*([\s\S]*?)```/gi
+  const matches: RegExpMatchArray[] = []
+  let m: RegExpExecArray | null
+  const r = new RegExp(re.source, re.flags)
+  while ((m = r.exec(text)) !== null) {
+    matches.push(m)
+  }
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i]
+    const raw = (match[1] ?? '').trim()
+    if (!raw.startsWith('{')) continue
+    try {
+      const data = JSON.parse(raw) as unknown
+      const payload = parseContentBlocks(data)
+      if (!payload) continue
+      const full = match[0]
+      const startIdx = match.index ?? 0
+      const endIdx = startIdx + full.length
+      const before = text.slice(0, startIdx).trimEnd()
+      const after = text.slice(endIdx).trimStart()
+      const displayText = [before, after].filter(Boolean).join('\n\n').trim()
+      return { displayText, payload }
+    } catch {
+      continue
+    }
+  }
+  const stripped = text.trim()
+  if (stripped.startsWith('{') && stripped.includes('"blocks"')) {
+    try {
+      const data = JSON.parse(stripped) as unknown
+      const payload = parseContentBlocks(data)
+      if (payload) return { displayText: '', payload }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { displayText: text, payload: null }
+}
+
 function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
+  const prose = 'mx-auto w-full max-w-[68ch]'
   return (
-    <div className="content-blocks space-y-4 border-t border-slate-200/90 pt-4 mt-1">
+    <div className="content-blocks mt-1 w-full space-y-4 border-t border-slate-200/90 pt-4">
       {blocks.map((block, i) => {
         const key = `b-${i}`
         switch (block.type) {
           case 'paragraph':
             return (
-              <p
-                key={key}
-                className="text-[0.9375rem] leading-7 text-slate-700 whitespace-pre-wrap"
-              >
-                {block.text}
-              </p>
+              <div key={key} className={prose}>
+                <p className="text-[0.9375rem] leading-7 text-slate-700 whitespace-pre-wrap">
+                  {block.text}
+                </p>
+              </div>
             )
           case 'heading': {
             const level = block.level ?? 2
@@ -626,18 +808,19 @@ function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
                   : 'text-sm font-semibold text-slate-800'
             const Tag = level === 1 ? 'h3' : level === 2 ? 'h4' : 'h5'
             return (
-              <Tag key={key} className={cls}>
-                {block.text}
-              </Tag>
+              <div key={key} className={prose}>
+                <Tag className={cls}>{block.text}</Tag>
+              </div>
             )
           }
           case 'table':
             return (
               <div
                 key={key}
-                className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"
+                className="flex w-full justify-center"
               >
-                <table className="min-w-full text-left text-[0.8125rem] text-slate-800">
+                <div className="mx-auto min-w-0 max-w-full w-max rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/[0.03]">
+                  <table className="w-max min-w-0 text-left text-[0.8125rem] text-slate-800">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
                       {block.columns.map((col, ci) => (
@@ -656,22 +839,31 @@ function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
                         key={ri}
                         className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/60"
                       >
-                        {block.columns.map((_, ci) => (
-                          <td key={ci} className="px-3 py-2 align-top tabular-nums">
-                            {formatCell(row[ci])}
-                          </td>
-                        ))}
+                        {block.columns.map((_, ci) => {
+                          const raw = row[ci]
+                          return (
+                            <td
+                              key={ci}
+                              className="px-3 py-2 align-top tabular-nums"
+                              data-cell-kind={inferTableCellKind(raw)}
+                              title={tableCellTooltip(raw)}
+                            >
+                              {formatTableCell(raw)}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )
           case 'metric_grid':
             return (
               <ul
                 key={key}
-                className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 list-none p-0 m-0"
+                className="m-0 grid w-full list-none grid-cols-1 gap-2 p-0 sm:grid-cols-2 lg:grid-cols-3"
               >
                 {block.items.map((item, mi) => (
                   <li
@@ -681,8 +873,12 @@ function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                       {item.label}
                     </div>
-                    <div className="mt-1 text-sm font-semibold tabular-nums text-slate-900">
-                      {item.value}
+                    <div
+                      className="mt-1 text-sm font-semibold tabular-nums text-slate-900"
+                      data-cell-kind={inferTableCellKind(item.value)}
+                      title={tableCellTooltip(item.value)}
+                    >
+                      {formatTableCell(item.value)}
                     </div>
                   </li>
                 ))}
@@ -696,6 +892,59 @@ function ContentBlocksView({ blocks }: { blocks: ContentBlock[] }) {
   )
 }
 
+function TsvInlineTableView({ table }: { table: ExtractedTsvTable }) {
+  const { titleLine, columns, rows } = table
+  return (
+    <div className="tsv-inline-table w-full space-y-3">
+      {titleLine ? (
+        <p className="mx-auto max-w-[68ch] text-sm font-semibold text-slate-800">
+          {titleLine}
+        </p>
+      ) : null}
+      <div className="flex w-full justify-center">
+        <div className="mx-auto min-w-0 max-w-full w-max rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/[0.03]">
+          <table className="w-max min-w-0 text-left text-[0.8125rem] text-slate-800">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                {columns.map((col, ci) => (
+                  <th
+                    key={ci}
+                    className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr
+                  key={ri}
+                  className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/60"
+                >
+                  {columns.map((_, ci) => {
+                    const raw = row[ci]
+                    return (
+                      <td
+                        key={ci}
+                        className="px-3 py-2 align-top tabular-nums"
+                        data-cell-kind={inferTableCellKind(raw)}
+                        title={tableCellTooltip(raw)}
+                      >
+                        {formatTableCell(raw)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StructuredAssistantMessage({
   content,
   contentBlocks,
@@ -703,15 +952,55 @@ function StructuredAssistantMessage({
   content: string
   contentBlocks?: ContentBlocksPayload | null
 }) {
-  const hasBlocks =
-    contentBlocks != null && contentBlocks.blocks.length > 0
-  if (!hasBlocks) {
-    return <AssistantMessageBody content={content} />
+  const { displayContent, mergedBlocks, tsvInline } = useMemo(() => {
+    const extracted = extractReplyContentBlocks(content)
+    const fromApi =
+      contentBlocks != null && contentBlocks.blocks.length > 0
+        ? contentBlocks
+        : null
+    const payload = extracted.payload
+    const blocks = fromApi ?? payload
+    let text = payload != null ? extracted.displayText : content
+
+    const jsonTableMaxRows =
+      blocks?.blocks.reduce((m, b) => {
+        if (b.type === 'table') return Math.max(m, b.rows.length)
+        return m
+      }, 0) ?? 0
+
+    const tsvPeek = peekTsvDataRowCount(text)
+    const refRows = Math.max(jsonTableMaxRows, tsvPeek ?? 0)
+    if (refRows >= 3) {
+      text = stripDuplicateConcessionariaList(text, refRows)
+    }
+
+    const { proseWithoutTable, table: tsvRaw } = extractTsvTableFromProse(text)
+    const hasJsonTable = blocks?.blocks.some(
+      (b) => b.type === 'table' && b.rows.length >= 2,
+    )
+    const tsvInline = hasJsonTable ? null : tsvRaw
+
+    return {
+      displayContent: proseWithoutTable,
+      mergedBlocks: blocks,
+      tsvInline,
+    }
+  }, [content, contentBlocks])
+
+  const hasStructured =
+    (mergedBlocks != null && mergedBlocks.blocks.length > 0) || tsvInline != null
+  if (!hasStructured) {
+    return <AssistantMessageBody content={displayContent} />
   }
   return (
-    <div className="assistant-structured space-y-4">
-      {content.trim() ? <AssistantMessageBody content={content} /> : null}
-      <ContentBlocksView blocks={contentBlocks.blocks} />
+    <div className="assistant-structured w-full space-y-4">
+      {displayContent.trim() ? (
+        <AssistantMessageBody content={displayContent} />
+      ) : null}
+      {mergedBlocks != null && mergedBlocks.blocks.length > 0 ? (
+        <ContentBlocksView blocks={mergedBlocks.blocks} />
+      ) : null}
+      {tsvInline ? <TsvInlineTableView table={tsvInline} /> : null}
     </div>
   )
 }
@@ -826,6 +1115,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [pipelineStep, setPipelineStep] = useState(0)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   const workPending =
     sessionsLoading || loading || sessionDetailLoading !== null
@@ -967,6 +1257,15 @@ export default function App() {
     }
   }
 
+  const pickEmptyTopic = useCallback((topic: EmptyStateTopic) => {
+    setInput(topic.text)
+    setError(null)
+    queueMicrotask(() => {
+      chatInputRef.current?.focus()
+      chatInputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+  }, [])
+
   const emptyMain =
     messages.length === 0 && !sessionDetailLoading && !sessionId
   const emptySessionNoMsgs =
@@ -1076,7 +1375,9 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-white">
+      <main
+        className={`flex min-w-0 flex-1 flex-col ${emptyMain ? 'bg-gradient-to-b from-slate-50 via-white to-slate-50/90' : 'bg-white'}`}
+      >
         <div
           ref={messagesScrollRef}
           className="min-h-0 flex-1 overflow-y-auto"
@@ -1088,26 +1389,96 @@ export default function App() {
               </div>
             </div>
           ) : emptyMain ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 py-8 text-slate-600">
-              <span className="mb-4 text-6xl opacity-20" aria-hidden>
-                🤖
-              </span>
-              <div className="max-w-lg text-center">
-                <p className="text-sm text-slate-500">
-                  Envie uma mensagem para começar. A primeira mensagem irá gerar um{' '}
-                  <code className="rounded bg-slate-100 px-1 font-mono text-xs text-slate-700">
-                    session_id
-                  </code>{' '}
-                  (com PostgreSQL activo) e o contexto será mantido nas próximas.
+            <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+              <div className="flex min-h-[min(52vh,28rem)] flex-1 flex-col justify-center px-4 py-8 sm:min-h-[min(48vh,26rem)] sm:px-8">
+                <div className="mx-auto w-full max-w-3xl">
+                  <header className="text-center sm:text-left">
+                    <div className="flex flex-col items-center gap-1 sm:flex-row sm:items-center sm:gap-2">
+                      <span className="text-3xl leading-none" aria-hidden>
+                        ✦
+                      </span>
+                      <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-[1.65rem]">
+                        Olá!
+                      </h2>
+                    </div>
+                    <p className="mt-3 text-center text-xl font-semibold text-slate-900 sm:text-left sm:text-2xl">
+                      Por onde começamos?
+                    </p>
+                    <p className="mx-auto mt-3 max-w-xl text-center text-sm leading-relaxed text-slate-600 sm:mx-0 sm:text-left">
+                      Assistente de análise da rede — OS, faturamento, vendedores e
+                      concessionárias. A primeira mensagem cria um{' '}
+                      <code className="rounded-md bg-slate-200/70 px-1.5 py-0.5 font-mono text-xs text-slate-800">
+                        session_id
+                      </code>{' '}
+                      (PostgreSQL activo) e o contexto mantém-se nas mensagens seguintes.
+                    </p>
+                  </header>
+
+                  {error ? (
+                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-800 sm:text-left">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <form
+                    onSubmit={sendMessage}
+                    className="mt-6 rounded-[1.75rem] border border-slate-200/95 bg-white p-2 shadow-[0_12px_48px_-12px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/[0.05] sm:p-3"
+                  >
+                    <textarea
+                      ref={chatInputRef}
+                      rows={4}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          if (!loading && input.trim()) void sendMessage()
+                        }
+                      }}
+                      placeholder="Peça uma análise, cole contexto ou escolha um cartão abaixo…"
+                      disabled={loading}
+                      className="max-h-[min(40vh,16rem)] min-h-[6.5rem] w-full resize-y rounded-2xl bg-slate-50/40 px-4 py-3.5 text-[0.9375rem] leading-relaxed text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/25 disabled:opacity-60"
+                    />
+                    <div className="mt-2 flex items-center justify-between gap-3 px-1 pb-0.5">
+                      <span className="hidden text-[11px] text-slate-400 sm:inline">
+                        Enter para enviar · Shift+Enter nova linha
+                      </span>
+                      <span className="text-[11px] text-slate-400 sm:hidden">
+                        Enter envia
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={loading || !input.trim()}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm transition hover:bg-sky-500 disabled:opacity-40"
+                        aria-label="Enviar"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          className="h-5 w-5"
+                        >
+                          <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <div className="mx-auto w-full max-w-5xl flex-shrink-0 px-4 pb-10 pt-2 sm:px-8">
+                <p className="mb-3 text-sm font-medium text-slate-700">
+                  Perguntas que esta solução responde — toque para preencher o campo acima
                 </p>
-                <p className="mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  O que pode perguntar
-                </p>
-                <ul className="mt-3 list-disc space-y-2 pl-5 text-left text-sm leading-snug text-slate-600">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {EMPTY_STATE_TOPICS.map((topic) => (
-                    <li key={topic.id}>{topic.text}</li>
+                    <EmptyStateTopicCard
+                      key={topic.id}
+                      topic={topic}
+                      onPick={pickEmptyTopic}
+                    />
                   ))}
-                </ul>
+                </div>
               </div>
             </div>
           ) : emptySessionNoMsgs ? (
@@ -1119,16 +1490,16 @@ export default function App() {
               </p>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+            <div className="mx-auto w-full max-w-[min(100%,85rem)] space-y-4 px-4 py-6">
               {messages.map((msg, i) => (
                 <div
                   key={`${i}-${msg.role}`}
-                  className={`flex min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex min-w-0 w-full ${msg.role === 'user' ? 'justify-end' : 'justify-center'}`}
                 >
                   <div
                     className={`rounded-2xl ${msg.role === 'user'
-                        ? 'max-w-[85%] bg-slate-800 px-4 py-2.5 text-sm leading-relaxed text-white'
-                        : 'w-full min-w-0 max-w-[min(100%,48rem)] border border-slate-200/90 bg-gradient-to-b from-slate-50/95 to-white px-4 py-4 text-slate-800 shadow-sm ring-1 ring-slate-900/[0.04] sm:px-6 sm:py-5'
+                        ? 'max-w-[min(85%,36rem)] bg-slate-800 px-4 py-2.5 text-sm leading-relaxed text-white'
+                        : 'w-full min-w-0 max-w-[min(100%,85rem)] border border-slate-200/90 bg-gradient-to-b from-slate-50/95 to-white px-4 py-4 text-slate-800 shadow-sm ring-1 ring-slate-900/[0.04] sm:px-6 sm:py-5'
                       }`}
                   >
                     {msg.role === 'user' ? (
@@ -1151,38 +1522,54 @@ export default function App() {
           )}
         </div>
 
-        <div className="border-t border-slate-200 bg-white px-4 py-3">
-          {error && (
+        <div
+          className={`px-4 py-3 ${emptyMain ? 'border-t-0 bg-transparent' : 'border-t border-slate-200 bg-white'}`}
+        >
+          {!emptyMain && error ? (
             <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
               {error}
             </div>
-          )}
-          <form onSubmit={sendMessage} className="mx-auto flex max-w-3xl gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Digite sua mensagem aqui…"
-              disabled={loading}
-              className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none ring-slate-400 focus:border-sky-500 focus:ring-2 disabled:opacity-60"
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white transition hover:bg-sky-500 disabled:opacity-40"
-              aria-label="Enviar"
+          ) : null}
+          {!emptyMain ? (
+            <form
+              onSubmit={sendMessage}
+              className="mx-auto flex max-w-[min(100%,85rem)] items-end gap-2 rounded-2xl border border-slate-200/95 bg-slate-50/80 p-2 shadow-sm ring-1 ring-slate-900/[0.04] focus-within:border-sky-300 focus-within:ring-sky-500/20"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="h-5 w-5"
+              <textarea
+                ref={chatInputRef}
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (!loading && input.trim()) void sendMessage()
+                  }
+                }}
+                placeholder="Mensagem…"
+                disabled={loading}
+                className="max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-xl border-0 bg-transparent px-3 py-2.5 text-sm leading-snug text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white transition hover:bg-sky-500 disabled:opacity-40"
+                aria-label="Enviar"
               >
-                <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-              </svg>
-            </button>
-          </form>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-slate-500">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="h-5 w-5"
+                >
+                  <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                </svg>
+              </button>
+            </form>
+          ) : null}
+          <p
+            className={`mx-auto max-w-[min(100%,85rem)] text-center text-[11px] text-slate-500 ${emptyMain ? 'mt-0' : 'mt-2'}`}
+          >
             A IA pode cometer erros. Considere verificar as informações importantes.
           </p>
         </div>

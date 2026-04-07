@@ -10,14 +10,15 @@ import pytest
 from mcp.types import CallToolResult, TextContent  # pyright: ignore[reportMissingImports]
 
 from ai_provider.base import ModelProvider
-from app.config import get_settings
-from app.orchestrator import ENTITY_GLOSSARY_MCP_TOOL, ModularOrchestrator
+from app.config import Settings, get_settings
+from app.orchestrator import ModularOrchestrator
 
 _SKILLS = Path(__file__).resolve().parent.parent / "app" / "skills"
+_GLOSSARY_TOOL = Settings().entity_glossary_mcp_tool
 
 
 class _FakeDirect(ModelProvider):
-    async def chat(self, messages, tools=None, tool_choice=None):
+    async def chat(self, messages, tools=None, tool_choice=None, model_override=None):
         return {
             "role": "assistant",
             "content": "ok",
@@ -41,7 +42,7 @@ def test_glossary_session_cache_second_run_skips_mcp(monkeypatch: pytest.MonkeyP
     glossary_payload = json.dumps({"markdown": "## CachedGloss\n", "stats": {}}, ensure_ascii=False)
 
     async def call_tool_impl(name: str, args: object):
-        if name == ENTITY_GLOSSARY_MCP_TOOL:
+        if name == _GLOSSARY_TOOL:
             glossary_calls.append(1)
             return CallToolResult(
                 content=[TextContent(type="text", text=glossary_payload)],
@@ -63,7 +64,7 @@ def test_glossary_session_cache_second_run_skips_mcp(monkeypatch: pytest.MonkeyP
         assert len(glossary_calls) == 1
         msgs = list(orch.messages)
         orch.hydrate_session_state("analise_os", msgs, session_id=sid)
-        assert "CachedGloss" in orch._prompt_skill_text()
+        assert "CachedGloss" in orch._build_system_text_sync()
         await orch.run("Segunda", target_agent=None, session_id=sid)
         return len(glossary_calls)
 
@@ -80,7 +81,7 @@ def test_glossary_session_cache_disabled_refetches(monkeypatch: pytest.MonkeyPat
     glossary_payload = json.dumps({"markdown": "## G\n", "stats": {}}, ensure_ascii=False)
 
     async def call_tool_impl(name: str, args: object):
-        if name == ENTITY_GLOSSARY_MCP_TOOL:
+        if name == _GLOSSARY_TOOL:
             glossary_calls.append(1)
             return CallToolResult(
                 content=[TextContent(type="text", text=glossary_payload)],

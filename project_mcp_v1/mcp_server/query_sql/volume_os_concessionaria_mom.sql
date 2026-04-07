@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Volume de OS por concessionária com variação MoM (JSON agregado)."
+when_to_use: |
+  Volume mensal de OS, abertas/fechadas/canceladas, taxa de cancelamento e variação mês a mês.
+output_shape: json_aggregate
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 -- Volume de OS por concessionária com variação MoM (último mês vs mês anterior no intervalo).
 WITH Mensal_OS AS (

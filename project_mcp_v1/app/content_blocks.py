@@ -11,7 +11,7 @@ import json
 import re
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 __all__ = [
     "ContentBlocksPayload",
@@ -20,28 +20,38 @@ __all__ = [
 
 
 class BlockParagraph(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     type: Literal["paragraph"] = "paragraph"
     text: str
 
 
 class BlockHeading(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     type: Literal["heading"] = "heading"
     level: Literal[1, 2, 3] = 2
     text: str
 
 
 class BlockTable(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     type: Literal["table"] = "table"
     columns: list[str]
     rows: list[list[Any]]
 
 
 class BlockMetricItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     label: str
     value: str
 
 
 class BlockMetricGrid(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     type: Literal["metric_grid"] = "metric_grid"
     items: list[BlockMetricItem]
 
@@ -53,6 +63,8 @@ ContentBlock = Annotated[
 
 
 class ContentBlocksPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     version: Literal[1] = 1
     blocks: list[ContentBlock]
 

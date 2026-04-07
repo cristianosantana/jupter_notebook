@@ -1,3 +1,13 @@
+/* @mcp_query_meta
+resource_description: "Faturamento de serviços, qtd OS e ticket médio por concessionária e mês."
+when_to_use: |
+  Faturamento mão de obra/serviços, ticket médio por OS, volume por unidade num intervalo de datas.
+output_shape: tabular_multiline
+not_confused_with:
+  - faturamento_mensal_recebidos_pendentes
+  - faturamento_mensal_recebidos_pendentes_por_concessionaria
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,

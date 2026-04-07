@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Mix de serviços vendidos e share percentual por concessionária e mês."
+when_to_use: |
+  Quais serviços mais vendidos, participação no faturamento por linha, mix por unidade.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,

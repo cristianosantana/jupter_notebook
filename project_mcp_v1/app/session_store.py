@@ -247,6 +247,21 @@ class SessionStore:
                 }
             )
         return out
+    async def update_session_metadata(
+        self,
+        session_id: UUID,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Substitui ``sessions.metadata`` (JSONB) pelo dict fornecido."""
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE sessions SET metadata = $2::jsonb, last_active_at = NOW()
+                WHERE session_id = $1
+                """,
+                session_id,
+                json.dumps(metadata, ensure_ascii=False),
+            )
 
     async def touch_session(self, session_id: UUID, current_agent: str | None = None) -> None:
         async with self._pool.acquire() as conn:

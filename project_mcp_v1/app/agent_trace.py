@@ -3,8 +3,24 @@ Trace estruturado (JSON Lines) para depuração do agente: LLM, MCP cliente/serv
 
 Pastas ``YYYYMMDD/hora`` e o campo ``ts`` usam **hora local** (``TZ`` / fuso do sistema).
 
-Uso típico: uma instância por pedido HTTP em ``ModularOrchestrator.run``; chamadas dispersas
-usam ``get_trace_logger().record(...)`` quando o logger está activo.
+Ficheiros por pedido HTTP:
+
+- ``{run_id}_app.jsonl`` — processo da API (orquestrador, ``OpenAIProvider``, cliente MCP, sampling).
+- ``{run_id}_server.jsonl`` — processo MCP (servidor), mesmo ``run_id`` via meta.
+
+Cada linha inclui ``run_id``. Com sessão PostgreSQL activa, todas as linhas da app incluem
+``session_id`` (UUID em string ou ``null``).
+
+Truncagem de strings grandes: controlada por ``agent_trace_max_field_chars`` / env
+``AGENT_TRACE_MAX_FIELD_CHARS``. Valor **0 ou negativo** desactiva truncagem (análise completa;
+atenção a disco e dados sensíveis).
+
+Fases LLM no loop principal: definir com ``llm_phase_context("orchestrator:maestro")`` (etc.) antes
+de ``model.chat``; ``OpenAIProvider`` inclui ``llm_phase`` e ``openai_call_index`` nos eventos
+``llm.request`` / ``llm.response``. Chamadas laterais (memory, digest, observer, F3) devem usar a mesma convenção.
+
+No fim de cada ``orchestrator.run`` com trace activo, grava-se ``openai.chat_completions.summary``
+(com contagens por ``llm_phase``, duração total em ms e ``calls_initiated`` vs ``calls_completed``).
 """
 
 from __future__ import annotations
@@ -12,15 +28,73 @@ from __future__ import annotations
 import json
 import threading
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-
-from contextvars import ContextVar
+from typing import Any, Iterator
 
 _trace_logger_ctx: ContextVar[AgentTraceLogger | None] = ContextVar(
     "agent_trace_logger", default=None
 )
+
+trace_llm_phase_ctx: ContextVar[str | None] = ContextVar(
+    "trace_llm_phase", default=None
+)
+
+
+@dataclass
+class OpenAiChatCompletionsStats:
+    """
+    Conta chamadas a ``chat.completions`` no processo da API durante um ``orchestrator.run``.
+
+    Gravado no fim do run como evento ``openai.chat_completions.summary`` quando o trace está activo.
+    """
+
+    calls_initiated: int = 0
+    calls_completed: int = 0
+    calls_by_llm_phase: dict[str, int] = field(default_factory=dict)
+    total_duration_ms: float = 0.0
+
+    def begin_request(self) -> int:
+        self.calls_initiated += 1
+        return self.calls_initiated
+
+    def complete_response(self, phase: str | None, elapsed_s: float) -> None:
+        self.calls_completed += 1
+        p = phase or "unknown"
+        self.calls_by_llm_phase[p] = self.calls_by_llm_phase.get(p, 0) + 1
+        self.total_duration_ms += elapsed_s * 1000.0
+
+    def to_summary_fields(self) -> dict[str, Any]:
+        return {
+            "calls_completed": self.calls_completed,
+            "calls_initiated": self.calls_initiated,
+            "calls_by_llm_phase": dict(sorted(self.calls_by_llm_phase.items())),
+            "total_duration_ms": round(self.total_duration_ms, 3),
+        }
+
+
+_openai_chat_stats_ctx: ContextVar[OpenAiChatCompletionsStats | None] = ContextVar(
+    "openai_chat_completions_stats", default=None
+)
+
+
+def activate_openai_chat_stats_for_run() -> None:
+    """Invocado no início de um run com trace; cada ``OpenAIProvider.chat`` completo incrementa contadores."""
+    _openai_chat_stats_ctx.set(OpenAiChatCompletionsStats())
+
+
+def get_openai_chat_stats() -> OpenAiChatCompletionsStats | None:
+    return _openai_chat_stats_ctx.get()
+
+
+def take_openai_chat_stats() -> OpenAiChatCompletionsStats | None:
+    """Lê e limpa o acumulador (fim do run, antes de libertar o trace logger)."""
+    s = _openai_chat_stats_ctx.get()
+    _openai_chat_stats_ctx.set(None)
+    return s
 
 
 def get_trace_logger() -> AgentTraceLogger | None:
@@ -33,6 +107,20 @@ def set_trace_logger(logger: AgentTraceLogger | None) -> Any:
 
 def reset_trace_logger(token: Any) -> None:
     _trace_logger_ctx.reset(token)
+
+
+def get_trace_llm_phase() -> str | None:
+    return trace_llm_phase_ctx.get()
+
+
+@contextmanager
+def llm_phase_context(phase: str) -> Iterator[None]:
+    """Define a fase LLM actual para os eventos ``llm.*`` do ``OpenAIProvider``."""
+    tok = trace_llm_phase_ctx.set(phase)
+    try:
+        yield
+    finally:
+        trace_llm_phase_ctx.reset(tok)
 
 
 class AgentTraceLogger:
@@ -48,8 +136,10 @@ class AgentTraceLogger:
         run_id: str,
         app_log_path: Path,
         max_value_chars: int = 200_000,
+        session_id: str | None = None,
     ) -> None:
         self.run_id = run_id
+        self._session_id = session_id
         self._app_log_path = app_log_path
         self._max_value_chars = max_value_chars
         app_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +150,7 @@ class AgentTraceLogger:
         trace_dir: Path,
         *,
         max_value_chars: int = 200_000,
+        session_id: str | None = None,
     ) -> AgentTraceLogger:
         run_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).astimezone()
@@ -70,13 +161,15 @@ class AgentTraceLogger:
             run_id=run_id,
             app_log_path=app_log_path,
             max_value_chars=max_value_chars,
+            session_id=session_id,
         )
 
     def record(self, event: str, **fields: Any) -> None:
-        """Grava um evento; todos os kwargs entram no JSON (valores grandes são truncados)."""
+        """Grava um evento; todos os kwargs entram no JSON (truncagem conforme ``max_value_chars``)."""
         row: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).astimezone().isoformat(),
             "run_id": self.run_id,
+            "session_id": self._session_id,
             "event": event,
         }
         for k, v in fields.items():
@@ -106,6 +199,8 @@ class AgentTraceLogger:
         return self._truncate_str(str(v))
 
     def _truncate_str(self, s: str) -> str:
+        if self._max_value_chars <= 0:
+            return s
         if len(s) <= self._max_value_chars:
             return s
         return (
