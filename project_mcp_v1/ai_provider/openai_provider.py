@@ -1,9 +1,14 @@
+import time
 from typing import Any, List, Dict
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
-from app.agent_trace import get_trace_llm_phase, get_trace_logger
+from app.agent_trace import (
+    get_openai_chat_stats,
+    get_trace_llm_phase,
+    get_trace_logger,
+)
 from app.config import get_settings
 from ai_provider.base import ModelProvider
 
@@ -79,6 +84,9 @@ class OpenAIProvider(ModelProvider):
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
 
+        stats = get_openai_chat_stats()
+        call_idx = stats.begin_request() if stats else None
+
         tr = get_trace_logger()
         llm_phase = get_trace_llm_phase()
         if tr:
@@ -89,15 +97,21 @@ class OpenAIProvider(ModelProvider):
                 tools=tools,
                 tool_choice=tool_choice,
                 llm_phase=llm_phase,
+                openai_call_index=call_idx,
             )
 
+        t0 = time.monotonic()
         response = await self.client.chat.completions.create(**kwargs)
+        elapsed = time.monotonic() - t0
         out = _normalized_assistant_message(response)
+        if stats:
+            stats.complete_response(llm_phase, elapsed)
         if tr:
             tr.record(
                 "llm.response",
                 model=response.model,
                 assistant_message=out,
                 llm_phase=llm_phase,
+                openai_call_index=call_idx,
             )
         return out

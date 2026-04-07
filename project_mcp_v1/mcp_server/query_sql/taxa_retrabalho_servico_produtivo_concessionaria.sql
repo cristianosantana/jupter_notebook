@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Retrabalho vs serviço produtivo por concessionária e período."
+when_to_use: |
+  Retrabalho, OS repetidas, qualidade operacional, taxa de retrabalho por unidade.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os_orig.created_at.
 SELECT 
     con.id AS concessionaria_id,

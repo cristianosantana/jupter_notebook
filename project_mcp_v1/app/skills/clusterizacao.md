@@ -9,7 +9,7 @@ agent_type: clusterizacao
 
 # Objetivo primário
 
-Segmentar concessionárias (50–60 unidades) com base em dados MCP e explicar clusters de forma acionável.
+Segmentar concessionárias (+60 unidades) com base em dados MCP e explicar clusters de forma acionável.
 
 ## Papel e âmbito
 

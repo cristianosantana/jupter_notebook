@@ -11,7 +11,6 @@ if str(_proj_root) not in sys.path:
 import json
 
 from datetime import datetime
-from typing import Literal
 
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
 from mcp.server.fastmcp import Context, FastMCP  # pyright: ignore[reportMissingImports]
@@ -25,27 +24,6 @@ mcp = FastMCP(
     "ProductivityMCP",
     log_level="ERROR",
 )
-
-QueryId = Literal[
-    "cross_selling",
-    "taxa_retrabalho_servico_produtivo_concessionaria",
-    "taxa_conversao_servico_concessionaria_vendedor",
-    "servicos_vendidos_por_concessionaria",
-    "sazonalidade_por_concessionaria",
-    "performance_vendedor_mes",
-    "performance_vendedor_ano",
-    "faturamento_ticket_concessionaria_periodo",
-    "faturamento_mensal_recebidos_pendentes",
-    "faturamento_mensal_recebidos_pendentes_por_concessionaria",
-    "distribuicao_ticket_percentil",
-    "propenso_compra_hora_dia_servico",
-    "volume_os_concessionaria_mom",
-    "volume_os_vendedor_ranking",
-    "ticket_medio_concessionaria_agg",
-    "ticket_medio_vendedor_top_bottom",
-    "taxa_conversao_servicos_os_fechada",
-]
-
 
 def _trace_rid(ctx: Context | None) -> str | None:
     if ctx is None:
@@ -119,7 +97,7 @@ _RUN_ANALYTICS_DESC = (
     description=_RUN_ANALYTICS_DESC,
 )
 async def run_analytics_query(
-    query_id: QueryId,
+    query_id: str,
     limit: int = 10000,
     offset: int = 0,
     summarize: bool = False,
@@ -141,6 +119,24 @@ async def run_analytics_query(
         date_from=date_from,
         date_to=date_to,
     )
+
+    if query_id not in analytics_queries.QUERY_REGISTRY:
+        result = json.dumps(
+            {
+                "error": "query_id desconhecido",
+                "query_id": query_id,
+                "known_query_ids": list(analytics_queries.QUERY_IDS),
+            },
+            ensure_ascii=False,
+        )
+        trace_record(
+            "mcp.server.tool.end",
+            run_id=rid,
+            tool="run_analytics_query",
+            query_id=query_id,
+            result_preview=result[:2000],
+        )
+        return result
 
     try:
         sql_raw = analytics_queries.get_sql(query_id)

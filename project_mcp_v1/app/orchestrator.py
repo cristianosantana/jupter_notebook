@@ -40,10 +40,12 @@ from app.routing_tools import (
 )
 from app.agent_trace import (
     AgentTraceLogger,
+    activate_openai_chat_stats_for_run,
     get_trace_logger,
     llm_phase_context,
     reset_trace_logger,
     set_trace_logger,
+    take_openai_chat_stats,
 )
 from app.config import Settings, get_settings, resolve_agent_trace_dir
 from mcp_client.client import Client
@@ -1285,6 +1287,7 @@ class ModularOrchestrator:
             )
             self._trace_run_id = tr0.run_id
             trace_token = set_trace_logger(tr0)
+            activate_openai_chat_stats_for_run()
             tr0.record(
                 "orchestrator.run.start",
                 user_input=user_input,
@@ -1383,8 +1386,14 @@ class ModularOrchestrator:
             self._cap_messages()
             for m in self.messages:
                 m.pop("_orch_anchor", None)
+            oai_stats = take_openai_chat_stats()
             tr_end = get_trace_logger()
             if tr_end:
+                if oai_stats is not None and oai_stats.calls_initiated > 0:
+                    tr_end.record(
+                        "openai.chat_completions.summary",
+                        **oai_stats.to_summary_fields(),
+                    )
                 tr_end.record(
                     "orchestrator.run.finally",
                     messages_count=len(self.messages),

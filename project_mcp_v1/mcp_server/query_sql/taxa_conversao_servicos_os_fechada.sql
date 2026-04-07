@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Conversão de linhas de serviço em OS fechadas, global e por loja (JSON)."
+when_to_use: |
+  Quantidade de serviços (itens) vs OS fechadas; taxa global e por concessionária.
+output_shape: json_aggregate
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram oss.created_at.
 -- Serviços em OS (linhas) vs OS fechadas: taxa de conversão global e por concessionária.
 WITH Metricas_Por_Loja AS (

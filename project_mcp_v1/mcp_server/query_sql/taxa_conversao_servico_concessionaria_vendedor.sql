@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Conversão de serviço por concessionária e vendedor."
+when_to_use: |
+  Taxa de conversão de proposta/orçamento em venda de serviço, desempenho do vendedor.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,

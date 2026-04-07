@@ -151,7 +151,18 @@ class TestModelRouter:
             "verificador",
             "compositor_layout",
         ]
-        s = Settings(openai_model="gpt-test")
+        # Anular overrides do .env para todos os agentes usarem só openai_model.
+        s = Settings(
+            openai_model="gpt-test",
+            orchestrator_model_maestro="",
+            orchestrator_model_analise_os="",
+            orchestrator_model_clusterizacao="",
+            orchestrator_model_visualizador="",
+            orchestrator_model_agregador="",
+            orchestrator_model_projecoes="",
+            orchestrator_model_verificador="",
+            orchestrator_model_compositor_layout="",
+        )
         for agent_type in agent_types:
             m = ModelRouter.get_model(agent_type, s)
             assert m == "gpt-test"

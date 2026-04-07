@@ -1,122 +1,365 @@
 from functools import lru_cache
 from uuid import UUID
+from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict  # pyright: ignore[reportMissingImports]
 
 
 class Settings(BaseSettings):
+    """
+    Configuração via variáveis de ambiente (``.env``). Nomes: maiúsculas + underscore,
+    ex. ``OPENAI_API_KEY`` → ``openai_api_key``. Ver também ``.env.example``.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    openai_api_key: str = ""
-    openai_model: str = ""
-
-    mysql_host: str = "localhost"
-    mysql_port: int = 3306
-    mysql_user: str = ""
-    mysql_password: str = ""
-    mysql_database: str = ""
-
-    # PostgreSQL — sessões e utilizadores (transcript de especialistas)
-    postgres_host: str = ""
-    postgres_port: int = 5432
-    postgres_user: str = ""
-    postgres_password: str = ""
-    postgres_database: str = "maestro_sessions"
-    # Base onde ligar para ``CREATE DATABASE`` (quando a base de destino ainda não existe).
-    postgres_maintenance_database: str = "postgres"
-    postgres_auto_migrate: bool = True
-
-    # CORS (origens separadas por vírgula; ex.: frontend Vite em localhost:5173)
-    cors_origins: str = "http://localhost:5173"
-
-    # Orquestrador — limites de loop, histórico, podagem de contexto
-    orchestrator_max_tool_rounds: int = 24
-    orchestrator_max_history_messages: int = 20
-    orchestrator_max_message_age_seconds: float = 7200.0
-    orchestrator_tool_result_preview_max: int = 500
-    orchestrator_context_budget_safety_margin: int = 768
-    orchestrator_chars_per_token_estimate: int = 3
-    # Lista de agentes válidos (HTTP / handoff); separados por vírgula
-    orchestrator_agent_types: str = (
-        "maestro,analise_os,clusterizacao,visualizador,agregador,projecoes,"
-        "verificador,compositor_layout"
+    openai_api_key: str = Field(
+        default="",
+        description=(
+            "Bearer token OpenAI; usado por OpenAIProvider, arranque MCP (sampling) e orquestrador."
+        ),
     )
-    # UUID usado como chave de cache do glossário quando não há session_id PostgreSQL
-    orchestrator_glossary_cache_anonymous_uuid: str = "00000000-0000-0000-0000-000000000001"
-    # Modelo OpenAI por agente (vazio = usar ``openai_model``)
-    orchestrator_model_maestro: str = ""
-    orchestrator_model_analise_os: str = ""
-    orchestrator_model_clusterizacao: str = ""
-    orchestrator_model_visualizador: str = ""
-    orchestrator_model_agregador: str = ""
-    orchestrator_model_projecoes: str = ""
-    orchestrator_model_verificador: str = ""
-    orchestrator_model_compositor_layout: str = ""
+    openai_model: str = Field(
+        default="",
+        description=(
+            "Modelo por omissão; sobrescrito por ``ORCHESTRATOR_MODEL_*`` quando esse valor não está "
+            "vazio (``resolve_orchestrator_model_for_agent``)."
+        ),
+    )
 
-    # Glossário dinâmico (MySQL) fundido no system junto ao SKILL
-    entity_glossary_enabled: bool = True
-    # Nome da ferramenta MCP do glossário (deve coincidir com o servidor MCP)
-    entity_glossary_mcp_tool: str = "get_entity_glossary_markdown"
-    entity_glossary_max_chars: int = 24_000
-    entity_glossary_on_handoff: bool = True
-    # Pessoas no glossário: JOIN funcionario_cargos + cargos.funcionario_tipo_id (ver entity_glossary.py).
-    entity_glossary_include_demais_registos: bool = True
-    # Fragmentos SQL opcionais (começar por espaço + AND …, ou vazio). Vazio = sem filtro extra.
-    # Ex.: ENTITY_GLOSSARY_SQL_FUN_EXTRA=" AND fun.ativo = 1 AND fun.deleted_at IS NULL"
-    entity_glossary_sql_fun_extra: str = ""
-    entity_glossary_sql_concessionarias_extra: str = ""
-    entity_glossary_sql_servicos_extra: str = ""
-    # Cache em RAM do markdown do glossário por session_id (evita MCP/MySQL a cada mensagem).
-    entity_glossary_session_cache_enabled: bool = True
-    entity_glossary_session_cache_max: int = 256
+    mysql_host: str = Field(
+        default="localhost",
+        description=(
+            "Host MySQL; copiado para ``os.environ`` no arranque (``sync_mysql_env_from_settings``) "
+            "para o subprocesso MCP e glossário."
+        ),
+    )
+    mysql_port: int = Field(default=3306, description="Porta TCP do MySQL.")
+    mysql_user: str = Field(default="", description="Utilizador da ligação MySQL.")
+    mysql_password: str = Field(
+        default="",
+        description="Senha MySQL (analytics MCP + queries do glossário na API).",
+    )
+    mysql_database: str = Field(default="", description="Nome da base de dados de negócio.")
 
-    # Teto de caracteres por mensagem tool para o LLM (~200k tokens estimados com CHARS_PER_TOKEN≈3).
-    tool_message_content_max_chars: int = 600_000
+    postgres_host: str = Field(
+        default="",
+        description=(
+            "Se vazio (junto com user/database necessários), ``postgres_enabled`` é false: "
+            "sem persistência de sessões/transcript."
+        ),
+    )
+    postgres_port: int = Field(default=5432, description="Porta do PostgreSQL.")
+    postgres_user: str = Field(default="", description="Utilizador da base de sessões.")
+    postgres_password: str = Field(default="", description="Senha PostgreSQL.")
+    postgres_database: str = Field(
+        default="maestro_sessions",
+        description="Nome da base onde vivem sessions/messages/metadata.",
+    )
+    postgres_maintenance_database: str = Field(
+        default="postgres",
+        description=(
+            "Base onde ligar para ``CREATE DATABASE`` quando ``postgres_database`` ainda não existe."
+        ),
+    )
+    postgres_auto_migrate: bool = Field(
+        default=True,
+        description="Se true, SessionStore corre migrações SQL ao arranque quando PostgreSQL está activo.",
+    )
 
-    # Trace JSONL (orquestrador + cliente MCP); servidor MCP usa AGENT_TRACE_DIR e
-    # AGENT_TRACE_MAX_FIELD_CHARS (sincronizado no arranque). 0 ou negativo = sem truncagem.
-    agent_trace_enabled: bool = True
-    agent_trace_dir: str = ""
-    agent_trace_max_field_chars: int = 600_000
+    cors_origins: str = Field(
+        default="http://localhost:5173",
+        description=(
+            "Origens permitidas pelo FastAPI CORSMiddleware, separadas por vírgula "
+            "(ex.: frontend Vite em http://localhost:5173)."
+        ),
+    )
 
-    # Memory prompts (master off; sub-flags só com master True)
-    memory_prompts_enabled: bool = True
-    memory_conversation_summary_enabled: bool = True
-    memory_session_notes_enabled: bool = True
-    memory_extraction_enabled: bool = True
-    memory_consolidation_enabled: bool = True
+    orchestrator_max_tool_rounds: int = Field(
+        default=24,
+        description=(
+            "Tecto de voltas do loop LLM↔tools no maestro e no especialista; exceder gera erro."
+        ),
+    )
+    orchestrator_max_history_messages: int = Field(
+        default=20,
+        description=(
+            "Após podagem por idade e orçamento, o histórico não excede este número de mensagens."
+        ),
+    )
+    orchestrator_max_message_age_seconds: float = Field(
+        default=7200.0,
+        description=(
+            "Mensagens com timestamp implícito mais antigo que agora−N segundos são removidas "
+            "antes de enviar ao modelo."
+        ),
+    )
+    orchestrator_tool_result_preview_max: int = Field(
+        default=500,
+        description=(
+            "Caracteres da prévia do resultado da tool em ``tools_used`` (resposta HTTP / observador); "
+            "não o texto completo enviado ao LLM."
+        ),
+    )
+    orchestrator_context_budget_safety_margin: int = Field(
+        default=768,
+        description=(
+            "Caracteres reservados ao lado da estimativa de contexto ao calcular quanto histórico cabe."
+        ),
+    )
+    orchestrator_chars_per_token_estimate: int = Field(
+        default=3,
+        description=(
+            "Divide caracteres para estimar tokens na podagem de contexto (heurística, não tokenizer oficial)."
+        ),
+    )
+    orchestrator_agent_types: str = Field(
+        default=(
+            "maestro,analise_os,clusterizacao,visualizador,agregador,projecoes,"
+            "verificador,compositor_layout"
+        ),
+        description=(
+            "Agentes permitidos em handoff e validação de sessão PostgreSQL; vírgula, sem espaços nos nomes."
+        ),
+    )
+    orchestrator_glossary_cache_anonymous_uuid: str = Field(
+        default="00000000-0000-0000-0000-000000000001",
+        description=(
+            "UUID válido usado como chave do LRU do glossário quando não há session_id (sessão só em memória)."
+        ),
+    )
+    orchestrator_model_maestro: str = Field(
+        default="",
+        description="Override do modelo só na fase de roteamento / maestro (llm_phase orchestrator:maestro).",
+    )
+    orchestrator_model_analise_os: str = Field(
+        default="",
+        description="Override para o agente analise_os (queries MCP, OS).",
+    )
+    orchestrator_model_clusterizacao: str = Field(
+        default="",
+        description="Override para clusterização.",
+    )
+    orchestrator_model_visualizador: str = Field(
+        default="",
+        description="Override para o agente visualizador.",
+    )
+    orchestrator_model_agregador: str = Field(
+        default="",
+        description="Override para agregador.",
+    )
+    orchestrator_model_projecoes: str = Field(
+        default="",
+        description="Override para projeções.",
+    )
+    orchestrator_model_verificador: str = Field(
+        default="",
+        description=(
+            "Override para o skill verificador na pipeline F3 (além do agente homónimo se usado)."
+        ),
+    )
+    orchestrator_model_compositor_layout: str = Field(
+        default="",
+        description="Override para o compositor JSON de layout na pipeline F3.",
+    )
 
-    # Cache MCP em sessions.metadata (activo com sessão PostgreSQL)
-    mcp_cache_entry_max_chars: int = 200_000
-    mcp_cache_digest_max_chars: int = 12_000
-    mcp_cache_digest_max_entries: int = 24
-    mcp_cache_digest_max_chars_per_entry: int = 1800
+    entity_glossary_enabled: bool = Field(
+        default=True,
+        description="Se false, desliga a injecção do glossário no system (orquestrador).",
+    )
+    entity_glossary_mcp_tool: str = Field(
+        default="get_entity_glossary_markdown",
+        description=(
+            "Nome da tool no servidor MCP cujo resultado markdown é fundido no system "
+            "(deve coincidir com o registo no MCP)."
+        ),
+    )
+    entity_glossary_max_chars: int = Field(
+        default=24_000,
+        description="Truncagem do markdown do glossário antes de fundir no system.",
+    )
+    entity_glossary_on_handoff: bool = Field(
+        default=True,
+        description=(
+            "Se true, o orquestrador pode refrescar o glossário após handoff do Maestro para o especialista."
+        ),
+    )
+    entity_glossary_include_demais_registos: bool = Field(
+        default=True,
+        description=(
+            "Inclui no glossário pessoas via JOIN funcionario_cargos / cargos (ver entity_glossary.py)."
+        ),
+    )
+    entity_glossary_sql_fun_extra: str = Field(
+        default="",
+        description=(
+            "Sufixo SQL injectado na query de funcionários do glossário (começar por espaço + AND …); "
+            "ver entity_glossary.py."
+        ),
+    )
+    entity_glossary_sql_concessionarias_extra: str = Field(
+        default="",
+        description="Idem para o ramo concessionárias no markdown do glossário.",
+    )
+    entity_glossary_sql_servicos_extra: str = Field(
+        default="",
+        description="Idem para o ramo serviços no glossário.",
+    )
+    entity_glossary_session_cache_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se false, desliga o LRU em RAM do markdown do glossário por session_id "
+            "(sempre refresh via MCP/MySQL quando aplicável)."
+        ),
+    )
+    entity_glossary_session_cache_max: int = Field(
+        default=256,
+        description="Máximo de entradas no LRU do glossário por processo (orquestrador).",
+    )
 
-    # Digest MCP — LLM editor (D16); fallback Python
-    mcp_cache_digest_llm_enabled: bool = True
-    mcp_cache_digest_llm_trigger: str = "when_base_too_long"
-    mcp_cache_digest_llm_model: str = ""
-    mcp_cache_digest_llm_timeout_seconds: float = 45.0
-    mcp_cache_digest_llm_max_output_chars: int = 4000
-    mcp_cache_digest_llm_min_chars_to_run: int = 2500
-    mcp_cache_digest_llm_reuse_hash: bool = True
+    tool_message_content_max_chars: int = Field(
+        default=600_000,
+        description=(
+            "Teto ao serializar conteúdo de mensagens role=tool para o LLM (~200k tokens com CHARS_PER_TOKEN≈3)."
+        ),
+    )
 
-    # Frente 3 — verificador / compositor (pós-especialista)
-    pipeline_verifier_enabled: bool = True
-    pipeline_compositor_enabled: bool = True
-    verification_depth: str = "smoke"
+    agent_trace_enabled: bool = Field(
+        default=True,
+        description="Se false, desliga a pasta de trace (``resolve_agent_trace_dir`` retorna None).",
+    )
+    agent_trace_dir: str = Field(
+        default="",
+        description=(
+            "Caminho para ``{run_id}_app.jsonl`` / ``_server.jsonl``; vazio → projecto/logs/agent_trace."
+        ),
+    )
+    agent_trace_max_field_chars: int = Field(
+        default=600_000,
+        description=(
+            "Truncagem por campo JSON no trace; ≤0 desactiva truncagem (ficheiros grandes; cuidado com PII). "
+            "Com trace activo, cada POST /api/chat pode gravar ``openai.chat_completions.summary`` no fim do run."
+        ),
+    )
 
-    # Observador (D18)
-    observer_agent_enabled: bool = True
-    observer_agent_model: str = ""
-    observer_log_max_entries: int = 500
-    observer_narratives_max: int = 50
-    observer_narrative_max_chars: int = 8000
+    memory_prompts_enabled: bool = Field(
+        default=True,
+        description="Se false, ``maybe_update_*`` e extração de memória são no-op (memory_prompts.py).",
+    )
+    memory_conversation_summary_enabled: bool = Field(
+        default=True,
+        description=(
+            "Activa resumo rolling do transcript em metadata.conversation_summary (conversation-summary.md)."
+        ),
+    )
+    memory_session_notes_enabled: bool = Field(
+        default=True,
+        description="Activa notas estruturadas JSON em metadata.session_notes (session-notes.md).",
+    )
+    memory_extraction_enabled: bool = Field(
+        default=True,
+        description="Activa extração incremental para metadata.extracted_memory (memory-extraction.md).",
+    )
+    memory_consolidation_enabled: bool = Field(
+        default=True,
+        description="Reservada para consolidação de memória (sem uso activo noutros módulos no estado actual do repo).",
+    )
+
+    mcp_cache_entry_max_chars: int = Field(
+        default=200_000,
+        description=(
+            "Teto de caracteres guardados por resultado de tool em sessions.metadata.mcp_tool_cache.entries."
+        ),
+    )
+    mcp_cache_digest_max_chars: int = Field(
+        default=12_000,
+        description="Tamanho máximo do bloco markdown digest de cache MCP injectado no system.",
+    )
+    mcp_cache_digest_max_entries: int = Field(
+        default=24,
+        description="Quantas entradas recentes do cache entram no digest (mais recentes primeiro).",
+    )
+    mcp_cache_digest_max_chars_per_entry: int = Field(
+        default=1800,
+        description="Truncagem por entrada antes de compor o digest.",
+    )
+
+    mcp_cache_digest_llm_enabled: bool = Field(
+        default=True,
+        description="Se true, pode chamar um LLM para condensar o digest base (mcp_digest_editor.md).",
+    )
+    mcp_cache_digest_llm_trigger: str = Field(
+        default="when_base_too_long",
+        description=(
+            "``when_base_too_long``: só corre o editor LLM se o digest base tiver ≥ "
+            "``mcp_cache_digest_llm_min_chars_to_run`` caracteres."
+        ),
+    )
+    mcp_cache_digest_llm_model: str = Field(
+        default="",
+        description=(
+            "Modelo OpenAI para o editor do digest; vazio → ``openai_model`` no fluxo do orquestrador."
+        ),
+    )
+    mcp_cache_digest_llm_timeout_seconds: float = Field(
+        default=45.0,
+        description="``asyncio.wait_for`` à volta da chamada ao modelo do digest (evita pendura indefinida).",
+    )
+    mcp_cache_digest_llm_max_output_chars: int = Field(
+        default=4000,
+        description="Truncagem da saída do editor LLM antes de gravar em mcp_digest_llm_cache.",
+    )
+    mcp_cache_digest_llm_min_chars_to_run: int = Field(
+        default=2500,
+        description="Com trigger when_base_too_long, digest base mais curto que isto não dispara o LLM.",
+    )
+    mcp_cache_digest_llm_reuse_hash: bool = Field(
+        default=True,
+        description="Se true, reutiliza digest LLM em cache quando o fingerprint das entradas MCP não mudou.",
+    )
+
+    pipeline_verifier_enabled: bool = Field(
+        default=True,
+        description=(
+            "Após o especialista, chama o verificador contra o digest; grava verification_status em metadata."
+        ),
+    )
+    pipeline_compositor_enabled: bool = Field(
+        default=True,
+        description="Se activo e não bloqueado por REPROVADO, gera layout_blocks JSON via compositor_layout.",
+    )
+    verification_depth: str = Field(
+        default="smoke",
+        description="Passado no user message ao verificador (texto livre consumido pelo skill).",
+    )
+
+    observer_agent_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, no fim do run gera narrativa técnica do turno (observer.md) e acrescenta a observer_log/metadata."
+        ),
+    )
+    observer_agent_model: str = Field(
+        default="",
+        description="Modelo para a narrativa do observador; vazio usa ``openai_model``.",
+    )
+    observer_log_max_entries: int = Field(
+        default=500,
+        description="Máximo de eventos estruturados mantidos em observer_log.entries antes de podar.",
+    )
+    observer_narratives_max: int = Field(
+        default=50,
+        description="Quantas narrativas completas (texto do observador) guardar em metadata.",
+    )
+    observer_narrative_max_chars: int = Field(
+        default=8000,
+        description="Truncagem de cada narrativa persistida.",
+    )
 
     @property
     def postgres_enabled(self) -> bool:
@@ -183,9 +426,8 @@ def sync_mysql_env_from_settings(settings: Settings) -> None:
     os.environ["MYSQL_DATABASE"] = settings.mysql_database or ""
 
 
-def resolve_agent_trace_dir(settings: Settings) -> "Path | None":
+def resolve_agent_trace_dir(settings: Settings) -> Path | None:
     """Directório onde são gravados ``{run_id}_app.jsonl`` e ``{run_id}_server.jsonl``."""
-    from pathlib import Path
 
     if not settings.agent_trace_enabled:
         return None

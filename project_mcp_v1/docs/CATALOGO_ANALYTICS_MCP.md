@@ -1,8 +1,10 @@
 # Catálogo de análises MCP (`QUERY_REGISTRY`)
 
-**Fonte de verdade:** [mcp_server/analytics_queries.py](../mcp_server/analytics_queries.py) — variável `QUERY_REGISTRY` e conjunto `TABULAR_MULTIROW_QUERY_IDS` (classificação no catálogo).
+**Fonte de verdade:** cabeçalho YAML `/* @mcp_query_meta ... @mcp_query_meta */` no topo de cada ficheiro em [mcp_server/query_sql/](../mcp_server/query_sql/) (`resource_description`, `when_to_use`, `output_shape`, opcional `not_confused_with`). Em importação, [mcp_server/analytics_queries.py](../mcp_server/analytics_queries.py) constrói `QUERY_REGISTRY` e `TABULAR_MULTIROW_QUERY_IDS` a partir desses ficheiros.
 
-Cada entrada mapeia um `query_id` a um ficheiro em [mcp_server/query_sql/](../mcp_server/query_sql/). Execução: tool `run_analytics_query` (datas obrigatórias `date_from`, `date_to`). SQL em texto: recurso MCP `analytics://query/{query_id}`.
+Validação local/CI: `python3 scripts/check_analytics_sql_meta.py`.
+
+Execução: tool `run_analytics_query` (datas obrigatórias `date_from`, `date_to`). SQL executável (sem o bloco meta): recurso MCP `analytics://query/{query_id}`.
 
 **Fluxo recomendado para o agente LLM:** em caso de dúvida sobre qual análise executar → chamar a tool **`list_analytics_queries`** → escolher o `query_id` adequado → chamar **`run_analytics_query`** com `date_from` / `date_to`.
 
@@ -18,7 +20,7 @@ Os cinco últimos itens abaixo correspondem ao bloco VENDAS (Queries 1–5) em [
 
 ---
 
-## Entradas (ordem do registo)
+## Entradas (ordem alfabética por `query_id`, como em `QUERY_IDS`)
 
 | `query_id`                                                    | Ficheiro                                                        | Formato resposta típico                                      | `resource_description`                                                                                   |
 | ------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
@@ -68,5 +70,7 @@ Texto igual ao exposto por `list_analytics_queries` / `QUERY_ID_PARAM_HELP`:
 
 ## Manutenção
 
-- Ao adicionar ou renomear `query_id`, atualizar `QUERY_REGISTRY`, `QueryId` em [mcp_server/server.py](../mcp_server/server.py), este documento e a tabela em [estrutura-e-recursos.md](estrutura-e-recursos.md).
-- Se um novo `query_id` for tabular multi-linha (várias linhas por execução), acrescentar o id a `TABULAR_MULTIROW_QUERY_IDS` em `analytics_queries.py` para o catálogo descrever `rows` vs `summarize`.
+- Novo relatório: criar `mcp_server/query_sql/{query_id}.sql` com o cabeçalho `@mcp_query_meta` (`output_shape: tabular_multiline` ou `json_aggregate`). O nome do ficheiro (stem) tem de ser igual ao `query_id`.
+- Correr `python3 scripts/check_analytics_sql_meta.py` e a suíte de testes.
+- Actualizar a tabela deste documento e [estrutura-e-recursos.md](estrutura-e-recursos.md) para referência humana (o catálogo exposto ao LLM vem dos `.sql`).
+- [mcp_server/server.py](../mcp_server/server.py) aceita qualquer `query_id` conhecido em `QUERY_REGISTRY` (validação em tempo de execução).

@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Distribuição de ticket por quartis (NTILE) por concessionária."
+when_to_use: |
+  Segmentação por tamanho de ticket, quartis, perfil premium vs baixo ticket.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 WITH TicketCalculado AS (
     SELECT 

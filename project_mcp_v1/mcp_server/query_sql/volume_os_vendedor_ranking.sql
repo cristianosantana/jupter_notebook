@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Volume de OS por vendedor e concessionária com ranking (JSON)."
+when_to_use: |
+  Ranking de vendedores por quantidade de OS, fechamentos e taxa de fechamento.
+output_shape: json_aggregate
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 -- Volume de OS por vendedor e concessionária com ranking global por total_os.
 WITH MetricasVendedores AS (

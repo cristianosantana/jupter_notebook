@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "KPIs de vendedor por concessionária e mês (coluna periodo = YYYY-MM): OS, faturamento, ticket, desconto, serviços por OS."
+when_to_use: |
+  Ranking de vendedores por mês, ticket médio, desconto médio, produtividade mensal por unidade. Para totais por ano civil no intervalo de datas, usar performance_vendedor_ano.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Agregação MENSAL por vendedor × concessionária.
 -- Coluna `periodo` = mês civil no formato YYYY-MM (derivado de os.created_at).
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.

@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Padrão sazonal de volume/OS por concessionária."
+when_to_use: |
+  Sazonalidade, meses mais fortes, variação ao longo do ano por concessionária.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 WITH FaturamentoMensal AS (
     SELECT 

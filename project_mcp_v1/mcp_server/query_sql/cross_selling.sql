@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Pares de serviços na mesma OS; ranking por concessionária e mês."
+when_to_use: |
+  Combo de serviços vendidos juntos, cross-sell, frequência de pares na mesma ordem de serviço.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 WITH ParesServicos AS (
     SELECT 

@@ -11,8 +11,11 @@ import pytest
 
 from app.agent_trace import (
     AgentTraceLogger,
+    activate_openai_chat_stats_for_run,
+    get_openai_chat_stats,
     get_trace_llm_phase,
     llm_phase_context,
+    take_openai_chat_stats,
 )
 
 
@@ -48,6 +51,37 @@ def test_agent_trace_truncates_when_positive(tmp_path: Path) -> None:
     data = json.loads(log.read_text(encoding="utf-8").strip())
     assert data["session_id"] is None
     assert "truncado" in data["s"]
+
+
+def test_openai_chat_stats_accumulator_and_summary_fields() -> None:
+    assert get_openai_chat_stats() is None
+    activate_openai_chat_stats_for_run()
+    s = get_openai_chat_stats()
+    assert s is not None
+    assert s.begin_request() == 1
+    assert s.begin_request() == 2
+    s.complete_response("orchestrator:maestro", 1.0)
+    s.complete_response("pipeline_verifier", 0.5)
+    fields = s.to_summary_fields()
+    assert fields["calls_initiated"] == 2
+    assert fields["calls_completed"] == 2
+    assert fields["calls_by_llm_phase"]["orchestrator:maestro"] == 1
+    assert fields["calls_by_llm_phase"]["pipeline_verifier"] == 1
+    assert fields["total_duration_ms"] == 1500.0
+    taken = take_openai_chat_stats()
+    assert taken is s
+    assert get_openai_chat_stats() is None
+
+
+def test_openai_chat_stats_incomplete_request_no_complete() -> None:
+    activate_openai_chat_stats_for_run()
+    s = get_openai_chat_stats()
+    assert s is not None
+    s.begin_request()
+    fields = s.to_summary_fields()
+    assert fields["calls_initiated"] == 1
+    assert fields["calls_completed"] == 0
+    take_openai_chat_stats()
 
 
 def test_llm_phase_context_nested() -> None:

@@ -16,8 +16,11 @@ Truncagem de strings grandes: controlada por ``agent_trace_max_field_chars`` / e
 atenção a disco e dados sensíveis).
 
 Fases LLM no loop principal: definir com ``llm_phase_context("orchestrator:maestro")`` (etc.) antes
-de ``model.chat``; ``OpenAIProvider`` inclui ``llm_phase`` nos eventos ``llm.request`` /
-``llm.response``. Chamadas laterais (memory, digest, observer, F3) devem usar a mesma convenção.
+de ``model.chat``; ``OpenAIProvider`` inclui ``llm_phase`` e ``openai_call_index`` nos eventos
+``llm.request`` / ``llm.response``. Chamadas laterais (memory, digest, observer, F3) devem usar a mesma convenção.
+
+No fim de cada ``orchestrator.run`` com trace activo, grava-se ``openai.chat_completions.summary``
+(com contagens por ``llm_phase``, duração total em ms e ``calls_initiated`` vs ``calls_completed``).
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ import threading
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -38,6 +42,59 @@ _trace_logger_ctx: ContextVar[AgentTraceLogger | None] = ContextVar(
 trace_llm_phase_ctx: ContextVar[str | None] = ContextVar(
     "trace_llm_phase", default=None
 )
+
+
+@dataclass
+class OpenAiChatCompletionsStats:
+    """
+    Conta chamadas a ``chat.completions`` no processo da API durante um ``orchestrator.run``.
+
+    Gravado no fim do run como evento ``openai.chat_completions.summary`` quando o trace está activo.
+    """
+
+    calls_initiated: int = 0
+    calls_completed: int = 0
+    calls_by_llm_phase: dict[str, int] = field(default_factory=dict)
+    total_duration_ms: float = 0.0
+
+    def begin_request(self) -> int:
+        self.calls_initiated += 1
+        return self.calls_initiated
+
+    def complete_response(self, phase: str | None, elapsed_s: float) -> None:
+        self.calls_completed += 1
+        p = phase or "unknown"
+        self.calls_by_llm_phase[p] = self.calls_by_llm_phase.get(p, 0) + 1
+        self.total_duration_ms += elapsed_s * 1000.0
+
+    def to_summary_fields(self) -> dict[str, Any]:
+        return {
+            "calls_completed": self.calls_completed,
+            "calls_initiated": self.calls_initiated,
+            "calls_by_llm_phase": dict(sorted(self.calls_by_llm_phase.items())),
+            "total_duration_ms": round(self.total_duration_ms, 3),
+        }
+
+
+_openai_chat_stats_ctx: ContextVar[OpenAiChatCompletionsStats | None] = ContextVar(
+    "openai_chat_completions_stats", default=None
+)
+
+
+def activate_openai_chat_stats_for_run() -> None:
+    """Invocado no início de um run com trace; cada ``OpenAIProvider.chat`` completo incrementa contadores."""
+    _openai_chat_stats_ctx.set(OpenAiChatCompletionsStats())
+
+
+def get_openai_chat_stats() -> OpenAiChatCompletionsStats | None:
+    return _openai_chat_stats_ctx.get()
+
+
+def take_openai_chat_stats() -> OpenAiChatCompletionsStats | None:
+    """Lê e limpa o acumulador (fim do run, antes de libertar o trace logger)."""
+    s = _openai_chat_stats_ctx.get()
+    _openai_chat_stats_ctx.set(None)
+    return s
 
 
 def get_trace_logger() -> AgentTraceLogger | None:

@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "Propensão de compra por hora, dia da semana e tipo de serviço."
+when_to_use: |
+  Melhor hora/dia para vender, padrão temporal de compra por serviço.
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
 SELECT 
     con.id AS concessionaria_id,

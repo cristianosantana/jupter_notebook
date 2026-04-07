@@ -1,3 +1,10 @@
+/* @mcp_query_meta
+resource_description: "KPIs de vendedor por concessionária e ano civil (coluna periodo_ano = YYYY): mesmas métricas que a análise mensal, agregadas por ano."
+when_to_use: |
+  Ranking anual de vendedores, faturamento/ticket/desconto agregados por ano no intervalo date_from–date_to (útil quando o período é um ano completo ou vários anos).
+output_shape: tabular_multiline
+@mcp_query_meta */
+
 -- Agregação ANUAL por vendedor × concessionária (ano civil = YEAR(os.created_at)).
 -- Coluna `periodo_ano` = ano com quatro dígitos (string 'YYYY').
 -- Período (obrigatório em run_analytics_query): __MCP_DATE_FROM__ .. __MCP_DATE_TO__ → filtram os.created_at.
