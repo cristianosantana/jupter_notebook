@@ -9,6 +9,7 @@ Uso:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ import uuid
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -178,12 +179,18 @@ async def process_chat(request: ChatRequest) -> dict:
             session_metadata = {}
 
         meta_for_run = session_metadata if session_store is not None and sid is not None else None
-        out = await agent.run(
-            request.message,
-            target_agent=request.target_agent,
-            session_id=sid,
-            session_metadata=meta_for_run,
-        )
+        try:
+            out = await agent.run(
+                request.message,
+                target_agent=request.target_agent,
+                session_id=sid,
+                session_metadata=meta_for_run,
+            )
+        except asyncio.CancelledError:
+            _logger.info(
+                "Pedido de chat cancelado durante agent.run (cliente desligou ou abort)"
+            )
+            raise
         assistant = out["assistant"]
 
         if session_store is not None and sid is not None:
@@ -219,18 +226,43 @@ async def process_chat(request: ChatRequest) -> dict:
     return payload
 
 
+async def _cancel_task_on_disconnect(http_request: Request, task: "asyncio.Task[dict]") -> None:
+    """Quando o cliente fecha a ligação, cancela ``process_chat`` para libertar o lock."""
+    try:
+        while not task.done():
+            if await http_request.is_disconnected():
+                task.cancel()
+                return
+            await asyncio.sleep(0.2)
+    except asyncio.CancelledError:
+        raise
+
+
+async def run_chat_with_disconnect(http_request: Request, body: ChatRequest) -> dict:
+    task = asyncio.create_task(process_chat(body))
+    disconnect_watch = asyncio.create_task(
+        _cancel_task_on_disconnect(http_request, task)
+    )
+    try:
+        return await task
+    finally:
+        disconnect_watch.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await disconnect_watch
+
+
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(http_request: Request, body: ChatRequest):
     """Alias legado; preferir ``POST /api/chat`` no SmartChat."""
-    return await process_chat(request)
+    return await run_chat_with_disconnect(http_request, body)
 
 
 api_router = APIRouter(prefix="/api")
 
 
 @api_router.post("/chat")
-async def api_chat(request: ChatRequest):
-    return await process_chat(request)
+async def api_chat(http_request: Request, body: ChatRequest):
+    return await run_chat_with_disconnect(http_request, body)
 
 
 @api_router.get("/sessions")

@@ -1,9 +1,15 @@
+"""
+Servidor MCP (FastMCP): tempo, catálogo de análises SQL, execução de queries
+agregadas e glossário de entidades para o orquestrador da API.
+"""
 from pathlib import Path
 import sys
 
+# Raiz do pacote mcp_server (para imports locais: db, analytics_queries, …)
 _mcp_root = Path(__file__).resolve().parent
 if str(_mcp_root) not in sys.path:
     sys.path.insert(0, str(_mcp_root))
+# Raiz do repositório (para importar app.config / app.entity_glossary no glossário)
 _proj_root = _mcp_root.parent
 if str(_proj_root) not in sys.path:
     sys.path.append(str(_proj_root))
@@ -20,12 +26,15 @@ import db
 import sql_params
 from trace_logging import meta_run_id, trace_record
 
+# Instância principal FastMCP exposta ao cliente (stdio)
 mcp = FastMCP(
     "ProductivityMCP",
     log_level="ERROR",
 )
 
+
 def _trace_rid(ctx: Context | None) -> str | None:
+    """Extrai o run_id de trace (agent_trace_run_id) do meta do pedido MCP, se existir."""
     if ctx is None:
         return None
     try:
@@ -39,6 +48,7 @@ def _trace_rid(ctx: Context | None) -> str | None:
     description="Data e hora atuais do servidor (ISO 8601).",
 )
 def get_current_time(ctx: Context) -> str:
+    """Tool: devolve data/hora do servidor em ISO 8601 (útil para referência temporal)."""
     rid = _trace_rid(ctx)
     trace_record("mcp.server.tool.start", run_id=rid, tool="get_current_time")
     out = datetime.now().isoformat()
@@ -55,6 +65,7 @@ def get_current_time(ctx: Context) -> str:
     ),
 )
 def analytics_query_sql(query_id: str) -> str:
+    """Recurso MCP: texto SQL bruto da análise identificada por ``query_id``."""
     return analytics_queries.get_sql(query_id)
 
 
@@ -66,6 +77,7 @@ def analytics_query_sql(query_id: str) -> str:
     ),
 )
 def list_analytics_queries(ctx: Context) -> str:
+    """Tool: catálogo formatado para o modelo (ids, descrições, URIs das queries)."""
     rid = _trace_rid(ctx)
     trace_record("mcp.server.tool.start", run_id=rid, tool="list_analytics_queries")
     out = analytics_queries.format_catalog_for_model()
@@ -79,6 +91,7 @@ def list_analytics_queries(ctx: Context) -> str:
     return out
 
 
+# Texto longo da descrição da tool run_analytics_query (reutilizado no decorator)
 _RUN_ANALYTICS_DESC = (
     "Executa uma análise pré-definida sobre OS/concessionárias/vendedores/serviços. "
     "Dados já vêm agregados no SQL; devolve no máximo 10000 linhas por chamada. "
@@ -105,8 +118,15 @@ async def run_analytics_query(
     date_to: str | None = None,
     ctx: Context | None = None,
 ) -> str:
-    lim = max(1, min(10000, int(limit)))
-    off = max(0, int(offset))
+    """
+    Tool: executa SQL da análise no MySQL, com paginação e opcional resumo via sampling MCP.
+
+    - ``limit`` / ``offset``: janela de linhas (cap 10000).
+    - ``summarize``: se True, pede resumo ao host via create_message (quando ``ctx`` existe).
+    - ``date_from`` / ``date_to``: substituem placeholders no SQL.
+    """
+    lim = max(1, min(10000, int(limit)))  # limite de linhas por chamada (1..10000)
+    off = max(0, int(offset))  # deslocamento para paginação
     rid = _trace_rid(ctx)
     trace_record(
         "mcp.server.tool.start",
@@ -139,7 +159,7 @@ async def run_analytics_query(
         return result
 
     try:
-        sql_raw = analytics_queries.get_sql(query_id)
+        sql_raw = analytics_queries.get_sql(query_id)  # SQL com placeholders de data
         sql_inner = sql_params.apply_placeholders(
             sql_raw,
             date_from=date_from,
@@ -156,9 +176,9 @@ async def run_analytics_query(
                 ensure_ascii=False,
             )
         else:
-            effective_compact = bool(summarize)
+            effective_compact = bool(summarize)  # modo resumido (payload compacto)
 
-            summarized: str | None = None
+            summarized: str | None = None  # texto do LLM via sampling, se disponível
             if effective_compact and ctx is not None:
                 preview = db.rows_to_sampling_preview_payload(
                     rows, query_id=query_id, sample_size=40
@@ -230,6 +250,12 @@ async def get_entity_glossary_markdown(
     include_demais_registos: bool | None = None,
     ctx: Context | None = None,
 ) -> str:
+    """
+    Tool: gera markdown do glossário de entidades (concessionárias, serviços, etc.).
+
+    Parâmetros opcionais sobrepõem temporariamente ``entity_glossary_*`` do Settings.
+    Resposta: JSON com ``markdown`` e ``stats``, ou ``error`` em falha.
+    """
     rid = _trace_rid(ctx)
     trace_record("mcp.server.tool.start", run_id=rid, tool="get_entity_glossary_markdown")
     try:
@@ -237,12 +263,12 @@ async def get_entity_glossary_markdown(
         from app.entity_glossary import build_entity_glossary_markdown
 
         st = get_settings()
-        updates: dict[str, object] = {}
+        updates: dict[str, object] = {}  # patches pontuais sobre a config carregada
         if max_chars is not None:
             updates["entity_glossary_max_chars"] = max(256, int(max_chars))
         if include_demais_registos is not None:
             updates["entity_glossary_include_demais_registos"] = bool(include_demais_registos)
-        st_eff = st.model_copy(update=updates) if updates else st
+        st_eff = st.model_copy(update=updates) if updates else st  # Settings efectivo para esta chamada
 
         markdown, stats = await build_entity_glossary_markdown(
             st_eff,
@@ -270,4 +296,5 @@ async def get_entity_glossary_markdown(
 
 
 if __name__ == "__main__":
+    # Arranque em modo stdio (subprocesso ligado pelo cliente MCP da API)
     mcp.run()

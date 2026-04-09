@@ -1,0 +1,527 @@
+@import 'tailwindcss';
+
+@theme {
+  --stack-perspective: 1200px;
+  --stack-sticky-top: 10vh;
+  --stack-card-max-w: 36rem;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    @apply antialiased text-slate-900 bg-white;
+  }
+}
+
+@layer components {
+  /* Shell */
+  .chat-app-shell {
+    @apply flex h-full min-h-0 bg-slate-100;
+  }
+
+  .chat-sidebar {
+    @apply flex w-80 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950 text-slate-100;
+  }
+
+  .chat-sidebar-header {
+    @apply flex items-center gap-2 border-b border-slate-800 px-4 py-4;
+  }
+
+  .chat-sidebar-title {
+    @apply text-lg font-semibold tracking-tight text-white;
+  }
+
+  .chat-btn-new-chat {
+    @apply w-full rounded-lg bg-slate-800 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700;
+  }
+
+  .chat-sidebar-section-label {
+    @apply mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .chat-sidebar-session-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50;
+  }
+
+  .chat-sidebar-session-btn {
+    @apply w-full px-3 py-2.5 text-left text-xs transition hover:bg-slate-800/80 disabled:opacity-50;
+  }
+
+  .chat-sidebar-session-btn-active {
+    @apply bg-emerald-950/40 ring-1 ring-inset ring-emerald-700/50;
+  }
+
+  .chat-sidebar-footer-panel {
+    @apply rounded-md border border-slate-800 bg-slate-900/80 px-2.5 py-2;
+  }
+
+  .chat-main {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .chat-main-empty-bg {
+    @apply bg-gradient-to-b from-slate-50 via-white to-slate-50/90;
+  }
+
+  .chat-main-messages-bg {
+    @apply bg-white;
+  }
+
+  .chat-messages-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto;
+  }
+
+  .chat-composer-bar {
+    @apply px-4 py-3;
+  }
+
+  .chat-composer-bar-empty {
+    @apply border-t-0 bg-transparent;
+  }
+
+  .chat-composer-bar-filled {
+    @apply border-t border-slate-200 bg-white;
+  }
+
+  /* Empty state */
+  .chat-empty-outer {
+    @apply flex h-full min-h-0 flex-col overflow-y-auto pt-4;
+  }
+
+  .chat-empty-hero {
+    @apply flex min-h-[min(52vh,28rem)] flex-1 flex-col justify-center px-4 py-8 sm:min-h-[min(48vh,16rem)] sm:px-8;
+  }
+
+  .chat-empty-hero-inner {
+    @apply mx-auto w-full max-w-3xl;
+  }
+
+  .chat-empty-header-row {
+    @apply flex flex-col items-center gap-1 sm:flex-row sm:items-center sm:gap-2;
+  }
+
+  .chat-empty-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-900 sm:text-[1.65rem];
+  }
+
+  .chat-empty-subtitle {
+    @apply mt-3 text-center text-xl font-semibold text-slate-900 sm:text-left sm:text-2xl;
+  }
+
+  .chat-empty-desc {
+    @apply mx-auto mt-3 max-w-xl text-center text-sm leading-relaxed text-slate-600 sm:mx-0 sm:text-left;
+  }
+
+  .chat-empty-code {
+    @apply rounded-md bg-slate-200/70 px-1.5 py-0.5 font-mono text-xs text-slate-800;
+  }
+
+  .chat-empty-error {
+    @apply mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-800 sm:text-left;
+  }
+
+  .chat-empty-form {
+    @apply mt-6 rounded-[1.75rem] border border-slate-200/95 bg-white p-2 shadow-[0_12px_48px_-12px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/[0.05] sm:p-3;
+  }
+
+  .chat-empty-textarea {
+    @apply max-h-[min(40vh,16rem)] min-h-[6.5rem] w-full resize-y rounded-2xl bg-slate-50/40 px-4 py-3.5 text-[0.9375rem] leading-relaxed text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/25 disabled:opacity-60;
+  }
+
+  .chat-empty-form-footer {
+    @apply mt-2 flex flex-wrap items-center justify-between gap-2 px-1 pb-0.5 sm:gap-3;
+  }
+
+  .chat-empty-form-actions-end {
+    @apply flex items-center gap-2;
+  }
+
+  .chat-empty-hint-desktop {
+    @apply hidden text-[11px] text-slate-400 sm:inline;
+  }
+
+  .chat-empty-hint-mobile {
+    @apply text-[11px] text-slate-400 sm:hidden;
+  }
+
+  .chat-btn-send-lg {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm transition hover:bg-sky-500 disabled:opacity-40;
+  }
+
+  .chat-topics-section-title {
+    @apply mb-3 text-sm font-medium text-slate-700 text-center;
+  }
+
+  .chat-topics-grid {
+    @apply grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .chat-topics-section-wrap {
+    @apply mx-auto w-full max-w-5xl flex-shrink-0 px-4 pb-10 pt-2 sm:px-8;
+  }
+
+  /* Topic card (grid + stacking inner).
+     Nota: `group` / `group-hover` não podem ser usados dentro de `@apply` no Tailwind v4. */
+  .topic-card-btn {
+    @apply flex w-full flex-col rounded-2xl border border-slate-200/95 bg-white p-4 text-left shadow-sm ring-1 ring-slate-900/[0.03] transition hover:border-sky-400/80 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2;
+  }
+
+  .topic-card-icon {
+    @apply text-2xl leading-none select-none;
+  }
+
+  .topic-card-title {
+    @apply block font-semibold text-[0.9375rem] leading-snug text-slate-900;
+  }
+
+  .topic-card-btn:hover .topic-card-title {
+    @apply text-sky-800;
+  }
+
+  .topic-card-preview {
+    @apply mt-1.5 text-[0.75rem] leading-relaxed text-slate-500 line-clamp-3;
+  }
+
+  /* Stacking cards: contentor fixo; rotação por tempo (sem scroll) */
+  .stacking-viewport {
+    @apply relative mx-auto w-full max-w-[var(--stack-card-max-w,36rem)] overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50/40;
+    height: min(22rem, 46vh);
+    @media (min-width: 640px) {
+      height: min(26rem, 42vh);
+    }
+  }
+
+  .stacking-deck {
+    @apply relative flex w-full flex-col items-stretch px-3 pt-3 pb-8;
+    perspective: var(--stack-perspective);
+    perspective-origin: 50% 0%;
+  }
+
+  .stacking-card-outer {
+    @apply relative w-full max-w-[var(--stack-card-max-w,36rem)] -mb-[3.25rem] last:-mb-0 sm:-mb-14;
+    transform-style: preserve-3d;
+    will-change: transform, opacity;
+  }
+
+  @media (max-width: 639px) {
+    .stacking-deck {
+      perspective: 800px;
+    }
+  }
+
+  .stacking-card-face {
+    @apply flex w-full cursor-pointer items-center gap-4 rounded-2xl border border-slate-200/95 bg-white p-4 text-left shadow-lg ring-1 ring-slate-900/[0.06];
+  }
+
+  .stacking-card-icon {
+    @apply text-2xl leading-none select-none;
+  }
+
+  .stacking-card-text-block {
+    @apply min-w-0 flex-1;
+  }
+
+  .stacking-card-title {
+    @apply m-0 text-[0.9375rem] font-semibold leading-snug text-slate-900;
+  }
+
+  .stacking-card-desc {
+    @apply mt-1.5 text-[0.75rem] leading-relaxed text-slate-500 line-clamp-3;
+  }
+
+  /* Carousel “explorar categorias”: grelha 2 linhas por página, painel teal */
+  .carousel-explorer {
+    @apply mx-auto w-full max-w-6xl;
+  }
+
+  .carousel-explorer-panel {
+    @apply flex flex-col overflow-hidden rounded-2xl border-2 border-teal-700/85 bg-teal-100/90 shadow-sm ring-1 ring-teal-800/10;
+  }
+
+  .carousel-explorer-slide-clip {
+    @apply relative min-h-[min(22rem,48svh)] overflow-hidden px-3 py-4 sm:min-h-[min(26rem,44svh)] sm:px-4 sm:py-5;
+  }
+
+  /* Altura mínima alinhada à grelha interna (27rem) + padding vertical */
+  .carousel-explorer-slide-clip--marquee {
+    min-height: min(30rem, 52svh);
+  }
+
+  /* Marquee contínuo: dois segmentos idênticos; -50% = um segmento (loop sem salto visual) */
+  .carousel-marquee-outer {
+    display: flex;
+    flex-direction: row;
+    width: max-content;
+    will-change: transform;
+    animation: carousel-marquee-shift var(--carousel-marquee-duration, 48s) linear
+      infinite;
+  }
+
+  .carousel-marquee-outer--idle {
+    animation: none;
+  }
+
+  .carousel-explorer-slide-clip--marquee:hover .carousel-marquee-outer,
+  .carousel-explorer-slide-clip--doc-hidden .carousel-marquee-outer {
+    animation-play-state: paused;
+  }
+
+  @keyframes carousel-marquee-shift {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  /* Espaço entre “páginas” do marquee — evita cartões de slides diferentes colados no corte */
+  .carousel-marquee-segment {
+    display: flex;
+    flex-direction: row;
+    flex: 0 0 auto;
+    align-items: stretch;
+    column-gap: 1rem;
+  }
+
+  .carousel-marquee-page {
+    box-sizing: border-box;
+    display: flex;
+    flex: 0 0 var(--carousel-slide-w, 100%);
+    width: var(--carousel-slide-w, 100%);
+    min-width: var(--carousel-slide-w, 100%);
+    max-width: var(--carousel-slide-w, 100%);
+    flex-direction: column;
+    min-height: 0;
+    height: min(27rem, 46svh);
+  }
+
+  .carousel-marquee-page--static {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    height: min(27rem, 46svh);
+    min-height: min(27rem, 46svh);
+  }
+
+  /* Grelha 4 colunas: células iguais; gap fixo em X e Y */
+  .carousel-grid-page {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 0.875rem;
+    row-gap: 0.875rem;
+    align-items: stretch;
+    justify-items: stretch;
+  }
+
+  .carousel-grid-page--marquee {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Duas linhas com a mesma altura (50/50 menos o gap) */
+  .carousel-grid-page--marquee-rows-2 {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Última página com ≤4 cartões: uma linha ocupa a altura toda */
+  .carousel-grid-page--marquee-rows-1 {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .carousel-grid-card {
+    @apply flex flex-col items-stretch rounded-2xl border border-slate-800/25 bg-white p-3.5 text-left shadow-sm transition hover:border-teal-600/50 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 sm:p-4;
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    align-self: stretch;
+  }
+
+  @media (min-width: 640px) {
+    .carousel-grid-page {
+      column-gap: 1rem;
+      row-gap: 1rem;
+    }
+  }
+
+  .carousel-grid-card-icon-wrap {
+    @apply mb-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-200/90 to-cyan-100/80 ring-1 ring-teal-700/15 sm:h-14 sm:w-14;
+  }
+
+  .carousel-grid-card-icon {
+    @apply text-2xl leading-none select-none sm:text-[1.75rem];
+  }
+
+  .carousel-grid-card-title {
+    @apply line-clamp-2 text-[0.8125rem] font-bold leading-snug text-slate-900 sm:text-sm;
+  }
+
+  .carousel-grid-card-desc {
+    @apply mt-1.5 line-clamp-5 flex-1 text-[0.6875rem] leading-relaxed text-slate-600 sm:text-[0.8125rem];
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .carousel-explorer-footer {
+    @apply border-t border-teal-800/15 bg-teal-50/50 px-2.5 pb-2 pt-1 sm:px-3;
+  }
+
+  .carousel-explorer-footer--marquee {
+    @apply pb-2.5 pt-2;
+  }
+
+  .carousel-explorer-dots {
+    @apply mb-2 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2;
+  }
+
+  .carousel-explorer-dot {
+    @apply h-2 w-2 rounded-full border-0 bg-teal-300/90 transition hover:bg-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-1 sm:h-2.5 sm:w-2.5;
+  }
+
+  .carousel-explorer-dot-active {
+    @apply scale-110 bg-teal-700 shadow-sm;
+  }
+
+  .carousel-explorer-meta-row {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3;
+  }
+
+  .carousel-explorer-hint {
+    @apply text-center text-[0.6875rem] text-teal-900/75 sm:flex-1 sm:text-left sm:text-xs;
+  }
+
+  .carousel-explorer-hint--solo {
+    @apply border-t border-teal-800/15 bg-teal-50/50 px-3 py-2.5 text-center sm:text-left;
+  }
+
+  .carousel-explorer-arrows {
+    @apply flex shrink-0 items-center justify-center gap-0.5 sm:justify-end;
+  }
+
+  .carousel-explorer-arrow {
+    @apply flex h-9 w-9 items-center justify-center rounded-lg text-teal-800 transition hover:bg-teal-200/60 hover:text-teal-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-40;
+  }
+
+  .carousel-explorer-arrow-icon {
+    @apply h-6 w-6;
+  }
+
+  /* Message thread */
+  .msg-thread-wrap {
+    @apply mx-auto w-full max-w-[min(100%,85rem)] space-y-4 px-4 py-6;
+  }
+
+  .msg-row {
+    @apply flex min-w-0 w-full;
+  }
+
+  .msg-row-user {
+    @apply justify-end;
+  }
+
+  .msg-row-assistant {
+    @apply justify-center;
+  }
+
+  .msg-bubble-user {
+    @apply max-w-[min(85%,36rem)] rounded-2xl bg-slate-800 px-4 py-2.5 text-sm leading-relaxed text-white;
+  }
+
+  .msg-bubble-assistant {
+    @apply w-full min-w-0 max-w-[min(100%,85rem)] rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50/95 to-white px-4 py-4 text-slate-800 shadow-sm ring-1 ring-slate-900/[0.04] sm:px-6 sm:py-5;
+  }
+
+  .chat-loading-center {
+    @apply flex h-full min-h-[320px] flex-col items-center justify-center px-6 py-8;
+  }
+
+  .chat-session-empty-hint {
+    @apply flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center text-slate-500;
+  }
+
+  /* Composer (conversation) */
+  .chat-composer-form {
+    @apply mx-auto flex max-w-[min(100%,85rem)] items-end gap-2 rounded-2xl border border-slate-200/95 bg-slate-50/80 p-2 shadow-sm ring-1 ring-slate-900/[0.04] focus-within:border-sky-300 focus-within:ring-sky-500/20;
+  }
+
+  .chat-composer-textarea {
+    @apply max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-xl border-0 bg-transparent px-3 py-2.5 text-sm leading-snug text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-60;
+  }
+
+  .chat-btn-send-sm {
+    @apply mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white transition hover:bg-sky-500 disabled:opacity-40;
+  }
+
+  .chat-btn-cancel {
+    @apply mb-0.5 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1;
+  }
+
+  .chat-btn-cancel-lg {
+    @apply flex h-11 shrink-0 items-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1;
+  }
+
+  .chat-composer-actions {
+    @apply mb-0.5 flex shrink-0 items-end gap-2;
+  }
+
+  .chat-composer-error {
+    @apply mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800;
+  }
+
+  .chat-footer-note {
+    @apply mx-auto max-w-[min(100%,85rem)] text-center text-[11px] text-slate-500;
+  }
+
+  .chat-footer-note-spaced {
+    @apply mt-2;
+  }
+
+  /* Assistant prose (scoped) */
+  .assistant-message {
+    @apply w-full text-[0.9375rem] leading-[1.7] tracking-normal text-slate-800;
+  }
+
+  .assistant-prose-width {
+    @apply mx-auto w-full max-w-[68ch];
+  }
+
+  .content-blocks {
+    @apply mt-1 w-full space-y-4 border-t border-slate-200/90 pt-4;
+  }
+
+  .assistant-structured {
+    @apply w-full space-y-4;
+  }
+
+  .pipe-table-wrap {
+    @apply my-3 mx-auto w-max max-w-full rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/[0.03];
+  }
+
+  .numbered-block-card {
+    @apply rounded-xl border border-slate-200/90 border-l-4 border-l-sky-500 bg-white py-3.5 pl-4 pr-3.5 shadow-sm ring-1 ring-slate-900/[0.03];
+  }
+
+  .pipeline-card {
+    @apply max-w-[85%] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 shadow-sm;
+  }
+
+  .pipeline-compact {
+    @apply p-3 text-xs text-slate-400;
+  }
+}
