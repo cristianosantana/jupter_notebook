@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 from uuid import UUID
 from pathlib import Path
@@ -338,6 +339,53 @@ class Settings(BaseSettings):
         description="Passado no user message ao verificador (texto livre consumido pelo skill).",
     )
 
+    pipeline_critical_evaluator_enabled: bool = Field(
+        default=True,
+        description=(
+            "Após o especialista, avaliador crítico (APROVAR/DEVOLVER) com voltas limitadas "
+            "e preservação do transcript de tools."
+        ),
+    )
+    orchestrator_max_critique_rounds: int = Field(
+        default=3,
+        ge=1,
+        description="Máximo de devoluções do avaliador ao mesmo especialista por pedido HTTP.",
+    )
+    orchestrator_model_avaliador_critico: str = Field(
+        default="",
+        description="Override OpenAI para o passo avaliador_critico; vazio → openai_model.",
+    )
+
+    pipeline_formatador_ui_enabled: bool = Field(
+        default=True,
+        description="Após APROVAR, formatador_ui anexa bloco JSON content_blocks à mensagem final.",
+    )
+    orchestrator_model_formatador_ui: str = Field(
+        default="",
+        description="Override OpenAI para formatador_ui; vazio → openai_model.",
+    )
+    pipeline_skip_compositor_when_formatador_succeeds: bool = Field(
+        default=True,
+        description="Se o formatador produzir JSON válido com blocks, não chamar compositor_layout na F3.",
+    )
+
+    serpapi_api_key: str = Field(
+        default="",
+        description="Chave SerpApi; exportada para SERPAPI_API_KEY no arranque (subprocesso MCP).",
+    )
+    serpapi_enabled: bool = Field(
+        default=True,
+        description="Se false, SERPAPI_ENABLED=false no ambiente e o servidor MCP omite google_search_serpapi.",
+    )
+
+    orchestrator_tool_allowlist_json: str = Field(
+        default="",
+        description=(
+            'JSON {"analise_os":["run_analytics_query",...]} — allowlist de nomes de tools MCP por agente. '
+            "Vazio = sem filtro (todas as tools do servidor para cada especialista)."
+        ),
+    )
+
     observer_agent_enabled: bool = Field(
         default=True,
         description=(
@@ -360,6 +408,28 @@ class Settings(BaseSettings):
         default=8000,
         description="Truncagem de cada narrativa persistida.",
     )
+
+    def specialist_mcp_tool_allowlist(self) -> dict[str, frozenset[str]]:
+        """
+        Mapa agente → conjunto de nomes de tool MCP permitidos.
+        Dicionário vazio = sem filtro por agente.
+        """
+        raw = (self.orchestrator_tool_allowlist_json or "").strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, frozenset[str]] = {}
+        for k, v in data.items():
+            if isinstance(v, list):
+                names = frozenset(str(x).strip() for x in v if str(x).strip())
+                if names:
+                    out[str(k).strip()] = names
+        return out
 
     @property
     def postgres_enabled(self) -> bool:
@@ -390,6 +460,8 @@ class Settings(BaseSettings):
             "projecoes": self.orchestrator_model_projecoes,
             "verificador": self.orchestrator_model_verificador,
             "compositor_layout": self.orchestrator_model_compositor_layout,
+            "avaliador_critico": self.orchestrator_model_avaliador_critico,
+            "formatador_ui": self.orchestrator_model_formatador_ui,
         }
         raw = (m.get(agent_type) or "").strip()
         return raw if raw else None
@@ -424,6 +496,10 @@ def sync_mysql_env_from_settings(settings: Settings) -> None:
     os.environ["MYSQL_USER"] = settings.mysql_user or ""
     os.environ["MYSQL_PASSWORD"] = settings.mysql_password or ""
     os.environ["MYSQL_DATABASE"] = settings.mysql_database or ""
+
+    if (settings.serpapi_api_key or "").strip():
+        os.environ["SERPAPI_API_KEY"] = settings.serpapi_api_key.strip()
+    os.environ["SERPAPI_ENABLED"] = "true" if settings.serpapi_enabled else "false"
 
 
 def resolve_agent_trace_dir(settings: Settings) -> Path | None:
