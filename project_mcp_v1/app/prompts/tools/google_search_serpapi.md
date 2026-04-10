@@ -17,6 +17,7 @@ Documentar a tool MCP **`google_search_serpapi`**: pesquisa Google via SerpApi p
 ## Regras não negociáveis
 
 - **Obrigatório** quando a pergunta exige factos da web (notícias, mercado, regulamentação) e ainda não tens resultados dessa tool no transcript — **não inventes** factos externos.
+- **Não** peças autorização separada para chamar esta tool quando o utilizador já pediu benchmarking, pesquisa web ou contexto público — executa a tool.
 - **Proibido** usar como substituto de `list_analytics_queries` / `run_analytics_query` para métricas da empresa.
 - Depois de chamar: indica no texto ao utilizador que o trecho vem de **fontes públicas**; não mistures números web com totais internos sem rotular a fonte.
 

@@ -19,6 +19,7 @@ Recomendar e descrever **visualizações** adequadas (gráficos, tabelas) com ba
 ## Regras não negociáveis
 
 - **Digest/cache MCP:** consulta o digest antes de nova tool idêntica.
+- **Agregação:** com `session_dataset_id` (transcript ou digest), usa **`analytics_aggregate_session`**; **não** peças o id ao utilizador (`prompts/context-policy.md`).
 - **Pesquisa web:** factos externos → `google_search_serpapi` com **`search_query`** (web), nunca `query_id`; com analytics **e** web no turno, **interpreta os dados internos à luz da web** (ver `prompts/tools/google_search_serpapi.md`).
 - **Não inventes** séries ou valores.
 - **Glossário:** `vendedor_id`, `produtivo_id`, concessionária, serviço → nomes quando existirem.
