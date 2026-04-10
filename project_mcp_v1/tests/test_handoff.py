@@ -270,8 +270,38 @@ def test_messages_with_skill_omits_orch_internal_keys():
     msgs = [{"role": "user", "content": "pergunta", "_orch_anchor": True}]
     out = _messages_with_skill("SKILL", msgs)
     assert not any("_orch_anchor" in m for m in out)
+    assert out[0]["role"] == "system" and out[0]["content"] == "SKILL"
     user_part = [m for m in out if m.get("role") == "user"]
     assert user_part[0]["content"] == "pergunta"
+
+
+def test_messages_with_skill_inserts_system_when_none():
+    out = _messages_with_skill("S", [{"role": "user", "content": "hi"}])
+    assert out[0] == {"role": "system", "content": "S"}
+    assert out[1]["role"] == "user"
+
+
+def test_messages_with_skill_merges_into_every_system():
+    msgs = [
+        {"role": "system", "content": "A"},
+        {"role": "system", "content": "B"},
+    ]
+    out = _messages_with_skill("SK", msgs)
+    assert len(out) == 2
+    assert out[0]["content"] == "SK\n\nA"
+    assert out[1]["content"] == "SK\n\nB"
+
+
+def test_messages_with_skill_merges_critique_system_without_extra_prepend():
+    msgs = [
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "a"},
+        {"role": "system", "content": "critique"},
+    ]
+    out = _messages_with_skill("SK", msgs)
+    assert len(out) == 3
+    assert out[0]["role"] == "user"
+    assert out[2]["content"] == "SK\n\ncritique"
 
 
 def test_prompt_skill_text_merges_glossary_block():
