@@ -89,10 +89,19 @@ def append_cache_entry(
     try:
         data = json.loads(text)
         if isinstance(data, dict):
-            if "rows" in data and isinstance(data["rows"], list):
+            if data.get("row_count") is not None:
+                try:
+                    row_count = int(data["row_count"])
+                except (TypeError, ValueError):
+                    row_count = None
+            if row_count is None and "rows" in data and isinstance(data["rows"], list):
                 row_count = len(data["rows"])
-            elif "queries" in data and isinstance(data["queries"], list):
+            if row_count is None and "queries" in data and isinstance(data["queries"], list):
                 row_count = len(data["queries"])
+            if row_count is None and "rows_sample" in data and isinstance(
+                data["rows_sample"], list
+            ):
+                row_count = len(data["rows_sample"])
     except (json.JSONDecodeError, TypeError):
         pass
     lst.append(
@@ -131,17 +140,68 @@ def _digest_one_entry(
 
     if tn == "run_analytics_query":
         snippet = raw
+        cols_list: list[str] | None = None
+        full_rows = False
+        sample_only = False
+        rc_meta: int | None = None
         try:
             data = json.loads(raw)
             if isinstance(data, dict):
+                rc_meta = data.get("row_count")
+                if isinstance(rc_meta, int):
+                    pass
+                elif rc_meta is not None:
+                    try:
+                        rc_meta = int(rc_meta)
+                    except (TypeError, ValueError):
+                        rc_meta = None
+                c = data.get("columns")
+                if isinstance(c, list):
+                    cols_list = [str(x) for x in c]
+                elif isinstance(data.get("rows"), list) and data["rows"]:
+                    cols_list = list(data["rows"][0].keys()) if isinstance(data["rows"][0], dict) else None
+                elif isinstance(data.get("rows_sample"), list) and data["rows_sample"]:
+                    sample_only = True
+                    cols_list = (
+                        list(data["rows_sample"][0].keys())
+                        if isinstance(data["rows_sample"][0], dict)
+                        else None
+                    )
                 rows = data.get("rows")
-                cols = data.get("columns")
                 if isinstance(rows, list) and rows:
-                    snippet = f"colunas={cols!r} amostra={json.dumps(rows[:3], ensure_ascii=False)[:600]}"
+                    full_rows = True
+                    snippet = (
+                        f"(amostra ilustrativa, não usar para totais) "
+                        f"colunas={cols_list!r} "
+                        f"exemplo={json.dumps(rows[:2], ensure_ascii=False)[:500]}"
+                    )
+                elif isinstance(data.get("rows_sample"), list) and data["rows_sample"]:
+                    rs = data["rows_sample"]
+                    snippet = (
+                        f"(summarize=true: só amostra; não usar para totais globais) "
+                        f"colunas={cols_list!r} "
+                        f"rows_sample[:2]={json.dumps(rs[:2], ensure_ascii=False)[:500]}"
+                    )
         except (json.JSONDecodeError, TypeError):
             pass
         lines.append(f"### {tn}{rc_bit}")
         lines.append(f"- args: `{args_s}`")
+        if rc_meta is not None:
+            lines.append(f"- **row_count (metadado):** {rc_meta}")
+        if cols_list is not None:
+            cols_short = cols_list[:24]
+            extra = f" (+{len(cols_list) - 24} mais)" if len(cols_list) > 24 else ""
+            lines.append(f"- **colunas:** {', '.join(cols_short)}{extra}")
+        lines.append(
+            "- **Aviso:** os dados completos **não** estão neste digest. "
+            "Usa o JSON completo da última mensagem `tool` ou chama a tool host "
+            "`analytics_aggregate_session` com o `session_dataset_id` devolvido nessa resposta."
+        )
+        if sample_only or not full_rows:
+            lines.append(
+                "- **Nota:** resultado compacto (`rows_sample` / summarize); rankings exactos exigem "
+                "`run_analytics_query` com `summarize=false` (e/ou paginação) ou agregação sobre dataset completo."
+            )
         lines.append(f"- prévia: {_truncate(snippet, max_per)}")
     elif tn == "list_analytics_queries":
         lines.append(f"### {tn}{rc_bit}")
@@ -158,6 +218,40 @@ def _digest_one_entry(
     return lines
 
 
+def _build_analytics_datasets_digest(metadata: dict[str, Any]) -> str:
+    block = metadata.get("analytics_datasets")
+    if not isinstance(block, dict):
+        return ""
+    by_id = block.get("by_id")
+    order = block.get("order")
+    if not isinstance(by_id, dict) or not by_id:
+        return ""
+    lines = [
+        "## Datasets de analytics nesta sessão (handles)",
+        "",
+        "Agrega com a tool host **`analytics_aggregate_session`** (não existe no servidor MCP).",
+        "O assistente **não** deve pedir ao utilizador para copiar estes ids — lê-os daqui ou do JSON de `run_analytics_query`.",
+        "",
+    ]
+    ids = list(order) if isinstance(order, list) else list(by_id.keys())
+    for dsid in ids[-12:]:
+        info = by_id.get(dsid)
+        if not isinstance(info, dict):
+            continue
+        qid = info.get("query_id", "?")
+        rc = info.get("row_count", "?")
+        cols = info.get("columns") or []
+        cols_s = ", ".join(str(c) for c in cols[:12])
+        if len(cols) > 12:
+            cols_s += f" (+{len(cols) - 12})"
+        samp = info.get("sample_only")
+        lines.append(f"- **`{dsid}`** · query_id=`{qid}` · row_count≈{rc} · sample_only={samp}")
+        if cols_s:
+            lines.append(f"  - colunas: {cols_s}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_mcp_cache_digest_section(
     metadata: dict[str, Any],
     settings: Settings | None = None,
@@ -169,7 +263,13 @@ def build_mcp_cache_digest_section(
     block = metadata.get("mcp_tool_cache") or {}
     entries: list[dict[str, Any]] = list(block.get("entries") or [])
     if not entries:
-        return ""
+        ds_only = _build_analytics_datasets_digest(metadata).strip()
+        if not ds_only:
+            return ""
+        out = ds_only
+        if len(out) > max_section:
+            out = out[:max_section] + "\n\n[digest truncado mcp_cache_digest_section_max_chars]"
+        return out
     tail = entries[-max_entries:]
     parts: list[str] = [
         "## Ferramentas MCP já executadas nesta sessão (digest)",
@@ -181,6 +281,9 @@ def build_mcp_cache_digest_section(
         parts.extend(_digest_one_entry(e, max_per))
         parts.append("")
     out = "\n".join(parts).strip()
+    ds = _build_analytics_datasets_digest(metadata).strip()
+    if ds:
+        out = f"{out}\n\n{ds}".strip() if out else ds
     if len(out) > max_section:
         out = out[:max_section] + "\n\n[digest truncado mcp_cache_digest_section_max_chars]"
     return out
