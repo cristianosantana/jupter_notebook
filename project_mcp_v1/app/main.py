@@ -15,6 +15,8 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -33,6 +35,23 @@ from app.orchestrator import ModularOrchestrator, AgentType
 from app.session_store import SessionStore
 
 _logger = logging.getLogger(__name__)
+
+
+def ensure_transcript_includes_user_message(
+    messages: list[dict[str, Any]],
+    user_text: str,
+) -> bool:
+    """
+    Garante pelo menos uma mensagem ``role=user`` no transcript persistido.
+    Usado quando o orquestrador não deixou nenhuma linha user (regressão / podagem).
+    """
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if any((str(m.get("role") or "")).strip().lower() == "user" for m in messages):
+        return False
+    messages.insert(0, {"role": "user", "content": text})
+    return True
 
 agent: ModularOrchestrator | None = None
 session_store: SessionStore | None = None
@@ -202,7 +221,18 @@ async def process_chat(request: ChatRequest) -> dict:
 
         if session_store is not None and sid is not None:
             await session_store.update_session_metadata(sid, session_metadata)
+            excerpt = (request.message or "").strip()
+            if excerpt:
+                await session_store.merge_session_metadata(
+                    sid,
+                    {
+                        "last_user_message": excerpt[:8000],
+                        "last_user_message_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
             if out["agent"] != "maestro":
+                if excerpt:
+                    ensure_transcript_includes_user_message(agent.messages, excerpt)
                 await session_store.replace_conversation_messages(sid, agent.messages)
                 await session_store.touch_session(sid, out["agent"])
             else:
