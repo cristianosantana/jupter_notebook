@@ -24,6 +24,14 @@ from app.memory_prompts import (
     maybe_update_session_notes,
     maybe_update_conversation_summary,
 )
+from app.analytics_aggregate_engine import run_analytics_aggregate
+from app.analytics_session_datasets import (
+    get_dataset_id_for_cache_key,
+    increment_aggregate_calls,
+    inject_dataset_handles_into_json_text,
+    load_dataset_for_aggregate,
+    register_run_analytics_result,
+)
 from app.mcp_session_cache import (
     append_cache_entry,
     build_mcp_cache_digest_section,
@@ -32,13 +40,17 @@ from app.mcp_session_cache import (
     entries_fingerprint,
 )
 from app.prompt_assembly import build_effective_system_text
-from app.pipeline_critique import format_critique_user_message, parse_critique_response
+from app.pipeline_critique import format_critique_message, parse_critique_response
 from app.routing_tools import (
     MAESTRO_TOOLS_ONLY,
     ROUTE_TO_SPECIALIST_TOOL_NAME,
     SPECIALIST_AGENTS,
     parse_route_arguments,
     specialist_from_text_fallback,
+)
+from app.virtual_tools import (
+    ANALYTICS_AGGREGATE_SESSION_TOOL_NAME,
+    analytics_aggregate_session_openai_tool,
 )
 from app.agent_trace import (
     AgentTraceLogger,
@@ -201,11 +213,13 @@ def _messages_with_skill(
     if not skill:
         return list(public)
     out = list(public)
-    if out and out[0].get("role") == "system":
-        existing = (out[0].get("content") or "").strip()
-        merged = f"{skill}\n\n{existing}".strip() if existing else skill
-        out[0] = {**out[0], "content": merged}
-    else:
+    had_system = any(m.get("role") == "system" for m in out)
+    for i, m in enumerate(out):
+        if m.get("role") == "system":
+            existing = (m.get("content") or "").strip()
+            merged = f"{skill}\n\n{existing}".strip() if existing else skill
+            out[i] = {**m, "content": merged}
+    if not had_system:
         out.insert(0, {"role": "system", "content": skill})
     return out
 
@@ -748,8 +762,8 @@ class ModularOrchestrator:
                 f"(tools={'sim' if (verdict.exige_novos_dados or verdict.exige_pesquisa_web) else 'não'})"
             )
             self._append_message({
-                "role": "user",
-                "content": format_critique_user_message(verdict),
+                "role": "system",
+                "content": format_critique_message(verdict),
             })
             tools_payload: list[dict[str, Any]] | None = None
             if verdict.exige_novos_dados or verdict.exige_pesquisa_web:
@@ -1064,20 +1078,32 @@ class ModularOrchestrator:
         """Tools MCP no formato OpenAI, com allowlist opcional por agente (``orchestrator_tool_allowlist_json``)."""
         base = self._tools_payload_for_chat()
         if not base:
-            return None
+            base = []
+        st = get_settings()
         if self.current_agent not in SPECIALIST_AGENTS:
-            return base
-        mp = get_settings().specialist_mcp_tool_allowlist()
-        allow = mp.get(str(self.current_agent))
-        if not allow:
-            return base
-        out: list[dict[str, Any]] = []
-        for t in base:
-            fn = t.get("function") if isinstance(t.get("function"), dict) else None
-            name = (fn.get("name") if fn else None) or t.get("name")
-            if name and str(name) in allow:
-                out.append(t)
-        return out if out else base
+            out = base
+        else:
+            mp = st.specialist_mcp_tool_allowlist()
+            allow = mp.get(str(self.current_agent))
+            if not allow:
+                out = list(base)
+            else:
+                out = []
+                for t in base:
+                    fn = t.get("function") if isinstance(t.get("function"), dict) else None
+                    name = (fn.get("name") if fn else None) or t.get("name")
+                    if name and str(name) in allow:
+                        out.append(t)
+                if not out:
+                    out = list(base)
+        if (
+            st.analytics_aggregate_session_enabled
+            and self.current_agent in SPECIALIST_AGENTS
+            and self._use_mcp_session_cache()
+        ):
+            out = list(out)
+            out.append(analytics_aggregate_session_openai_tool())
+        return out if out else None
 
     @staticmethod
     def _maestro_tool_choice_dict() -> dict[str, Any]:
@@ -1237,6 +1263,174 @@ class ModularOrchestrator:
 
         return (None, step)
 
+    async def _execute_analytics_aggregate_session_tool(
+        self,
+        tc_id: str,
+        args: dict[str, Any],
+        tools_used: list[dict[str, Any]],
+    ) -> None:
+        st = get_settings()
+        preview_cap = max(1, int(st.orchestrator_tool_result_preview_max))
+
+        def _fail(msg: str) -> None:
+            tools_used.append({
+                "name": ANALYTICS_AGGREGATE_SESSION_TOOL_NAME,
+                "arguments": args,
+                "ok": False,
+                "error": msg,
+                "result_preview": msg[:preview_cap],
+            })
+            self._append_message({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": json.dumps(
+                    {"ok": False, "error": msg},
+                    ensure_ascii=False,
+                ),
+            })
+
+        if not st.analytics_aggregate_session_enabled:
+            _fail("analytics_aggregate_session desactivado na configuração")
+            return
+        if not self._use_mcp_session_cache() or self._session_metadata is None:
+            _fail("sessão sem metadata/cache — agregação indisponível")
+            return
+        if not increment_aggregate_calls(self._session_metadata, st):
+            _fail("limite de chamadas analytics_aggregate_session por sessão excedido")
+            return
+
+        ds_id = str(args.get("session_dataset_id") or "").strip()
+        group_by = args.get("group_by")
+        aggregations = args.get("aggregations")
+        if not ds_id:
+            _fail("session_dataset_id obrigatório")
+            return
+        if not isinstance(group_by, list) or not group_by:
+            _fail("group_by deve ser array não vazio")
+            return
+        if not isinstance(aggregations, list) or not aggregations:
+            _fail("aggregations deve ser array não vazio")
+            return
+        gb = [str(x) for x in group_by]
+        ag_list: list[dict[str, str]] = []
+        for a in aggregations:
+            if not isinstance(a, dict):
+                _fail("cada agregação deve ser objecto")
+                return
+            op = str(a.get("op") or "").lower()
+            col = str(a.get("column") or "")
+            if op not in ("sum", "mean", "min", "max", "count"):
+                _fail(f"op inválida: {op}")
+                return
+            if op == "count" and not col:
+                ag_list.append({"op": "count", "column": ""})
+            else:
+                if not col:
+                    _fail("column obrigatória para esta op")
+                    return
+                ag_list.append({"op": op, "column": col})
+
+        filters_raw = args.get("filters")
+        filters: list[dict[str, Any]] = []
+        if filters_raw is not None:
+            if not isinstance(filters_raw, list):
+                _fail("filters deve ser array")
+                return
+            for f in filters_raw:
+                if not isinstance(f, dict):
+                    _fail("cada filtro deve ser objecto")
+                    return
+                filters.append(
+                    {
+                        "column": str(f.get("column") or ""),
+                        "op": str(f.get("op") or "").lower(),
+                        "value": f.get("value"),
+                    }
+                )
+
+        sort_by = args.get("sort_by")
+        sort_dir = str(args.get("sort_dir") or "desc")
+        top_k = args.get("top_k")
+        tk: int | None = None
+        if top_k is not None:
+            try:
+                tk = int(top_k)
+            except (TypeError, ValueError):
+                _fail("top_k inválido")
+                return
+            if tk < 1:
+                _fail("top_k deve ser ≥ 1")
+                return
+            if tk > int(st.analytics_aggregate_top_k_max):
+                _fail(f"top_k acima do máximo permitido ({st.analytics_aggregate_top_k_max})")
+                return
+
+        timeout = float(st.analytics_aggregate_timeout_seconds)
+
+        def _work() -> dict[str, Any]:
+            assert self._session_metadata is not None
+            rows, meta = load_dataset_for_aggregate(
+                self._session_metadata,
+                ds_id,
+                st,
+            )
+            if rows is None:
+                return {"ok": False, "error": meta.get("error", "load_failed")}
+            sample_only = bool(meta.get("sample_only"))
+            qid = str(meta.get("query_id") or "")
+            for g in gb:
+                if g not in rows[0]:
+                    return {"ok": False, "error": f"group_by_desconhecido:{g}"}
+            for f in filters:
+                if f["column"] not in rows[0]:
+                    return {"ok": False, "error": f"filtro_coluna:{f['column']}"}
+            return run_analytics_aggregate(
+                rows,
+                group_by=gb,
+                aggregations=ag_list,
+                filters=filters,
+                sort_by=str(sort_by) if sort_by else None,
+                sort_dir=sort_dir,
+                top_k=tk,
+                sample_only=sample_only,
+                query_id=qid,
+            )
+
+        try:
+            result = await asyncio.wait_for(asyncio.to_thread(_work), timeout=timeout)
+        except asyncio.TimeoutError:
+            _fail("timeout na agregação")
+            return
+        except Exception as e:
+            _logger_orch.warning("analytics_aggregate_session error: %s", e)
+            _fail("erro_interno_agregação")
+            return
+
+        text = json.dumps(result, ensure_ascii=False, default=str)
+        tools_used.append({
+            "name": ANALYTICS_AGGREGATE_SESSION_TOOL_NAME,
+            "arguments": args,
+            "ok": bool(result.get("ok")),
+            "error": None if result.get("ok") else str(result.get("error")),
+            "result_preview": text[:preview_cap],
+        })
+        self._observer_append(
+            "aggregate_session",
+            {
+                "session_dataset_id": ds_id,
+                "ok": bool(result.get("ok")),
+                "groups_out": result.get("row_count") if isinstance(result, dict) else None,
+            },
+        )
+        max_tool = max(4096, int(st.tool_message_content_max_chars))
+        if len(text) > max_tool:
+            text = text[:max_tool] + "\n\n[truncado tool_message_content_max_chars]"
+        self._append_message({
+            "role": "tool",
+            "tool_call_id": tc_id,
+            "content": text,
+        })
+
     async def _execute_single_tool_call(
         self,
         tc: dict[str, Any],
@@ -1265,6 +1459,10 @@ class ModularOrchestrator:
             return
 
         args = _parse_tool_arguments(fn.get("arguments"))
+
+        if name == ANALYTICS_AGGREGATE_SESSION_TOOL_NAME:
+            await self._execute_analytics_aggregate_session_tool(tc_id, args, tools_used)
+            return
 
         if name == ROUTE_TO_SPECIALIST_TOOL_NAME and self.current_agent != "maestro":
             msg = (
@@ -1315,7 +1513,25 @@ class ModularOrchestrator:
                     "tool_cache_hit",
                     {"tool": name, "cache_key_prefix": ck_tool[:16]},
                 )
-                content = "[cache_hit]\n" + str(hit["result_text"])
+                base_hit = str(hit["result_text"])
+                if (
+                    name == "run_analytics_query"
+                    and self._session_metadata is not None
+                    and '"session_dataset_id"' not in base_hit
+                ):
+                    ds_hit = get_dataset_id_for_cache_key(
+                        self._session_metadata, ck_tool
+                    )
+                    if ds_hit:
+                        root = self._session_metadata.get("analytics_datasets") or {}
+                        inf = (root.get("by_id") or {}).get(ds_hit)
+                        if isinstance(inf, dict):
+                            base_hit = inject_dataset_handles_into_json_text(
+                                base_hit,
+                                session_dataset_id=ds_hit,
+                                sample_only=bool(inf.get("sample_only")),
+                            )
+                content = "[cache_hit]\n" + base_hit
                 preview = content[:preview_cap]
                 if len(content) > preview_cap:
                     preview += "…"
@@ -1357,6 +1573,32 @@ class ModularOrchestrator:
                 "result_preview": preview,
             })
             if use_cache and self._session_metadata is not None and not mcp_result.isError:
+                if name == "run_analytics_query":
+                    st_ds = get_settings()
+                    if st_ds.analytics_session_datasets_enabled:
+                        ds_new = register_run_analytics_result(
+                            self._session_metadata,
+                            full_result_text=content,
+                            args=args,
+                            cache_key=ck_tool,
+                            session_id=self._session_id_for_cache,
+                            settings=st_ds,
+                        )
+                        if ds_new:
+                            root = self._session_metadata.get("analytics_datasets") or {}
+                            inf = (root.get("by_id") or {}).get(ds_new) or {}
+                            content = inject_dataset_handles_into_json_text(
+                                content,
+                                session_dataset_id=ds_new,
+                                sample_only=bool(inf.get("sample_only")),
+                            )
+                            self._observer_append(
+                                "dataset_registered",
+                                {
+                                    "session_dataset_id": ds_new,
+                                    "query_id": args.get("query_id"),
+                                },
+                            )
                 append_cache_entry(
                     self._session_metadata,
                     cache_key=ck_tool,

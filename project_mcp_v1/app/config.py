@@ -324,6 +324,57 @@ class Settings(BaseSettings):
         description="Se true, reutiliza digest LLM em cache quando o fingerprint das entradas MCP não mudou.",
     )
 
+    analytics_session_datasets_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, regista spill + session_dataset_id após run_analytics_query com dados tabulares."
+        ),
+    )
+    analytics_dataset_spill_dir: str = Field(
+        default="",
+        description=(
+            "Directório para JSON de datasets por sessão; vazio → ``<projecto>/logs/analytics_datasets``."
+        ),
+    )
+    analytics_dataset_spill_threshold_chars: int = Field(
+        default=50_000,
+        ge=1024,
+        description=(
+            "Se o JSON completo do resultado exceder este tamanho, grava spill (sempre recomendado; "
+            "também usado como limiar para aviso de ficheiro grande)."
+        ),
+    )
+    analytics_datasets_max_registered: int = Field(
+        default=48,
+        ge=4,
+        description="Máximo de handles `session_dataset_id` mantidos em metadata por sessão (FIFO).",
+    )
+
+    analytics_aggregate_session_enabled: bool = Field(
+        default=True,
+        description="Se true, expõe a tool virtual host-only `analytics_aggregate_session` aos especialistas.",
+    )
+    analytics_aggregate_max_rows: int = Field(
+        default=100_000,
+        ge=100,
+        description="Máximo de linhas carregadas do spill para agregação (protecção memória).",
+    )
+    analytics_aggregate_timeout_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        description="Timeout da agregação determinística (thread pool + wait_for).",
+    )
+    analytics_aggregate_rate_limit_per_session: int = Field(
+        default=80,
+        ge=1,
+        description="Máximo de chamadas `analytics_aggregate_session` por sessão (metadata).",
+    )
+    analytics_aggregate_top_k_max: int = Field(
+        default=500,
+        ge=1,
+        description="Teto de `top_k` aceite pela tool virtual.",
+    )
+
     pipeline_verifier_enabled: bool = Field(
         default=True,
         description=(
@@ -408,6 +459,12 @@ class Settings(BaseSettings):
         default=8000,
         description="Truncagem de cada narrativa persistida.",
     )
+
+    def resolve_analytics_dataset_spill_dir(self) -> Path:
+        raw = (self.analytics_dataset_spill_dir or "").strip()
+        if raw:
+            return Path(raw).expanduser().resolve()
+        return Path(__file__).resolve().parent.parent / "logs" / "analytics_datasets"
 
     def specialist_mcp_tool_allowlist(self) -> dict[str, frozenset[str]]:
         """
