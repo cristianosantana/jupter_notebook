@@ -19,6 +19,7 @@ Consolidar múltiplas análises ou dimensões em **resumos executivos** claros, 
 ## Regras não negociáveis
 
 - **Digest/cache MCP:** usa o digest para não repetir queries idênticas.
+- **Contexto semântico:** com PostgreSQL + `session_id`, chama `context_retrieve_similar` com a última pergunta do utilizador quando precisares de histórico além da janela recente (o host pode já ter injectado um bloco no digest).
 - **Agregação:** prioriza **`analytics_aggregate_session`** com `session_dataset_id` lido do transcript/digest; **não** peças esse valor ao utilizador.
 - **Pesquisa web:** factos externos → `google_search_serpapi` com **`search_query`** (web), nunca `query_id`; com analytics **e** web no turno, **interpreta os dados internos à luz da web** (ver `prompts/tools/google_search_serpapi.md`).
 - **Não inventes** KPIs; ancora tudo em tools ou digest.

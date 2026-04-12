@@ -159,7 +159,7 @@ async def process_chat(request: ChatRequest) -> dict:
 
     - ``new_conversation: true`` — limpa mensagens e recomeça pelo Maestro.
     - Com PostgreSQL activo: envia ``session_id`` nas mensagens seguintes; ``user_id`` é opcional.
-      O transcript persistido inclui só a conversa com especialistas (não o roteamento do Maestro).
+      O transcript persistido inclui **todas** as mensagens da sessão (Maestro e especialistas).
     """
     if agent is None:
         raise RuntimeError("Agent not initialized")
@@ -230,13 +230,21 @@ async def process_chat(request: ChatRequest) -> dict:
                         "last_user_message_at": datetime.now(timezone.utc).isoformat(),
                     },
                 )
-            if out["agent"] != "maestro":
-                if excerpt:
-                    ensure_transcript_includes_user_message(agent.messages, excerpt)
-                await session_store.replace_conversation_messages(sid, agent.messages)
-                await session_store.touch_session(sid, out["agent"])
-            else:
-                await session_store.touch_session(sid)
+            if excerpt:
+                ensure_transcript_includes_user_message(agent.messages, excerpt)
+            await session_store.replace_conversation_messages(sid, agent.messages)
+            await session_store.touch_session(sid, out["agent"])
+            try:
+                from app.context_index_service import maybe_run_sync_context_index_refresh
+
+                await maybe_run_sync_context_index_refresh(
+                    session_store,
+                    agent.client,
+                    str(sid),
+                    settings=settings,
+                )
+            except Exception as e:
+                _logger.warning("Refresh do índice de contexto (embed/K-Means): %s", e)
             tr = out.get("trace_run_id")
             if tr:
                 await session_store.merge_session_metadata(
@@ -260,6 +268,9 @@ async def process_chat(request: ChatRequest) -> dict:
         payload["session_id"] = str(sid)
     if request.user_id is not None:
         payload["user_id"] = request.user_id
+    dbg_sem = out.get("semantic_context_debug")
+    if dbg_sem is not None:
+        payload["semantic_context_debug"] = dbg_sem
     return payload
 
 

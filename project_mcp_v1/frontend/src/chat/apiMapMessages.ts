@@ -17,7 +17,7 @@ export function mapStoredMessages(raw: StoredMsg[]): ChatMessage[] {
   for (const m of raw) {
     const r = m.role ?? 'user'
     const c = contentToString(m.content)
-    if (r === 'tool' || r === 'system') continue
+    if (r === 'tool') continue
     if (r === 'user') out.push({ role: 'user', content: c })
     else if (r === 'assistant')
       out.push({ role: 'assistant', content: c, contentBlocks: null })

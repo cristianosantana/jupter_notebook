@@ -28,6 +28,8 @@ from serpapi_search import google_search_serpapi as _google_search_serpapi
 from serpapi_search import serpapi_enabled as _serpapi_enabled
 from trace_logging import meta_run_id, trace_record
 
+from context_retrieval import register_context_retrieval_tools
+
 # Instância principal FastMCP exposta ao cliente (stdio)
 mcp = FastMCP(
     "ProductivityMCP",
@@ -295,6 +297,9 @@ async def get_entity_glossary_markdown(
         result_chars=len(payload),
     )
     return payload
+
+
+register_context_retrieval_tools(mcp)
 
 
 if _serpapi_enabled():

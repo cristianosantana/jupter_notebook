@@ -39,7 +39,10 @@ from app.mcp_session_cache import (
     mcp_cache_key,
     entries_fingerprint,
 )
+from app.message_lifecycle import prune_excess_messages
 from app.prompt_assembly import build_effective_system_text
+from app.tool_truncation import safe_truncate_tool_content
+from app.context_semantic_contract import build_host_retrieve_ok_detail
 from app.pipeline_critique import format_critique_message, parse_critique_response
 from app.routing_tools import (
     MAESTRO_TOOLS_ONLY,
@@ -305,6 +308,8 @@ class ModularOrchestrator:
         self._entity_glossary_cache: OrderedDict[UUID, str] = OrderedDict()
         self._session_metadata: dict[str, Any] | None = None
         self._session_id_for_cache: UUID | None = None
+        self._semantic_retrieval_markdown: str | None = None
+        self._semantic_instrument_for_response: dict[str, Any] | None = None
 
     @staticmethod
     def _glossary_cache_key(session_id: UUID | None) -> UUID:
@@ -406,9 +411,18 @@ class ModularOrchestrator:
 
     def _observer_append(self, event_type: str, detail: Any) -> None:
         st = get_settings()
-        if not st.observer_agent_enabled:
+        bypass = event_type.startswith("host_context_retrieve") or (
+            event_type == "tool_context_retrieve_deduped"
+        )
+        if not bypass and not st.observer_agent_enabled:
             return
         if self._session_metadata is None:
+            if bypass:
+                _logger_orch.info(
+                    "semantic_context.%s (sem session_metadata) %s",
+                    event_type,
+                    detail,
+                )
             return
         slot = self._session_metadata.setdefault("observer_log", {})
         ents = slot.setdefault("entries", [])
@@ -423,11 +437,17 @@ class ModularOrchestrator:
         cap = max(10, int(st.observer_log_max_entries))
         if len(ents) > cap:
             del ents[0 : len(ents) - cap]
+        if bypass:
+            _logger_orch.info("semantic_context.%s %s", event_type, detail)
 
     def _build_system_text_sync(self) -> str:
         """System para orçamento de poda (digest Python apenas, sem LLM)."""
         st = get_settings()
-        digest = build_mcp_cache_digest_section(self._session_meta(), st)
+        digest = build_mcp_cache_digest_section(
+            self._session_meta(),
+            st,
+            semantic_retrieval_markdown=self._semantic_retrieval_markdown,
+        )
         tp_payload = MAESTRO_TOOLS_ONLY if self.current_agent == "maestro" else None
         return build_effective_system_text(
             agent=self.current_agent,
@@ -443,7 +463,11 @@ class ModularOrchestrator:
     async def _digest_for_system_async(self) -> str:
         st = get_settings()
         md = self._session_meta()
-        base = build_mcp_cache_digest_section(md, st)
+        base = build_mcp_cache_digest_section(
+            md,
+            st,
+            semantic_retrieval_markdown=self._semantic_retrieval_markdown,
+        )
         entries = (md.get("mcp_tool_cache") or {}).get("entries") or []
         if not st.mcp_cache_digest_llm_enabled or not entries:
             return base
@@ -576,7 +600,11 @@ class ModularOrchestrator:
             return result
         assistant = result.get("assistant") or {}
         text = str(assistant.get("content") or "")
-        digest = build_mcp_cache_digest_section(md, st)
+        digest = build_mcp_cache_digest_section(
+            md,
+            st,
+            semantic_retrieval_markdown=self._semantic_retrieval_markdown,
+        )
 
         if st.pipeline_verifier_enabled:
             try:
@@ -1042,11 +1070,7 @@ class ModularOrchestrator:
                 self._strip_leading_orphan_tools()
 
         max_hist = max(1, int(st.orchestrator_max_history_messages))
-        while len(self.messages) > max_hist:
-            if self.messages[0].get("_orch_anchor"):
-                break
-            self.messages.pop(0)
-            self._message_times.pop(0)
+        prune_excess_messages(self.messages, self._message_times, max_hist)
 
         self._strip_leading_orphan_tools()
 
@@ -1424,7 +1448,7 @@ class ModularOrchestrator:
         )
         max_tool = max(4096, int(st.tool_message_content_max_chars))
         if len(text) > max_tool:
-            text = text[:max_tool] + "\n\n[truncado tool_message_content_max_chars]"
+            text = safe_truncate_tool_content(text, max_tool)
         self._append_message({
             "role": "tool",
             "tool_call_id": tc_id,
@@ -1546,10 +1570,47 @@ class ModularOrchestrator:
                 st_tool = get_settings()
                 max_tool = max(4096, int(st_tool.tool_message_content_max_chars))
                 if len(content) > max_tool:
-                    content = (
-                        content[:max_tool]
-                        + "\n\n[Conteúdo truncado pelo orquestrador (tool_message_content_max_chars). "
-                        "Reduza limit/offset, summarize=true onde aplicável, ou aumente o teto em config.]"
+                    content = safe_truncate_tool_content(content, max_tool, cache_key=ck_tool)
+                self._append_message({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": content,
+                })
+                return
+
+        if name == "context_retrieve_similar" and self._session_metadata is not None:
+            q_arg = str(args.get("query") or "").strip()
+            s_arg = str(args.get("session_id") or "").strip().lower()
+            host_q = str(
+                self._session_metadata.get("_host_retrieve_query_normalized") or ""
+            ).strip()
+            host_sid = str(
+                self._session_metadata.get("_host_retrieve_session_id") or ""
+            ).strip().lower()
+            cached = self._session_metadata.get("_host_context_retrieve_full_json")
+            if cached and host_q == q_arg and host_sid == s_arg:
+                content = str(cached)
+                preview = content[:preview_cap]
+                if len(content) > preview_cap:
+                    preview += "…"
+                tools_used.append({
+                    "name": name,
+                    "arguments": args,
+                    "ok": True,
+                    "error": None,
+                    "result_preview": preview,
+                    "host_retrieve_deduped": True,
+                })
+                self._observer_append(
+                    "tool_context_retrieve_deduped",
+                    {"tool": name},
+                )
+                max_tool_d = max(4096, int(st_exec.tool_message_content_max_chars))
+                if len(content) > max_tool_d:
+                    content = safe_truncate_tool_content(
+                        content,
+                        max_tool_d,
+                        cache_key=ck_tool if use_cache else None,
                     )
                 self._append_message({
                     "role": "tool",
@@ -1560,7 +1621,14 @@ class ModularOrchestrator:
 
         try:
             self._observer_append("tool_cache_miss", {"tool": name})
-            mcp_result = await self.client.call_tool(name, args)
+            tout = float(st_exec.orchestrator_mcp_tool_call_timeout_seconds)
+            if tout > 0:
+                mcp_result = await asyncio.wait_for(
+                    self.client.call_tool(name, args),
+                    timeout=tout,
+                )
+            else:
+                mcp_result = await self.client.call_tool(name, args)
             content = _mcp_result_to_text(mcp_result)
             preview = content[:preview_cap]
             if len(content) > preview_cap:
@@ -1621,10 +1689,10 @@ class ModularOrchestrator:
         st_tool = get_settings()
         max_tool = max(4096, int(st_tool.tool_message_content_max_chars))
         if len(content) > max_tool:
-            content = (
-                content[:max_tool]
-                + "\n\n[Conteúdo truncado pelo orquestrador (tool_message_content_max_chars). "
-                "Reduza limit/offset, summarize=true onde aplicável, ou aumente o teto em config.]"
+            content = safe_truncate_tool_content(
+                content,
+                max_tool,
+                cache_key=ck_tool if use_cache else None,
             )
 
         self._append_message({
@@ -1697,6 +1765,98 @@ class ModularOrchestrator:
             for tc in tool_calls:
                 await self._execute_single_tool_call(tc, tools_used)
 
+    def _semantic_debug_payload(self, event_type: str, detail: dict[str, Any]) -> None:
+        st = get_settings()
+        if st.semantic_context_debug_in_chat_response:
+            self._semantic_instrument_for_response = {
+                "event_type": event_type,
+                "detail": detail,
+            }
+
+    async def _inject_semantic_context_for_specialist(self, user_input: str) -> None:
+        """Pré-chamada host a ``context_retrieve_similar`` (digest semântico; não bloqueia o turno)."""
+        self._semantic_retrieval_markdown = None
+        st = get_settings()
+
+        def _skip(reason: str) -> None:
+            d = {"reason": reason}
+            self._observer_append("host_context_retrieve_skipped", d)
+            self._semantic_debug_payload("host_context_retrieve_skipped", d)
+
+        if not st.context_retrieve_host_inject_enabled:
+            _skip("inject_disabled")
+            return
+        if self._session_id_for_cache is None:
+            _skip("no_session_id")
+            return
+        if self.current_agent == "maestro":
+            _skip("maestro_phase")
+            return
+        text = (user_input or "").strip()
+        if len(text) < 3:
+            _skip("query_too_short")
+            return
+        low = text.lower()
+        if low in ("oi", "olá", "ola", "ok", "sim", "não", "nao", "obrigado", "obrigada"):
+            _skip("greeting_or_meta")
+            return
+        try:
+            res = await asyncio.wait_for(
+                self.client.call_tool(
+                    "context_retrieve_similar",
+                    {
+                        "session_id": str(self._session_id_for_cache),
+                        "query": text,
+                        "top_n": st.context_retrieve_default_top_n,
+                        "top_m_per_session": st.context_retrieve_default_top_m,
+                        "max_context_chars": st.context_retrieve_max_context_chars,
+                    },
+                ),
+                timeout=float(st.context_retrieve_timeout_seconds),
+            )
+            body = _mcp_result_to_text(res)
+            data = json.loads(body)
+        except (json.JSONDecodeError, TypeError) as e:
+            d = {"error": f"json:{e}"}
+            self._observer_append("host_context_retrieve_failed", d)
+            self._semantic_debug_payload("host_context_retrieve_failed", d)
+            return
+        except Exception as e:
+            _logger_orch.warning("host context_retrieve_similar: %s", e)
+            d = {"error": str(e)[:400]}
+            self._observer_append("host_context_retrieve_failed", d)
+            self._semantic_debug_payload("host_context_retrieve_failed", d)
+            return
+        if not isinstance(data, dict) or not data.get("ok"):
+            d = {"reason": "ok_false", "error": (data or {}).get("error") if isinstance(data, dict) else None}
+            self._observer_append("host_context_retrieve_skipped", d)
+            self._semantic_debug_payload("host_context_retrieve_skipped", d)
+            return
+        ic = data.get("injected_context")
+        if ic is None:
+            _skip("ok_but_no_injected_context")
+            return
+        if not str(ic).strip():
+            _skip("ok_but_empty_injected")
+            return
+        cap = st.context_retrieve_max_context_chars
+        self._semantic_retrieval_markdown = str(ic)[:cap]
+        if self._session_metadata is not None:
+            self._session_metadata["_host_context_retrieve_full_json"] = body
+            self._session_metadata["_host_retrieve_query_normalized"] = text
+            self._session_metadata["_host_retrieve_session_id"] = str(
+                self._session_id_for_cache
+            )
+        detail_ok = build_host_retrieve_ok_detail(data, len(self._semantic_retrieval_markdown or ""))
+        self._observer_append("host_context_retrieve_ok", detail_ok)
+        self._semantic_debug_payload("host_context_retrieve_ok", detail_ok)
+        tlog = get_trace_logger()
+        if tlog:
+            tlog.record(
+                "semantic_context.host_inject",
+                payload=json.dumps(detail_ok, ensure_ascii=False)[:2000],
+            )
+
     async def run(
         self,
         user_input: str,
@@ -1716,6 +1876,8 @@ class ModularOrchestrator:
         """
         self._session_metadata = session_metadata
         self._session_id_for_cache = session_id
+        self._semantic_retrieval_markdown = None
+        self._semantic_instrument_for_response = None
         if self._session_metadata is not None:
             # Evita que flags do turno anterior saltem o compositor na F3.
             self._session_metadata.pop("formatador_ui_applied", None)
@@ -1799,6 +1961,8 @@ class ModularOrchestrator:
                         early["trace_run_id"] = self._trace_run_id
                     return early
 
+            await self._inject_semantic_context_for_specialist(user_input)
+
             out, step = await self._run_specialist_loop(
                 tools_payload, tools_used, step
             )
@@ -1835,6 +1999,9 @@ class ModularOrchestrator:
             await self._observer_narrative(user_input, tools_used)
             if self._trace_run_id:
                 out["trace_run_id"] = self._trace_run_id
+            st_dbg = get_settings()
+            if st_dbg.semantic_context_debug_in_chat_response and self._semantic_instrument_for_response:
+                out["semantic_context_debug"] = dict(self._semantic_instrument_for_response)
             return out
 
         finally:
@@ -1857,5 +2024,13 @@ class ModularOrchestrator:
             if trace_token is not None:
                 reset_trace_logger(trace_token)
             self._trace_run_id = None
+            if self._session_metadata is not None:
+                for _k in (
+                    "_host_context_retrieve_full_json",
+                    "_host_retrieve_query_normalized",
+                    "_host_retrieve_session_id",
+                ):
+                    self._session_metadata.pop(_k, None)
             self._session_metadata = None
             self._session_id_for_cache = None
+            self._semantic_retrieval_markdown = None

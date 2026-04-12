@@ -230,6 +230,119 @@ class Settings(BaseSettings):
         ),
     )
 
+    context_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="Modelo OpenAI para embeddings de contexto (servidor MCP context_retrieval).",
+    )
+    context_embedding_max_input_tokens: int = Field(
+        default=8192,
+        ge=256,
+        le=8192,
+        description=(
+            "Máximo de tokens por entrada em ``embeddings.create`` (limite oficial OpenAI: 8192). "
+            "Textos mais longos são truncados com encoding cl100k_base antes do envio."
+        ),
+    )
+    context_retrieve_host_inject_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, o orquestrador chama `context_retrieve_similar` uma vez no início do turno "
+            "do especialista (PostgreSQL + session_id) e injecta o markdown no digest."
+        ),
+    )
+    context_retrieve_timeout_seconds: float = Field(
+        default=20.0,
+        ge=1.0,
+        description="Timeout da pré-chamada host a `context_retrieve_similar`.",
+    )
+    orchestrator_mcp_tool_call_timeout_seconds: float = Field(
+        default=120.0,
+        ge=0.0,
+        description=(
+            "Timeout (s) por `call_tool` no loop de especialista; 0 = sem limite. "
+            "Aplica-se a todas as tools MCP desse loop."
+        ),
+    )
+    context_retrieve_default_top_n: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Default top_n de sessões na tool `context_retrieve_similar`.",
+    )
+    context_retrieve_default_top_m: int = Field(
+        default=4,
+        ge=1,
+        le=30,
+        description="Default top_m de mensagens por sessão em `context_retrieve_similar`.",
+    )
+    context_retrieve_max_context_chars: int = Field(
+        default=12_000,
+        ge=500,
+        description="Tecto de caracteres do campo `injected_context` montado pela tool.",
+    )
+    semantic_context_debug_in_chat_response: bool = Field(
+        default=False,
+        description=(
+            "Se true, a resposta HTTP de chat inclui ``semantic_context_debug`` com o último evento "
+            "de instrumentação do inject de contexto semântico (sem texto da query)."
+        ),
+    )
+    context_embed_sessions_limit_default: int = Field(
+        default=16,
+        ge=1,
+        le=200,
+        description="Default de sessões a processar em `context_embed_sessions` por chamada.",
+    )
+    context_message_candidate_window: int = Field(
+        default=48,
+        ge=4,
+        le=500,
+        description="Máx. de mensagens candidatas por sessão antes do ranking semântico.",
+    )
+    context_like_prefilter_limit: int = Field(
+        default=20,
+        ge=1,
+        le=200,
+        description="LIMIT da pré-query ILIKE no worker / rebuild com query.",
+    )
+
+    context_index_sync_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, após persistir o transcript a API pode correr síncronamente (com timeout) "
+            "`context_embed_sessions` / `context_rebuild_kmeans` quando o gatilho global ou TTL o exigir."
+        ),
+    )
+    context_index_rebuild_session_threshold: int = Field(
+        default=20,
+        ge=1,
+        le=10_000,
+        description="Nº global de sessões com mensagens mas sem `session_embeddings` que dispara o gatilho.",
+    )
+    context_index_sync_timeout_seconds: float = Field(
+        default=45.0,
+        ge=3.0,
+        description="Timeout do bloco síncrono de refresh do índice (embed + opcional K-Means).",
+    )
+    context_index_embed_cap_per_trigger: int = Field(
+        default=32,
+        ge=1,
+        le=200,
+        description="Máximo de sessões a passar a `context_embed_sessions` num único gatilho.",
+    )
+    context_index_kmeans_ttl_days: int = Field(
+        default=5,
+        ge=0,
+        le=365,
+        description="Se >0 e `last_kmeans_at` for mais antigo, o índice K-Means considera-se stale.",
+    )
+    context_index_kmeans_n_clusters: int = Field(
+        default=8,
+        ge=2,
+        le=64,
+        description="Número de clusters ao chamar `context_rebuild_kmeans` a partir do gatilho da API.",
+    )
+
     agent_trace_enabled: bool = Field(
         default=True,
         description="Se false, desliga a pasta de trace (``resolve_agent_trace_dir`` retorna None).",

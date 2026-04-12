@@ -1,8 +1,1 @@
-{
-  "tests/test_modular_orchestrator.py::TestSkillLoader": true,
-  "tests/test_modular_orchestrator.py::TestModelRouter": true,
-  "tests/test_modular_orchestrator.py::TestSkillMetadata": true,
-  "tests/test_modular_orchestrator.py::TestArchitectureIntegration": true,
-  "tests/test_modular_orchestrator.py::TestPerformanceCharacteristics": true,
-  "tests/test_modular_orchestrator.py::TestModularOrchestratorSetup": true
-}
+{}

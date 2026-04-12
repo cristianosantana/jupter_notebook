@@ -67,7 +67,8 @@ def test_digest_run_analytics_warns_not_full_data():
     assert "run_analytics_query" in s
     assert "3943" in s or "row_count" in s
     assert "analytics_aggregate_session" in s
-    assert "Aviso:" in s and "neste digest" in s
+    assert "context_retrieve_similar" in s
+    assert "colunas" in s
 
 
 def test_digest_includes_analytics_datasets_handles():
