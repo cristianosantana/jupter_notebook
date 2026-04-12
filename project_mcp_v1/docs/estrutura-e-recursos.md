@@ -57,13 +57,14 @@ project_mcp_v1/
 | `query_sql_meta.py` | Parser do cabeçalho YAML; usado por `analytics_queries.py` e `scripts/check_analytics_sql_meta.py`. |
 | `sql_params.py` | Substituição validada de placeholders (ex.: `__MCP_DATE_FROM__` / `__MCP_DATE_TO__`). |
 | `db.py` | Pool **aiomysql**, execução `SELECT * FROM (sql) LIMIT/OFFSET`, serialização JSON segura (ex.: `Decimal`). |
-| `context_retrieval/` | Tools PostgreSQL: `context_embed_sessions`, `context_rebuild_kmeans`, `context_retrieve_similar` (ILIKE + embeddings); worker/CLI para batch. |
+| `context_retrieval/` | Tools PostgreSQL: `context_embed_sessions`, `context_embed_messages`, `context_rebuild_kmeans`, `context_retrieve_similar` (ILIKE + embeddings); worker/CLI para batch. |
 
 ### Índice de contexto (operação)
 
 - **Single-tenant:** contagem **global** de sessões com mensagens mas sem linha em `session_embeddings` dispara o gatilho quando ≥ `CONTEXT_INDEX_REBUILD_SESSION_THRESHOLD` (omissão **20**), ou quando o K-Means está *stale* por TTL (`CONTEXT_INDEX_KMEANS_TTL_DAYS`, omissão **5** dias). Estado em `context_index_state` (migração `003_context_index_state.sql`).
 - **API (síncrono):** após `replace_conversation_messages`, [`app/context_index_service.py`](../app/context_index_service.py) chama as tools MCP com `asyncio.wait_for` e tecto `CONTEXT_INDEX_SYNC_TIMEOUT_SECONDS` / `CONTEXT_INDEX_EMBED_CAP_PER_TRIGGER`.
 - **Cron (garantia):** **1× por dia** costuma ser suficiente; **2×** é opcional. Exemplo com raiz do projecto no `PYTHONPATH`: `python -m mcp_server.context_retrieval.cli` ou variáveis `CONTEXT_WORKER_*` em [`mcp_server/context_retrieval/worker.py`](../mcp_server/context_retrieval/worker.py).
+- **Embeddings por mensagem** (`conversation_message_embeddings`, migração `002_context_retrieval.sql`): a tool **`context_embed_messages`** preenche a tabela por `(message_id, embedding_model)` para reduzir chamadas OpenAI no retrieve. Com **`CONTEXT_MESSAGE_EMBEDDINGS_ENABLED=true`**, `context_retrieve_similar` lê a cache (hit/miss), embeda só faltantes em blocos de até **`CONTEXT_MESSAGE_EMBED_BATCH_SIZE`**, e opcionalmente faz write-back se **`CONTEXT_MESSAGE_EMBED_WRITEBACK_ON_RETRIEVE=true`**. A resposta JSON inclui `message_embedding_cache` (`hits` / `misses`). Ingestão manual: `python scripts/embed_sessions_from_db.py --session-id … --messages`.
 
 ### `exemplos/`
 

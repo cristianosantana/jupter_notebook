@@ -90,7 +90,42 @@ class Settings(BaseSettings):
     orchestrator_max_history_messages: int = Field(
         default=20,
         description=(
-            "Após podagem por idade e orçamento, o histórico não excede este número de mensagens."
+            "Tecto legado de contagem de mensagens; com poda por segmentos + limiar de tokens activos, "
+            "a redução por contagem só aplica em modo de segurança (ver ``orchestrator_history_abs_message_cap``)."
+        ),
+    )
+    orchestrator_history_prune_token_threshold: int = Field(
+        default=272_000,
+        ge=4096,
+        le=500_000,
+        description=(
+            "Estimativa heurística de tokens (mensagens + skill): enquanto ``<=`` este valor, "
+            "não se reduz o histórico por orçamento de contexto. Acima, poda por **segmentos**."
+        ),
+    )
+    orchestrator_history_prune_target_fraction: float = Field(
+        default=0.9,
+        ge=0.05,
+        le=1.0,
+        description=(
+            "Após ultrapassar ``orchestrator_history_prune_token_threshold``, a poda continua até a estimativa "
+            "ficar ``<= max(256, int(threshold * fraction))`` (histerese)."
+        ),
+    )
+    orchestrator_history_prune_respect_skill_budget: bool = Field(
+        default=False,
+        description=(
+            "Se true, também poda por segmentos quando a estimativa exceder ``_effective_input_token_cap()`` "
+            "(``context_budget`` do skill), mesmo abaixo do limiar 272k."
+        ),
+    )
+    orchestrator_history_abs_message_cap: int = Field(
+        default=5000,
+        ge=100,
+        le=50_000,
+        description=(
+            "Tecto duro de número de mensagens: acima disto removem-se segmentos do início "
+            "independentemente do limiar de tokens (segurança de memória)."
         ),
     )
     orchestrator_max_message_age_seconds: float = Field(
@@ -304,6 +339,30 @@ class Settings(BaseSettings):
         ge=1,
         le=200,
         description="LIMIT da pré-query ILIKE no worker / rebuild com query.",
+    )
+    context_message_embeddings_enabled: bool = Field(
+        default=False,
+        description=(
+            "Se true, ``context_retrieve_similar`` lê ``conversation_message_embeddings`` e só chama "
+            "embeddings para mensagens em cache miss (mesmo ``context_embedding_model``). "
+            "Omissão false para rollout seguro até haver dados ou ingestão batch."
+        ),
+    )
+    context_message_embed_writeback_on_retrieve: bool = Field(
+        default=True,
+        description=(
+            "Se true e ``context_message_embeddings_enabled``, após misses no retrieve tenta gravar "
+            "vectores na mesma tabela (best-effort; falhas de escrita não abortam o retrieve)."
+        ),
+    )
+    context_message_embed_batch_size: int = Field(
+        default=64,
+        ge=1,
+        le=2048,
+        description=(
+            "Máximo de inputs por pedido ``embeddings.create`` ao embedar mensagens em batch "
+            "(retrieve com cache e tool ``context_embed_messages``)."
+        ),
     )
 
     context_index_sync_enabled: bool = Field(

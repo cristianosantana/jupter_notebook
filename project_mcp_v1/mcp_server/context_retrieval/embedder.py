@@ -69,3 +69,20 @@ async def embed_texts(
     client = AsyncOpenAI(api_key=key)
     res = await client.embeddings.create(model=model, input=trimmed)
     return [list(d.embedding) for d in res.data]
+
+
+async def embed_texts_batched(
+    texts: list[str],
+    *,
+    model: str,
+    batch_size: int,
+) -> list[list[float]]:
+    """Várias chamadas ``embeddings.create`` em blocos de ``batch_size`` (tecto API / custo)."""
+    if not texts:
+        return []
+    bs = max(1, int(batch_size))
+    out: list[list[float]] = []
+    for i in range(0, len(texts), bs):
+        chunk = texts[i : i + bs]
+        out.extend(await embed_texts(chunk, model=model))
+    return out

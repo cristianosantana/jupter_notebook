@@ -39,7 +39,7 @@ from app.mcp_session_cache import (
     mcp_cache_key,
     entries_fingerprint,
 )
-from app.message_lifecycle import prune_excess_messages
+from app.message_lifecycle import pop_first_segment, strip_leading_orphan_tools
 from app.prompt_assembly import build_effective_system_text
 from app.tool_truncation import safe_truncate_tool_content
 from app.context_semantic_contract import build_host_retrieve_ok_detail
@@ -994,9 +994,7 @@ class ModularOrchestrator:
         self._message_times.append(time.time())
 
     def _strip_leading_orphan_tools(self) -> None:
-        while self.messages and self.messages[0].get("role") == "tool":
-            self.messages.pop(0)
-            self._message_times.pop(0)
+        strip_leading_orphan_tools(self.messages, self._message_times)
 
     def _estimate_tools_tokens(self) -> int:
         """Tokens aproximados do bloco `tools` enviado ao modelo no passo atual."""
@@ -1033,7 +1031,7 @@ class ModularOrchestrator:
         return max(256, available)
 
     def _prune_messages(self) -> None:
-        """TTL no início, orçamento de contexto (metadata), limite de mensagens, sem tool órfã."""
+        """TTL por segmento; poda por segmentos só acima do limiar de tokens (ou cap / tecto de mensagens)."""
         if len(self.messages) != len(self._message_times):
             self._message_times = [time.time() for _ in self.messages]
 
@@ -1047,30 +1045,42 @@ class ModularOrchestrator:
             and self._message_times[0] < cutoff
             and not self.messages[0].get("_orch_anchor")
         ):
-            self.messages.pop(0)
-            self._message_times.pop(0)
+            if not pop_first_segment(self.messages, self._message_times):
+                self.messages.pop(0)
+                self._message_times.pop(0)
+            self._strip_leading_orphan_tools()
 
         self._strip_leading_orphan_tools()
 
         cap = self._effective_input_token_cap()
-        if cap is not None:
-            while self.messages:
-                if (
-                    _estimate_prompt_tokens_messages_plus_skill(
-                        self._build_system_text_sync(),
-                        self.messages,
-                    )
-                    <= cap
-                ):
-                    break
-                if self.messages[0].get("_orch_anchor"):
-                    break
+        t_thr = max(1, int(st.orchestrator_history_prune_token_threshold))
+        a_tgt = max(256, int(t_thr * float(st.orchestrator_history_prune_target_fraction)))
+        abs_cap = max(100, int(st.orchestrator_history_abs_message_cap))
+        respect = st.orchestrator_history_prune_respect_skill_budget
+
+        def _est() -> int:
+            return _estimate_prompt_tokens_messages_plus_skill(
+                self._build_system_text_sync(),
+                self.messages,
+            )
+
+        while self.messages:
+            self._strip_leading_orphan_tools()
+            e = _est()
+            ln = len(self.messages)
+            hard_len = ln > abs_cap
+            hard_cap = bool(respect and cap is not None and e > int(cap))
+            soft = e > t_thr
+            if not hard_len and not hard_cap and not soft:
+                break
+            if soft and e <= a_tgt and not hard_len and not hard_cap:
+                break
+            if self.messages[0].get("_orch_anchor"):
+                break
+            if not pop_first_segment(self.messages, self._message_times):
                 self.messages.pop(0)
                 self._message_times.pop(0)
-                self._strip_leading_orphan_tools()
-
-        max_hist = max(1, int(st.orchestrator_max_history_messages))
-        prune_excess_messages(self.messages, self._message_times, max_hist)
+            self._strip_leading_orphan_tools()
 
         self._strip_leading_orphan_tools()
 

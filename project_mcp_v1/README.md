@@ -385,3 +385,8 @@ python3 scripts/embed_sessions_from_db.py --session-id <UUID> --anchor-query "te
 python3 scripts/embed_sessions_from_db.py --session-id 0d68dac6-8cf9-4db5-ae45-f9822f3824ec
 ```
 
+## Executar todos os testes
+
+```python
+  python3 -m pytest
+```

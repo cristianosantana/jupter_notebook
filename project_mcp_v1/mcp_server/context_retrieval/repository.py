@@ -6,6 +6,8 @@ from uuid import UUID
 
 import asyncpg
 
+from .vectors import json_vec_to_list
+
 
 async def resolve_user_id_for_session(
     conn: asyncpg.Connection,
@@ -157,6 +159,63 @@ async def upsert_session_embedding(
         emb_json,
         text_digest,
     )
+
+
+async def fetch_message_embeddings(
+    conn: asyncpg.Connection,
+    message_ids: list[int],
+    *,
+    model: str,
+) -> dict[int, list[float]]:
+    """Vectores persistidos por ``message_id`` (tabela ``conversation_message_embeddings``)."""
+    if not message_ids:
+        return {}
+    rows = await conn.fetch(
+        """
+        SELECT message_id, embedding
+        FROM conversation_message_embeddings
+        WHERE embedding_model = $1 AND message_id = ANY($2::bigint[])
+        """,
+        model,
+        message_ids,
+    )
+    out: dict[int, list[float]] = {}
+    for r in rows:
+        out[int(r["message_id"])] = json_vec_to_list(r["embedding"])
+    return out
+
+
+async def upsert_message_embeddings_batch(
+    conn: asyncpg.Connection,
+    rows: list[tuple[int, UUID, str, list[float]]],
+) -> int:
+    """
+    Grava embeddings por mensagem; só afecta linhas onde ``conversation_messages`` confirma o par
+    ``(id, session_id)``.
+    Devolve número de UPSERTs efectivos (RETURNING).
+    """
+    n = 0
+    for mid, sid, model, vec in rows:
+        emb_json = json.dumps(vec, ensure_ascii=False)
+        rec = await conn.fetchrow(
+            """
+            INSERT INTO conversation_message_embeddings (message_id, session_id, embedding_model, embedding)
+            SELECT m.id, m.session_id, $3::varchar(64), $4::jsonb
+            FROM conversation_messages m
+            WHERE m.id = $1::bigint AND m.session_id = $2::uuid
+            ON CONFLICT (message_id, embedding_model) DO UPDATE SET
+                embedding = EXCLUDED.embedding,
+                session_id = EXCLUDED.session_id
+            RETURNING message_id
+            """,
+            mid,
+            sid,
+            model,
+            emb_json,
+        )
+        if rec:
+            n += 1
+    return n
 
 
 async def update_session_cluster(

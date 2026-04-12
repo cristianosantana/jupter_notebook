@@ -14,19 +14,26 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from context_retrieval.batch_embed import run_embed_sessions_for_anchor_session
-from context_retrieval.embedder import embed_texts
+from context_retrieval.embedder import embed_texts, embed_texts_batched
 from context_retrieval.like_pattern import question_to_ilike_pattern
+from context_retrieval.message_embed import run_embed_messages_for_session
 from context_retrieval.prefilter import load_messages_for_retrieve
 from context_retrieval.clustering import fit_kmeans, silhouette_optional
 from context_retrieval.pool import get_pg_pool
 from context_retrieval.repository import (
+    fetch_message_embeddings,
     ilike_candidate_messages,
     load_session_embeddings_for_anchor,
     replace_kmeans_centroids,
     resolve_user_id_for_session,
     update_session_cluster,
+    upsert_message_embeddings_batch,
 )
-from context_retrieval.vectors import cosine_similarity, json_vec_to_list
+from context_retrieval.vectors import (
+    cosine_similarity,
+    json_vec_to_list,
+    merge_message_vectors_for_retrieve,
+)
 
 from app.context_semantic_contract import (
     CONTEXT_RETRIEVE_EMPTY_INDEX_MARKER,
@@ -74,6 +81,38 @@ def register_context_retrieval_tools(mcp: FastMCP) -> None:
             )
         except Exception as e:
             _logger.exception("context_embed_sessions")
+            return _json_response({"ok": False, "error": str(e)[:500]})
+        return _json_response(result)
+
+    @mcp.tool(
+        name="context_embed_messages",
+        description=(
+            "Indexação por **mensagem**: gera embeddings OpenAI para mensagens recentes (ou filtradas por "
+            "``anchor_query`` com ILIKE, como no retrieve) e grava em ``conversation_message_embeddings``. "
+            "Reduz chamadas no ``context_retrieve_similar`` quando ``CONTEXT_MESSAGE_EMBEDDINGS_ENABLED=true``. "
+            "Custo proporcional a mensagens em falta. Requer ``session_id`` existente na BD."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=False),
+    )
+    async def context_embed_messages(
+        session_id: str,
+        limit: int = 48,
+        anchor_query: str | None = None,
+    ) -> str:
+        try:
+            sid = UUID(session_id.strip())
+        except ValueError:
+            return _json_response({"ok": False, "error": "session_id inválido"})
+        lim = max(1, min(int(limit), 200))
+        anchor = (anchor_query or "").strip() or None
+        try:
+            result = await run_embed_messages_for_session(
+                sid,
+                limit=lim,
+                anchor_query=anchor,
+            )
+        except Exception as e:
+            _logger.exception("context_embed_messages")
             return _json_response({"ok": False, "error": str(e)[:500]})
         return _json_response(result)
 
@@ -284,6 +323,9 @@ def register_context_retrieval_tools(mcp: FastMCP) -> None:
             messages_preview: list[dict[str, Any]] = []
             blocks: list[str] = []
             like_report: list[dict[str, Any]] = []
+            me_cache_hits = 0
+            me_cache_misses = 0
+            bs = max(1, min(int(st.context_message_embed_batch_size), 2048))
 
             win = max(8, int(st.context_message_candidate_window))
             like_lim = max(1, min(int(st.context_like_prefilter_limit), 200))
@@ -306,10 +348,60 @@ def register_context_retrieval_tools(mcp: FastMCP) -> None:
                 if not msgs:
                     continue
                 texts = [f"{m['role']}: {m['content']}"[:6000] for m in msgs]
-                try:
-                    mvecs = await embed_texts(texts, model=model)
-                except Exception:
-                    continue
+                if st.context_message_embeddings_enabled:
+                    ids = [int(m["id"]) for m in msgs]
+                    cached = await fetch_message_embeddings(conn, ids, model=model)
+                    miss_msgs: list[dict[str, Any]] = []
+                    qdim = len(qv)
+                    for m in msgs:
+                        mid = int(m["id"])
+                        v = cached.get(mid)
+                        if v is None or len(v) != qdim:
+                            miss_msgs.append(m)
+                    fresh: dict[int, list[float]] = {}
+                    if miss_msgs:
+                        t_miss = [
+                            f"{m['role']}: {m['content']}"[:6000] for m in miss_msgs
+                        ]
+                        try:
+                            m_miss = await embed_texts_batched(
+                                t_miss, model=model, batch_size=bs
+                            )
+                        except Exception:
+                            continue
+                        if len(m_miss) != len(miss_msgs):
+                            continue
+                        fresh = {
+                            int(m["id"]): m_miss[i] for i, m in enumerate(miss_msgs)
+                        }
+                    merged = merge_message_vectors_for_retrieve(
+                        msgs, cached=cached, fresh=fresh, query_dim=qdim
+                    )
+                    if merged is None:
+                        continue
+                    mvecs, ch, cm = merged
+                    me_cache_hits += ch
+                    me_cache_misses += cm
+                    if st.context_message_embed_writeback_on_retrieve and miss_msgs:
+                        wb_rows = [
+                            (int(m["id"]), su, model, fresh[int(m["id"])])
+                            for m in miss_msgs
+                            if int(m["id"]) in fresh
+                        ]
+                        if wb_rows:
+                            try:
+                                await upsert_message_embeddings_batch(conn, wb_rows)
+                            except Exception:
+                                _logger.exception(
+                                    "context_retrieve_similar writeback message embeddings"
+                                )
+                else:
+                    try:
+                        mvecs = await embed_texts_batched(
+                            texts, model=model, batch_size=bs
+                        )
+                    except Exception:
+                        continue
                 msg_scored: list[tuple[float, dict[str, Any]]] = []
                 for m, mv, raw in zip(msgs, mvecs, texts):
                     sc = cosine_similarity(qv, mv)
@@ -363,5 +455,10 @@ def register_context_retrieval_tools(mcp: FastMCP) -> None:
                     "sessions": sessions_out,
                     "messages_preview": messages_preview[: tn * tm],
                     "like_prefilter": like_report,
+                    "message_embedding_cache": {
+                        "enabled": st.context_message_embeddings_enabled,
+                        "hits": me_cache_hits,
+                        "misses": me_cache_misses,
+                    },
                 }
             )

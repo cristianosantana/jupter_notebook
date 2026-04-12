@@ -10,6 +10,7 @@ Uso (directório raiz do projecto ``project_mcp_v1``)::
     PYTHONPATH=. python scripts/embed_sessions_from_db.py --session-id <UUID>
     PYTHONPATH=. python scripts/embed_sessions_from_db.py --session-id <UUID> --limit 64
     PYTHONPATH=. python scripts/embed_sessions_from_db.py --session-id <UUID> --anchor-query "texto da pergunta"
+    PYTHONPATH=. python scripts/embed_sessions_from_db.py --session-id <UUID> --messages [--limit 48] [--anchor-query "..."]
 
 Requer ``POSTGRES_*``, ``OPENAI_API_KEY`` e opcionalmente ``.env`` na raiz (carregado por ``app.config``).
 """
@@ -54,6 +55,11 @@ async def _async_main() -> int:
         default=None,
         help="Opcional: agregar só mensagens que passam ILIKE (como no retrieve).",
     )
+    parser.add_argument(
+        "--messages",
+        action="store_true",
+        help="Embedar mensagens para ``conversation_message_embeddings`` (tool ``context_embed_messages``).",
+    )
     args = parser.parse_args()
 
     try:
@@ -62,13 +68,23 @@ async def _async_main() -> int:
         print(json.dumps({"ok": False, "error": "session_id inválido"}, ensure_ascii=False))
         return 2
 
-    from context_retrieval.batch_embed import run_embed_sessions_for_anchor_session
+    if args.messages:
+        from context_retrieval.message_embed import run_embed_messages_for_session
 
-    result = await run_embed_sessions_for_anchor_session(
-        sid,
-        limit=int(args.limit),
-        anchor_query=(args.anchor_query or "").strip() or None,
-    )
+        lim = max(1, min(int(args.limit), 200))
+        result = await run_embed_messages_for_session(
+            sid,
+            limit=lim,
+            anchor_query=(args.anchor_query or "").strip() or None,
+        )
+    else:
+        from context_retrieval.batch_embed import run_embed_sessions_for_anchor_session
+
+        result = await run_embed_sessions_for_anchor_session(
+            sid,
+            limit=int(args.limit),
+            anchor_query=(args.anchor_query or "").strip() or None,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1
 

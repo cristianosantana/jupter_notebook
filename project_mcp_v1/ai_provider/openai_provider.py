@@ -11,6 +11,7 @@ from app.agent_trace import (
 )
 from app.config import get_settings
 from ai_provider.base import ModelProvider
+from ai_provider.openai_chat_sanitize import sanitize_openai_chat_messages
 
 
 def _normalized_assistant_message(completion: ChatCompletion) -> Dict[str, Any]:
@@ -75,9 +76,10 @@ class OpenAIProvider(ModelProvider):
         model_override: str | None = None,
     ) -> Dict[str, Any]:
 
+        safe_messages = sanitize_openai_chat_messages(messages)
         kwargs: Dict[str, Any] = {
             "model": (model_override or "").strip() or self.model,
-            "messages": messages,
+            "messages": safe_messages,
         }
         if tools:
             kwargs["tools"] = _tools_for_openai_api(tools)
@@ -93,7 +95,7 @@ class OpenAIProvider(ModelProvider):
             tr.record(
                 "llm.request",
                 model=kwargs["model"],
-                messages=messages,
+                messages=safe_messages,
                 tools=tools,
                 tool_choice=tool_choice,
                 llm_phase=llm_phase,
