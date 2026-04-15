@@ -2,7 +2,8 @@
 Extracção e validação de ``content_blocks`` JSON opcional no texto do assistente.
 
 O modelo pode terminar a mensagem com um fenced block `` ```json ... ``` `` contendo
-``{"version": 1, "blocks": [...]}`` para o SmartChat renderizar tabelas / métricas.
+``{"version": 1, "content_blocks": [...]}`` para o SmartChat renderizar tabelas / métricas.
+A chave legada ``blocks`` ainda é aceite no parse e normalizada para ``content_blocks``.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import json
 import re
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 __all__ = [
     "ContentBlocksPayload",
@@ -66,7 +67,17 @@ class ContentBlocksPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: Literal[1] = 1
-    blocks: list[ContentBlock]
+    content_blocks: list[ContentBlock]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_blocks_key(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        if "content_blocks" not in out and "blocks" in out:
+            out["content_blocks"] = out["blocks"]
+        return out
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
@@ -89,7 +100,9 @@ def split_reply_and_blocks(assistant_content: str) -> tuple[str, dict[str, Any] 
             data = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if not isinstance(data, dict) or "blocks" not in data:
+        if not isinstance(data, dict):
+            continue
+        if "content_blocks" not in data and "blocks" not in data:
             continue
         try:
             payload = ContentBlocksPayload.model_validate(data)
@@ -100,7 +113,9 @@ def split_reply_and_blocks(assistant_content: str) -> tuple[str, dict[str, Any] 
         display = f"{before}\n\n{after}".strip() if after else before
         return display, payload.model_dump(mode="json")
     stripped = text.strip()
-    if stripped.startswith("{") and '"blocks"' in stripped:
+    if stripped.startswith("{") and (
+        '"content_blocks"' in stripped or '"blocks"' in stripped
+    ):
         try:
             data = json.loads(stripped)
             payload = ContentBlocksPayload.model_validate(data)

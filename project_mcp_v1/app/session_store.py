@@ -88,6 +88,11 @@ class SessionStore:
     def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
+    @property
+    def pool(self) -> asyncpg.Pool:
+        """Pool asyncpg (partilhado com serviços de índice de contexto)."""
+        return self._pool
+
     @staticmethod
     async def _ensure_database_exists(settings: Settings) -> None:
         """
@@ -146,26 +151,25 @@ class SessionStore:
         await self._pool.close()
 
     @staticmethod
-    def migration_sql_path() -> Path:
-        return (
-            Path(__file__).resolve().parent.parent
-            / "migrations"
-            / "postgres"
-            / "001_initial.sql"
-        )
+    def migrations_dir() -> Path:
+        return Path(__file__).resolve().parent.parent / "migrations" / "postgres"
 
     async def run_migrations(self, settings: Settings) -> None:
         if not settings.postgres_auto_migrate:
             return
-        path = self.migration_sql_path()
-        if not path.is_file():
+        base = self.migrations_dir()
+        if not base.is_dir():
             return
-        sql = path.read_text(encoding="utf-8")
+        paths = sorted(base.glob("*.sql"))
         async with self._pool.acquire() as conn:
-            for stmt in sql.split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    await conn.execute(stmt)
+            for path in paths:
+                if not path.is_file():
+                    continue
+                sql = path.read_text(encoding="utf-8")
+                for stmt in sql.split(";"):
+                    stmt = stmt.strip()
+                    if stmt:
+                        await conn.execute(stmt)
 
     async def upsert_user(self, user_id: str) -> None:
         async with self._pool.acquire() as conn:
@@ -306,7 +310,7 @@ class SessionStore:
                 """
                 SELECT role, content, tool_name, tool_call_id, tool_args, tool_calls, extra
                 FROM conversation_messages
-                WHERE session_id = $1
+                WHERE session_id = $1 AND content != ''
                 ORDER BY seq ASC
                 """,
                 session_id,

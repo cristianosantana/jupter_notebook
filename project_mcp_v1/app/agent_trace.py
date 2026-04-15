@@ -26,6 +26,7 @@ No fim de cada ``orchestrator.run`` com trace activo, grava-se ``openai.chat_com
 from __future__ import annotations
 
 import json
+import asyncio
 import threading
 import uuid
 from contextlib import contextmanager
@@ -34,6 +35,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+from app.config import get_settings
 
 _trace_logger_ctx: ContextVar[AgentTraceLogger | None] = ContextVar(
     "agent_trace_logger", default=None
@@ -175,6 +178,20 @@ class AgentTraceLogger:
         for k, v in fields.items():
             row[k] = self._sanitize_value(v)
         line = json.dumps(row, ensure_ascii=False, default=_json_default)
+        if get_settings().agent_trace_flush_async:
+
+            def _write() -> None:
+                with self._lock:
+                    with self._app_log_path.open("a", encoding="utf-8") as f:
+                        f.write(line + "\n")
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                loop.create_task(asyncio.to_thread(_write))
+                return
         with self._lock:
             with self._app_log_path.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")

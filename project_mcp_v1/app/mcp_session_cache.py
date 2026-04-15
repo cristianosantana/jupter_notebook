@@ -89,10 +89,19 @@ def append_cache_entry(
     try:
         data = json.loads(text)
         if isinstance(data, dict):
-            if "rows" in data and isinstance(data["rows"], list):
+            if data.get("row_count") is not None:
+                try:
+                    row_count = int(data["row_count"])
+                except (TypeError, ValueError):
+                    row_count = None
+            if row_count is None and "rows" in data and isinstance(data["rows"], list):
                 row_count = len(data["rows"])
-            elif "queries" in data and isinstance(data["queries"], list):
+            if row_count is None and "queries" in data and isinstance(data["queries"], list):
                 row_count = len(data["queries"])
+            if row_count is None and "rows_sample" in data and isinstance(
+                data["rows_sample"], list
+            ):
+                row_count = len(data["rows_sample"])
     except (json.JSONDecodeError, TypeError):
         pass
     lst.append(
@@ -130,19 +139,51 @@ def _digest_one_entry(
     rc_bit = f" · linhas≈{rc}" if rc is not None else ""
 
     if tn == "run_analytics_query":
-        snippet = raw
+        cols_list: list[str] | None = None
+        rc_meta: int | None = None
         try:
             data = json.loads(raw)
             if isinstance(data, dict):
-                rows = data.get("rows")
-                cols = data.get("columns")
-                if isinstance(rows, list) and rows:
-                    snippet = f"colunas={cols!r} amostra={json.dumps(rows[:3], ensure_ascii=False)[:600]}"
+                rc_meta = data.get("row_count")
+                if isinstance(rc_meta, int):
+                    pass
+                elif rc_meta is not None:
+                    try:
+                        rc_meta = int(rc_meta)
+                    except (TypeError, ValueError):
+                        rc_meta = None
+                c = data.get("columns")
+                if isinstance(c, list):
+                    cols_list = [str(x) for x in c]
+                elif isinstance(data.get("rows"), list) and data["rows"]:
+                    cols_list = list(data["rows"][0].keys()) if isinstance(data["rows"][0], dict) else None
+                elif isinstance(data.get("rows_sample"), list) and data["rows_sample"]:
+                    cols_list = (
+                        list(data["rows_sample"][0].keys())
+                        if isinstance(data["rows_sample"][0], dict)
+                        else None
+                    )
         except (json.JSONDecodeError, TypeError):
             pass
         lines.append(f"### {tn}{rc_bit}")
         lines.append(f"- args: `{args_s}`")
-        lines.append(f"- prévia: {_truncate(snippet, max_per)}")
+        if rc_meta is not None:
+            lines.append(f"- **row_count:** {rc_meta}")
+        if cols_list is not None:
+            cols_short = cols_list[:24]
+            extra = f" (+{len(cols_list) - 24} mais)" if len(cols_list) > 24 else ""
+            lines.append(f"- **colunas:** {', '.join(cols_short)}{extra}")
+        ck = e.get("cache_key")
+        if isinstance(ck, str) and ck.strip():
+            lines.append(f"- **cache:** reutiliza com os mesmos args normalizados · `cache_key`≈`{ck[:20]}…`")
+        lines.append(
+            "- **Totais / rankings exactos:** última mensagem `tool` com JSON completo ou "
+            "`analytics_aggregate_session` + `session_dataset_id` (não uses só este digest)."
+        )
+        lines.append(
+            "- **Histórico semântico:** com PostgreSQL + `session_id`, tool **`context_retrieve_similar`** "
+            "(pré-filtro lexical ILIKE + embeddings em runtime; não substitui analytics)."
+        )
     elif tn == "list_analytics_queries":
         lines.append(f"### {tn}{rc_bit}")
         lines.append(f"- args: `{args_s}`")
@@ -158,9 +199,59 @@ def _digest_one_entry(
     return lines
 
 
+def _digest_semantic_block(semantic_retrieval_markdown: str | None, max_chars: int) -> str:
+    if not semantic_retrieval_markdown or not str(semantic_retrieval_markdown).strip():
+        return ""
+    body = (
+        "## Contexto semântico recuperado (host)\n\n"
+        "Bloco injectado automaticamente via `context_retrieve_similar` quando PostgreSQL + "
+        "`session_id` estão activos. Não substitui métricas de analytics nem o JSON completo "
+        "das tools.\n\n"
+        + str(semantic_retrieval_markdown).strip()
+    )
+    if len(body) > max_chars:
+        return body[:max_chars] + "\n\n[contexto semântico truncado]"
+    return body
+
+
+def _build_analytics_datasets_digest(metadata: dict[str, Any]) -> str:
+    block = metadata.get("analytics_datasets")
+    if not isinstance(block, dict):
+        return ""
+    by_id = block.get("by_id")
+    order = block.get("order")
+    if not isinstance(by_id, dict) or not by_id:
+        return ""
+    lines = [
+        "## Datasets de analytics nesta sessão (handles)",
+        "",
+        "Agrega com **`analytics_aggregate_session`**; não peças estes ids ao utilizador.",
+        "",
+    ]
+    ids = list(order) if isinstance(order, list) else list(by_id.keys())
+    for dsid in ids[-12:]:
+        info = by_id.get(dsid)
+        if not isinstance(info, dict):
+            continue
+        qid = info.get("query_id", "?")
+        rc = info.get("row_count", "?")
+        cols = info.get("columns") or []
+        cols_s = ", ".join(str(c) for c in cols[:12])
+        if len(cols) > 12:
+            cols_s += f" (+{len(cols) - 12})"
+        samp = info.get("sample_only")
+        lines.append(f"- **`{dsid}`** · query_id=`{qid}` · row_count≈{rc} · sample_only={samp}")
+        if cols_s:
+            lines.append(f"  - colunas: {cols_s}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_mcp_cache_digest_section(
     metadata: dict[str, Any],
     settings: Settings | None = None,
+    *,
+    semantic_retrieval_markdown: str | None = None,
 ) -> str:
     st = settings or get_settings()
     max_section = max(500, int(st.mcp_cache_digest_max_chars))
@@ -169,18 +260,33 @@ def build_mcp_cache_digest_section(
     block = metadata.get("mcp_tool_cache") or {}
     entries: list[dict[str, Any]] = list(block.get("entries") or [])
     if not entries:
-        return ""
+        ds_only = _build_analytics_datasets_digest(metadata).strip()
+        sem = _digest_semantic_block(semantic_retrieval_markdown, max_section // 3).strip()
+        chunks = [c for c in (sem, ds_only) if c]
+        if not chunks:
+            return ""
+        out = "\n\n".join(chunks)
+        if len(out) > max_section:
+            out = out[:max_section] + "\n\n[digest truncado mcp_cache_digest_section_max_chars]"
+        return out
     tail = entries[-max_entries:]
     parts: list[str] = [
         "## Ferramentas MCP já executadas nesta sessão (digest)",
         "",
         "Reutiliza resultados em cache quando repetires a mesma tool com os mesmos argumentos normalizados; consulta este digest antes de nova chamada MCP.",
+        "Com PostgreSQL activo, **`context_retrieve_similar`** (ILIKE + embeddings) cobre histórico semântico; o host pode pré-injectar um bloco abaixo.",
         "",
     ]
     for e in tail:
         parts.extend(_digest_one_entry(e, max_per))
         parts.append("")
     out = "\n".join(parts).strip()
+    sem = _digest_semantic_block(semantic_retrieval_markdown, max_section // 3).strip()
+    if sem:
+        out = f"{out}\n\n{sem}".strip() if out else sem
+    ds = _build_analytics_datasets_digest(metadata).strip()
+    if ds:
+        out = f"{out}\n\n{ds}".strip() if out else ds
     if len(out) > max_section:
         out = out[:max_section] + "\n\n[digest truncado mcp_cache_digest_section_max_chars]"
     return out

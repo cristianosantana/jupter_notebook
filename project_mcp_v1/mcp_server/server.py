@@ -24,7 +24,11 @@ from mcp.server.fastmcp import Context, FastMCP  # pyright: ignore[reportMissing
 import analytics_queries
 import db
 import sql_params
+from serpapi_search import google_search_serpapi as _google_search_serpapi
+from serpapi_search import serpapi_enabled as _serpapi_enabled
 from trace_logging import meta_run_id, trace_record
+
+from context_retrieval import register_context_retrieval_tools
 
 # Instância principal FastMCP exposta ao cliente (stdio)
 mcp = FastMCP(
@@ -293,6 +297,48 @@ async def get_entity_glossary_markdown(
         result_chars=len(payload),
     )
     return payload
+
+
+register_context_retrieval_tools(mcp)
+
+
+if _serpapi_enabled():
+
+    @mcp.tool(
+        name="google_search_serpapi",
+        description=(
+            "Pesquisa Google via SerpApi: contexto externo (notícias, definições públicas, concorrentes). "
+            "Argumento search_query: texto como na caixa de pesquisa Google (frase curta ou keywords), "
+            "inferido da pergunta do utilizador. Proibido usar query_id ou IDs de list_analytics_queries — "
+            "isso é só para run_analytics_query. Obrigatório quando precisares de factos da web; "
+            "não substitui run_analytics_query para métricas internas."
+        ),
+    )
+    async def google_search_serpapi(
+        search_query: str,
+        num_results: int = 3,
+        ctx: Context | None = None,
+    ) -> str:
+        """
+        Devolve JSON com organic_results e answer_box resumidos.
+        Usa search_query (web), nunca query_id de analytics.
+        """
+        rid = _trace_rid(ctx)
+        trace_record(
+            "mcp.server.tool.start",
+            run_id=rid,
+            tool="google_search_serpapi",
+            search_query=search_query,
+        )
+        out = await _google_search_serpapi(search_query, num_results=num_results)
+        trace_record(
+            "mcp.server.tool.end",
+            run_id=rid,
+            tool="google_search_serpapi",
+            result_preview=out[:4000],
+            result_chars=len(out),
+        )
+        return out
 
 
 if __name__ == "__main__":

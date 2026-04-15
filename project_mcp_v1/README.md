@@ -89,6 +89,8 @@ MYSQL_DATABASE=dealership_db
 EOF
 ```
 
+Variáveis úteis para **latência** (ver também [.env.example](.env.example)): ``OPENAI_HTTP_TIMEOUT_SECONDS`` (cliente OpenAI), ``ORCHESTRATOR_PARALLEL_TOOL_CALLS_ENABLED`` / ``ORCHESTRATOR_PARALLEL_TOOL_CALLS_MAX_CONCURRENT`` (várias tools MCP na mesma volta), ``FORMATADOR_UI_TIMEOUT_SECONDS``, ``AGENT_TRACE_FLUSH_ASYNC``. Com PostgreSQL activo, **notas de sessão**, **resumo**, **narrativa do observador** e **refresh do índice de contexto** (embed/K-Means) executam em **tarefa de fundo** após o JSON de resposta ao cliente.
+
 ### 3. Iniciar Servidor
 
 ```bash
@@ -218,8 +220,10 @@ curl -X POST http://localhost:8000/chat \
 
 ## 📊 Model Routing (Automático)
 
+
 | Agente | Modelo | Contexto | Custo/Query | Uso |
-|--------|--------|----------|-------------|-----|
+| ------ | ------ | -------- | ----------- | --- |
+
 
 | **maestro** | Haiku | 50k | ~$0.001 | Roteamento rápido |
 | **analise_os** | Sonnet | 100k | ~$0.005 | Análise balanceada |
@@ -256,6 +260,8 @@ User Query
 [Resultado]
     └─ Retorna ao User com agent_used
 ```
+
+
 
 ---
 
@@ -329,17 +335,17 @@ ROUTING_TABLE = {
 
 ## ✅ Checklist de Implementação
 
-- [x] Criar 6 SKILLs especializados
-- [x] Implementar SkillLoader com YAML parser
-- [x] Implementar ModelRouter
-- [x] Refatorar orchestrator → ModularOrchestrator
-- [x] Criar main_modular.py com novos endpoints
-- [ ] Testes unitários para cada agente
-- [ ] Testes de integração (roteamento)
-- [ ] Benchmarks de performance
-- [ ] Observabilidade (logs/métricas)
-- [ ] MCP Prompts como primitivo
-- [ ] Cache de resultados
+- Criar 6 SKILLs especializados
+- Implementar SkillLoader com YAML parser
+- Implementar ModelRouter
+- Refatorar orchestrator → ModularOrchestrator
+- Criar main_modular.py com novos endpoints
+- Testes unitários para cada agente
+- Testes de integração (roteamento)
+- Benchmarks de performance
+- Observabilidade (logs/métricas)
+- MCP Prompts como primitivo
+- Cache de resultados
 
 ---
 
@@ -370,3 +376,19 @@ Dúvidas? Referências:
 - `app/modular_orchestrator.py` - Código comentado
 - `app/main_modular.py` - Exemplos de uso
 - `GUIA_DE_MIGRACAO.md` - Migrando do antigo
+
+## Gerar Embedding
+
+```python
+python3 scripts/embed_sessions_from_db.py --session-id <UUID>
+python3 scripts/embed_sessions_from_db.py --session-id <UUID> --limit 64
+python3 scripts/embed_sessions_from_db.py --session-id <UUID> --anchor-query "texto para ILIKE"
+# Exemplo:
+python3 scripts/embed_sessions_from_db.py --session-id 0d68dac6-8cf9-4db5-ae45-f9822f3824ec
+```
+
+## Executar todos os testes
+
+```python
+  python3 -m pytest
+```
