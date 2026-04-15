@@ -10,6 +10,11 @@ from app.agent_trace import (
     get_trace_logger,
 )
 from app.config import get_settings
+from app.orchestrator_analysis import analise
+from app.orchestrator_llm_budget import (
+    degraded_llm_assistant_message,
+    llm_budget_try_consume,
+)
 from ai_provider.base import ModelProvider
 from ai_provider.openai_chat_sanitize import sanitize_openai_chat_messages
 
@@ -79,6 +84,20 @@ class OpenAIProvider(ModelProvider):
     ) -> Dict[str, Any]:
 
         safe_messages = sanitize_openai_chat_messages(messages)
+        if not llm_budget_try_consume():
+            tr0 = get_trace_logger()
+            if tr0:
+                tr0.record(
+                    "llm.skipped_budget",
+                    model=(model_override or "").strip() or self.model,
+                    llm_phase=get_trace_llm_phase(),
+                )
+            analise(
+                "openai_chat_bloqueado_orçamento_llm",
+                modelo=(model_override or "").strip() or self.model,
+                fase_llm=get_trace_llm_phase(),
+            )
+            return degraded_llm_assistant_message()
         kwargs: Dict[str, Any] = {
             "model": (model_override or "").strip() or self.model,
             "messages": safe_messages,
@@ -93,6 +112,14 @@ class OpenAIProvider(ModelProvider):
 
         tr = get_trace_logger()
         llm_phase = get_trace_llm_phase()
+        analise(
+            "openai_chat_início",
+            modelo=kwargs["model"],
+            fase_llm=llm_phase,
+            indice_chamada=call_idx,
+            n_mensagens=len(safe_messages),
+            com_tools=bool(tools),
+        )
         if tr:
             tr.record(
                 "llm.request",
@@ -118,6 +145,14 @@ class OpenAIProvider(ModelProvider):
                 llm_phase=llm_phase,
                 openai_call_index=call_idx,
             )
+        analise(
+            "openai_chat_fim",
+            modelo=response.model,
+            fase_llm=llm_phase,
+            duração_s=round(elapsed, 4),
+            tem_tool_calls=bool(out.get("tool_calls")),
+            content_preview=str(out.get("content") or "")[:240],
+        )
         return out
 
     async def embed_texts(self, inputs: List[str]) -> List[List[float]]:

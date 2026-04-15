@@ -1,7 +1,8 @@
 import json
 from functools import lru_cache
-from uuid import UUID
 from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict  # pyright: ignore[reportMissingImports]
@@ -91,6 +92,31 @@ class Settings(BaseSettings):
         default=24,
         description=(
             "Tecto de voltas do loop LLM↔tools no maestro e no especialista; exceder gera erro."
+        ),
+    )
+    orchestrator_flow_mode: Literal["legacy", "fast_skeleton"] = Field(
+        default="legacy",
+        description=(
+            "Fluxo do orquestrador: ``legacy`` (comportamento actual) ou ``fast_skeleton`` "
+            "(plano JSON de tools + dispatch + síntese; sem critique/formatador/F3). "
+            "Variável de ambiente: ``ORCHESTRATOR_FLOW_MODE``."
+        ),
+    )
+    orchestrator_post_pipelines_mode: Literal["always", "heuristic"] = Field(
+        default="always",
+        description=(
+            "Quando ``always`` (omissão), critique/formatador/F3 seguem as flags existentes "
+            "(regressão zero). ``heuristic``: em ``legacy``, saltar pipelines pós-especialista "
+            "para pedidos curtos/simples (ver ``orchestrator_decisions``)."
+        ),
+    )
+    orchestrator_max_llm_calls_per_request: int = Field(
+        default=0,
+        ge=0,
+        le=256,
+        description=(
+            "Tecto global de chamadas ``model.chat`` por pedido HTTP (0 = desligado). "
+            "Ao exceder, devolve resposta degradada com aviso em metadata."
         ),
     )
     orchestrator_parallel_tool_calls_enabled: bool = Field(
@@ -380,7 +406,9 @@ class Settings(BaseSettings):
         ge=0.0,
         description=(
             "Timeout (s) por `call_tool` no loop de especialista; 0 = sem limite. "
-            "Aplica-se a todas as tools MCP desse loop."
+            "Aplica-se a todas as tools MCP desse loop. Em ``asyncio.TimeoutError`` o turno "
+            "continua com mensagem de tool de erro (resposta parcial ao utilizador). "
+            "Continuar MCP em background com polling é opcional e fica fora do núcleo."
         ),
     )
     context_retrieve_default_top_n: int = Field(

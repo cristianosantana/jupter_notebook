@@ -289,6 +289,10 @@ async def process_chat(
     dbg_sem = out.get("semantic_context_debug")
     if dbg_sem is not None:
         payload["semantic_context_debug"] = dbg_sem
+    ofm = out.get("orchestrator_flow_mode")
+    if ofm is not None:
+        payload["orchestrator_flow_mode"] = str(ofm)
+    payload["orchestrator_llm_cap_exceeded"] = bool(out.get("orchestrator_llm_cap_exceeded"))
     return payload
 
 

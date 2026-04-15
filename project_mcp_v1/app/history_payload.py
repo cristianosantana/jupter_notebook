@@ -14,6 +14,30 @@ REC_SEM_START = "### Recuperação semântica (trechos anteriores)"
 REC_SEM_END = "### Fim da recuperação semântica"
 
 
+def _leading_role(msg: dict[str, Any]) -> str:
+    return str(msg.get("role") or "").strip().lower()
+
+
+def compute_safe_history_tail_start(messages: list[dict[str, Any]], tail_n: int) -> int:
+    """
+    Índice de início da cauda para que o primeiro bloco não seja ``tool`` órfão
+    (sem o ``assistant`` com ``tool_calls`` correspondente na mesma janela).
+    """
+    if tail_n <= 0 or len(messages) <= tail_n:
+        return 0
+    start = len(messages) - tail_n
+    max_expand = 64
+    expanded = 0
+    while expanded < max_expand and start < len(messages):
+        if _leading_role(messages[start]) != "tool":
+            break
+        if start == 0:
+            break
+        start -= 1
+        expanded += 1
+    return max(0, start)
+
+
 def latest_user_text_for_semantic(messages: list[dict[str, Any]]) -> str:
     for m in reversed(messages):
         if m.get("role") != "user":
@@ -125,8 +149,9 @@ async def build_compact_history_messages_for_llm(
     if len(msgs) <= tail_n:
         return msgs, "short_history"
 
-    head = msgs[:-tail_n]
-    tail = msgs[-tail_n:]
+    tail_start = compute_safe_history_tail_start(msgs, tail_n)
+    head = msgs[:tail_start]
+    tail = msgs[tail_start:]
 
     prefix: list[dict[str, Any]] = []
     if st.memory_conversation_summary_enabled and session_metadata:
