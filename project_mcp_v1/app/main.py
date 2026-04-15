@@ -10,6 +10,7 @@ Uso:
 
 import asyncio
 import contextlib
+import copy
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -28,6 +29,7 @@ from openai import AsyncOpenAI
 from ai_provider.openai_provider import OpenAIProvider
 from app.config import get_settings, resolve_agent_trace_dir, sync_mysql_env_from_settings
 from app.content_blocks import split_reply_and_blocks
+from app.post_turn_tasks import merge_post_turn_metadata_from_db_row, run_all_post_turn_work
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
@@ -75,7 +77,10 @@ async def lifespan(app: FastAPI):
         os.environ.pop("AGENT_TRACE_MAX_FIELD_CHARS", None)
 
     sync_mysql_env_from_settings(settings)
-    oai = AsyncOpenAI(api_key=settings.openai_api_key or None)
+    oai = AsyncOpenAI(
+        api_key=settings.openai_api_key or None,
+        timeout=float(settings.openai_http_timeout_seconds),
+    )
     sampling_cb = build_openai_sampling_callback(
         oai,
         settings.openai_model or "gpt-4o-mini",
@@ -150,7 +155,10 @@ async def health():
     return {"status": "ok", "agent": agent.current_agent if agent else "not_initialized"}
 
 
-async def process_chat(request: ChatRequest) -> dict:
+async def process_chat(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict:
     """
     Lógica partilhada por ``POST /chat`` e ``POST /api/chat``.
 
@@ -219,7 +227,13 @@ async def process_chat(request: ChatRequest) -> dict:
             raise
         assistant = out["assistant"]
 
+        transcript_excerpt = "\n".join(
+            str(m.get("content") or "")[:500] for m in agent.messages[-8:]
+        )
+
         if session_store is not None and sid is not None:
+            fresh_row = await session_store.get_session(sid)
+            merge_post_turn_metadata_from_db_row(session_metadata, fresh_row)
             await session_store.update_session_metadata(sid, session_metadata)
             excerpt = (request.message or "").strip()
             if excerpt:
@@ -234,22 +248,26 @@ async def process_chat(request: ChatRequest) -> dict:
                 ensure_transcript_includes_user_message(agent.messages, excerpt)
             await session_store.replace_conversation_messages(sid, agent.messages)
             await session_store.touch_session(sid, out["agent"])
-            try:
-                from app.context_index_service import maybe_run_sync_context_index_refresh
-
-                await maybe_run_sync_context_index_refresh(
-                    session_store,
-                    agent.client,
-                    str(sid),
-                    settings=settings,
-                )
-            except Exception as e:
-                _logger.warning("Refresh do índice de contexto (embed/K-Means): %s", e)
             tr = out.get("trace_run_id")
             if tr:
                 await session_store.merge_session_metadata(
                     sid,
                     {"last_trace_run_id": str(tr)},
+                )
+            if background_tasks is not None:
+                meta_snap = copy.deepcopy(session_metadata)
+                background_tasks.add_task(
+                    run_all_post_turn_work,
+                    store=session_store,
+                    mcp_client=agent.client,
+                    session_id=sid,
+                    model=agent.model,
+                    metadata_snapshot=meta_snap,
+                    user_input=request.message,
+                    tools_used=list(out.get("tools_used") or []),
+                    agent_final=str(out.get("agent") or ""),
+                    transcript_excerpt=transcript_excerpt,
+                    settings=settings,
                 )
 
     display_reply, content_blocks = split_reply_and_blocks(assistant["content"])
@@ -286,8 +304,12 @@ async def _cancel_task_on_disconnect(http_request: Request, task: "asyncio.Task[
         raise
 
 
-async def run_chat_with_disconnect(http_request: Request, body: ChatRequest) -> dict:
-    task = asyncio.create_task(process_chat(body))
+async def run_chat_with_disconnect(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict:
+    task = asyncio.create_task(process_chat(body, background_tasks))
     disconnect_watch = asyncio.create_task(
         _cancel_task_on_disconnect(http_request, task)
     )
@@ -300,17 +322,25 @@ async def run_chat_with_disconnect(http_request: Request, body: ChatRequest) -> 
 
 
 @app.post("/chat")
-async def chat(http_request: Request, body: ChatRequest):
+async def chat(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+):
     """Alias legado; preferir ``POST /api/chat`` no SmartChat."""
-    return await run_chat_with_disconnect(http_request, body)
+    return await run_chat_with_disconnect(http_request, body, background_tasks)
 
 
 api_router = APIRouter(prefix="/api")
 
 
 @api_router.post("/chat")
-async def api_chat(http_request: Request, body: ChatRequest):
-    return await run_chat_with_disconnect(http_request, body)
+async def api_chat(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+):
+    return await run_chat_with_disconnect(http_request, body, background_tasks)
 
 
 @api_router.get("/mcp/tools")

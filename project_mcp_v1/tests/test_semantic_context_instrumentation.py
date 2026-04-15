@@ -74,7 +74,10 @@ def test_inject_ok_enriched_detail_and_placeholder_flag():
         orch._session_metadata = meta
         orch._session_id_for_cache = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         orch.current_agent = "analise_os"
-        st = _stub_settings(semantic_context_debug_in_chat_response=True)
+        st = _stub_settings(
+            semantic_context_debug_in_chat_response=True,
+            context_retrieve_host_inject_enabled=True,
+        )
         with patch("app.orchestrator.get_settings", return_value=st):
             await orch._inject_semantic_context_for_specialist("pergunta longa")
         ents = meta.get("observer_log", {}).get("entries", [])

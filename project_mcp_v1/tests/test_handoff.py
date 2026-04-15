@@ -304,6 +304,12 @@ def test_messages_with_skill_merges_critique_system_without_extra_prepend():
     assert out[2]["content"] == "SK\n\ncritique"
 
 
+def test_messages_with_skill_skips_double_skill_merge():
+    msgs = [{"role": "system", "content": "SK\n\nalready merged"}]
+    out = _messages_with_skill("SK", msgs)
+    assert out[0]["content"] == "SK\n\nalready merged"
+
+
 def test_prompt_skill_text_merges_glossary_block():
     client = _mock_client()
     orch = ModularOrchestrator(FakeModelDirect(), client, skills_dir=_SKILLS)

@@ -26,6 +26,7 @@ def test_replace_conversation_messages_called_when_agent_is_maestro(monkeypatch:
     store.merge_session_metadata = merge_meta
     store.upsert_user = upsert
     store.create_session = create_session
+    store.get_session = AsyncMock(return_value={"metadata": {}})
 
     async def fake_run(*_a, **_k):
         return {

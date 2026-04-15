@@ -32,6 +32,12 @@ class Settings(BaseSettings):
             "vazio (``resolve_orchestrator_model_for_agent``)."
         ),
     )
+    openai_http_timeout_seconds: float = Field(
+        default=45.0,
+        ge=5.0,
+        le=600.0,
+        description="Timeout HTTP (s) do cliente OpenAI (API + orquestrador + sampling MCP).",
+    )
 
     mysql_host: str = Field(
         default="localhost",
@@ -86,6 +92,20 @@ class Settings(BaseSettings):
         description=(
             "Tecto de voltas do loop LLM↔tools no maestro e no especialista; exceder gera erro."
         ),
+    )
+    orchestrator_parallel_tool_calls_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, numa mesma mensagem do assistente com várias tools MCP (sem "
+            "``analytics_aggregate_session``), dispara ``call_tool`` em paralelo e aplica "
+            "resultados na ordem original."
+        ),
+    )
+    orchestrator_parallel_tool_calls_max_concurrent: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Semáforo: máximo de ``call_tool`` MCP simultâneos no ramo paralelo.",
     )
     orchestrator_max_history_messages: int = Field(
         default=20,
@@ -153,6 +173,69 @@ class Settings(BaseSettings):
         description=(
             "Divide caracteres para estimar tokens na podagem de contexto (heurística, não tokenizer oficial)."
         ),
+    )
+    orchestrator_tool_prompt_md_max_tools: int = Field(
+        default=0,
+        ge=0,
+        le=256,
+        description=(
+            "Máximo de ficheiros ``tools/{name}.md`` a fundir no system (0 = sem limite). "
+            "Reduz tokens quando há muitas tools MCP."
+        ),
+    )
+    orchestrator_system_layer_split_enabled: bool = Field(
+        default=False,
+        description=(
+            "Se true, o system_core (políticas+agente+skill) e o context_block (tool .md+glossário+digest+memória) "
+            "entram em mensagens distintas: core em ``system`` e bloco longo numa mensagem ``user`` marcada."
+        ),
+    )
+    orchestrator_trace_system_chars: bool = Field(
+        default=True,
+        description="Se true e trace activo, regista tamanho do system / pacote por chamada ``model.chat``.",
+    )
+    orchestrator_prompt_hard_token_limit: int = Field(
+        default=20_000,
+        ge=0,
+        le=500_000,
+        description=(
+            "Tecto heurístico de tokens (mensagens + system + tools) antes de ``model.chat``; "
+            "0 desactiva o shrink agressivo (mantém só poda ``_cap_messages``)."
+        ),
+    )
+    orchestrator_history_compact_enabled: bool = Field(
+        default=True,
+        description=(
+            "Se true, o payload ao modelo usa resumo + janela recente + (opcional) trechos semânticos do meio; "
+            "``self.messages`` completo mantém-se para persistência."
+        ),
+    )
+    orchestrator_history_tail_messages: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Quantas mensagens finais do histórico incluir no payload compacto.",
+    )
+    orchestrator_history_semantic_enabled: bool = Field(
+        default=True,
+        description="Se true, tenta embeddings OpenAI (kNN) sobre mensagens do meio fora da janela.",
+    )
+    orchestrator_history_semantic_top_k: int = Field(
+        default=5,
+        ge=0,
+        le=24,
+        description="Máximo de trechos do meio a injectar após ranking por similaridade (0 desliga kNN).",
+    )
+    orchestrator_history_semantic_max_chars: int = Field(
+        default=8000,
+        ge=0,
+        description="Tecto de caracteres do bloco markdown de recuperação semântica.",
+    )
+    orchestrator_history_semantic_max_embed_inputs: int = Field(
+        default=32,
+        ge=1,
+        le=200,
+        description="Máximo de mensagens do meio a embeddar por turno (custo OpenAI).",
     )
     orchestrator_agent_types: str = Field(
         default=(
@@ -259,9 +342,10 @@ class Settings(BaseSettings):
     )
 
     tool_message_content_max_chars: int = Field(
-        default=600_000,
+        default=24_000,
+        ge=2048,
         description=(
-            "Teto ao serializar conteúdo de mensagens role=tool para o LLM (~200k tokens com CHARS_PER_TOKEN≈3)."
+            "Teto ao serializar conteúdo de mensagens role=tool para o LLM (~8k tokens com CHARS_PER_TOKEN≈3)."
         ),
     )
 
@@ -279,10 +363,11 @@ class Settings(BaseSettings):
         ),
     )
     context_retrieve_host_inject_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Se true, o orquestrador chama `context_retrieve_similar` uma vez no início do turno "
-            "do especialista (PostgreSQL + session_id) e injecta o markdown no digest."
+            "do especialista (PostgreSQL + session_id) e injecta o markdown no digest. "
+            "Por omissão false (orçamento): o modelo pode usar a tool ``context_retrieve_similar``."
         ),
     )
     context_retrieve_timeout_seconds: float = Field(
@@ -419,6 +504,13 @@ class Settings(BaseSettings):
             "Com trace activo, cada POST /api/chat pode gravar ``openai.chat_completions.summary`` no fim do run."
         ),
     )
+    agent_trace_flush_async: bool = Field(
+        default=True,
+        description=(
+            "Se true, a escrita de cada linha JSONL do trace da app corre em ``asyncio.to_thread`` "
+            "(menos bloqueio no event loop; pequena janela de perda se o processo morrer imediatamente após)."
+        ),
+    )
 
     memory_prompts_enabled: bool = Field(
         default=True,
@@ -463,8 +555,11 @@ class Settings(BaseSettings):
     )
 
     mcp_cache_digest_llm_enabled: bool = Field(
-        default=True,
-        description="Se true, pode chamar um LLM para condensar o digest base (mcp_digest_editor.md).",
+        default=False,
+        description=(
+            "Se true, pode chamar um LLM para condensar o digest base (mcp_digest_editor.md). "
+            "Por omissão false para reduzir custo; digest base truncado continua activo."
+        ),
     )
     mcp_cache_digest_llm_trigger: str = Field(
         default="when_base_too_long",
@@ -488,7 +583,7 @@ class Settings(BaseSettings):
         description="Truncagem da saída do editor LLM antes de gravar em mcp_digest_llm_cache.",
     )
     mcp_cache_digest_llm_min_chars_to_run: int = Field(
-        default=2500,
+        default=8000,
         description="Com trigger when_base_too_long, digest base mais curto que isto não dispara o LLM.",
     )
     mcp_cache_digest_llm_reuse_hash: bool = Field(
@@ -582,6 +677,12 @@ class Settings(BaseSettings):
     pipeline_formatador_ui_enabled: bool = Field(
         default=True,
         description="Após APROVAR, formatador_ui anexa bloco JSON content_blocks à mensagem final.",
+    )
+    formatador_ui_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description="Timeout (asyncio.wait_for) da chamada LLM do formatador_ui; em timeout mantém-se o texto do especialista.",
     )
     orchestrator_model_formatador_ui: str = Field(
         default="",

@@ -63,8 +63,10 @@ class OpenAIProvider(ModelProvider):
 
     def __init__(self) -> None:
         settings = get_settings()
+        tout = float(settings.openai_http_timeout_seconds)
         self.client = AsyncOpenAI(
             api_key=settings.openai_api_key or None,
+            timeout=tout,
         )
         self.model = settings.openai_model
 
@@ -117,3 +119,18 @@ class OpenAIProvider(ModelProvider):
                 openai_call_index=call_idx,
             )
         return out
+
+    async def embed_texts(self, inputs: List[str]) -> List[List[float]]:
+        """Embeddings OpenAI (histórico semântico / kNN)."""
+        settings = get_settings()
+        model = (settings.context_embedding_model or "text-embedding-3-small").strip()
+        safe: List[str] = []
+        for s in inputs:
+            if not isinstance(s, str):
+                safe.append("")
+            else:
+                safe.append(s[:50000])
+        if not safe:
+            return []
+        resp = await self.client.embeddings.create(model=model, input=safe)
+        return [list(d.embedding) for d in resp.data]

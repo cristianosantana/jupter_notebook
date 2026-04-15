@@ -20,10 +20,6 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from ai_provider.base import ModelProvider
-from app.memory_prompts import (
-    maybe_update_session_notes,
-    maybe_update_conversation_summary,
-)
 from app.analytics_aggregate_engine import run_analytics_aggregate
 from app.analytics_session_datasets import (
     get_dataset_id_for_cache_key,
@@ -40,7 +36,19 @@ from app.mcp_session_cache import (
     entries_fingerprint,
 )
 from app.message_lifecycle import pop_first_segment, strip_leading_orphan_tools
-from app.prompt_assembly import build_effective_system_text
+from app.context_budget import shrink_chat_messages_to_budget
+from app.history_payload import (
+    build_compact_history_messages_for_llm,
+    latest_user_text_for_semantic,
+)
+from app.prompt_assembly import build_effective_system_text, build_system_package
+from app.prompt_messages import (
+    _estimate_prompt_tokens_messages_plus_skill,
+    _estimate_tokens_from_text,
+    _estimate_tokens_from_tool_dicts,
+    _messages_with_skill,
+    estimate_full_prompt_tokens,
+)
 from app.tool_truncation import safe_truncate_tool_content
 from app.context_semantic_contract import build_host_retrieve_ok_detail
 from app.pipeline_critique import format_critique_message, parse_critique_response
@@ -199,81 +207,6 @@ def _mcp_result_to_text(result: CallToolResult) -> str:
     return text if text else "(sem conteúdo textual)"
 
 
-def _strip_orch_internal_keys(msg: dict[str, Any]) -> dict[str, Any]:
-    """Remove chaves internas do orquestrador (não enviar à API do modelo)."""
-    return {
-        k: v
-        for k, v in msg.items()
-        if not (isinstance(k, str) and k.startswith("_orch"))
-    }
-
-
-def _messages_with_skill(
-    skill: str,
-    messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    public = [_strip_orch_internal_keys(m) for m in messages]
-    if not skill:
-        return list(public)
-    out = list(public)
-    had_system = any(m.get("role") == "system" for m in out)
-    for i, m in enumerate(out):
-        if m.get("role") == "system":
-            existing = (m.get("content") or "").strip()
-            merged = f"{skill}\n\n{existing}".strip() if existing else skill
-            out[i] = {**m, "content": merged}
-    if not had_system:
-        out.insert(0, {"role": "system", "content": skill})
-    return out
-
-
-def _estimate_tokens_from_text(text: str) -> int:
-    if not text:
-        return 0
-    cpt = max(1, int(get_settings().orchestrator_chars_per_token_estimate))
-    return max(1, (len(text) + cpt - 1) // cpt)
-
-
-def _estimate_tokens_for_message(msg: dict[str, Any]) -> int:
-    """Tokens aproximados de uma mensagem no formato chat (content + tool_calls)."""
-    n = 4  # overhead de estrutura (role, campos)
-    role = msg.get("role")
-    if role is not None:
-        n += _estimate_tokens_from_text(str(role))
-    content = msg.get("content")
-    if isinstance(content, str):
-        n += _estimate_tokens_from_text(content)
-    elif isinstance(content, list):
-        for part in content:
-            if isinstance(part, dict):
-                txt = part.get("text")
-                if isinstance(txt, str):
-                    n += _estimate_tokens_from_text(txt)
-    tool_calls = msg.get("tool_calls")
-    if tool_calls:
-        n += _estimate_tokens_from_text(json.dumps(tool_calls, ensure_ascii=False))
-    return n
-
-
-def _estimate_prompt_tokens_messages_plus_skill(
-    skill: str,
-    messages: list[dict[str, Any]],
-) -> int:
-    """Estimativa do prompt enviado ao modelo (SKILL fundido no system + histórico)."""
-    merged = _messages_with_skill(skill, messages)
-    return sum(_estimate_tokens_for_message(m) for m in merged)
-
-
-def _estimate_tokens_from_tool_dicts(tools: list[dict[str, Any]] | None) -> int:
-    """Tokens aproximados de definições de ferramentas já serializáveis como dict (ex.: OpenAI-style)."""
-    if not tools:
-        return 0
-    total = 128
-    for t in tools:
-        total += _estimate_tokens_from_text(json.dumps(t, ensure_ascii=False))
-    return total
-
-
 class ModularOrchestrator:
     """
     Orquestrador Modular com suporte a múltiplos agentes especializados.
@@ -310,6 +243,92 @@ class ModularOrchestrator:
         self._session_id_for_cache: UUID | None = None
         self._semantic_retrieval_markdown: str | None = None
         self._semantic_instrument_for_response: dict[str, Any] | None = None
+        self._mcp_parallel_sem: asyncio.Semaphore | None = None
+
+    def _mcp_parallel_semaphore(self) -> asyncio.Semaphore:
+        if self._mcp_parallel_sem is None:
+            n = max(1, int(get_settings().orchestrator_parallel_tool_calls_max_concurrent))
+            self._mcp_parallel_sem = asyncio.Semaphore(n)
+        return self._mcp_parallel_sem
+
+    async def _call_mcp_tool_bounded(self, name: str, args: dict[str, Any]) -> CallToolResult:
+        st = get_settings()
+        tout = float(st.orchestrator_mcp_tool_call_timeout_seconds)
+        async with self._mcp_parallel_semaphore():
+            if tout > 0:
+                return await asyncio.wait_for(
+                    self.client.call_tool(name, args),
+                    timeout=tout,
+                )
+            return await self.client.call_tool(name, args)
+
+    def _specialist_tool_calls_parallel_mcp_eligible(
+        self,
+        tool_calls: list[dict[str, Any]],
+    ) -> bool:
+        st = get_settings()
+        if not st.orchestrator_parallel_tool_calls_enabled or len(tool_calls) <= 1:
+            return False
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            name = fn.get("name")
+            if not name:
+                return False
+            if name == ANALYTICS_AGGREGATE_SESSION_TOOL_NAME:
+                return False
+            if name == ROUTE_TO_SPECIALIST_TOOL_NAME and self.current_agent != "maestro":
+                return False
+            args = _parse_tool_arguments(fn.get("arguments"))
+            use_cache = self._use_mcp_session_cache() and name != ROUTE_TO_SPECIALIST_TOOL_NAME
+            ck_tool = mcp_cache_key(name, args) if use_cache else ""
+            if use_cache and self._session_metadata is not None:
+                hit = find_cache_entry(self._session_metadata, ck_tool)
+                if hit and hit.get("result_text"):
+                    return False
+            if name == "context_retrieve_similar" and self._session_metadata is not None:
+                q_arg = str(args.get("query") or "").strip()
+                s_arg = str(args.get("session_id") or "").strip().lower()
+                host_q = str(
+                    self._session_metadata.get("_host_retrieve_query_normalized") or ""
+                ).strip()
+                host_sid = str(
+                    self._session_metadata.get("_host_retrieve_session_id") or ""
+                ).strip().lower()
+                cached = self._session_metadata.get("_host_context_retrieve_full_json")
+                if cached and host_q == q_arg and host_sid == s_arg:
+                    return False
+        return True
+
+    async def _dispatch_specialist_tool_calls(
+        self,
+        tool_calls: list[dict[str, Any]],
+        tools_used: list[dict[str, Any]],
+    ) -> None:
+        if self._specialist_tool_calls_parallel_mcp_eligible(tool_calls):
+            parsed: list[tuple[dict[str, Any], str, dict[str, Any]]] = []
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                name = str(fn.get("name") or "")
+                args = _parse_tool_arguments(fn.get("arguments"))
+                parsed.append((tc, name, args))
+            mcp_results = await asyncio.gather(
+                *[self._call_mcp_tool_bounded(n, a) for _tc, n, a in parsed],
+                return_exceptions=True,
+            )
+            if any(isinstance(r, Exception) for r in mcp_results):
+                for r, (_tc, n, _a) in zip(mcp_results, parsed):
+                    if isinstance(r, Exception):
+                        _logger_orch.warning("parallel MCP tool %s: %s", n, r)
+                for tc in tool_calls:
+                    await self._execute_single_tool_call(tc, tools_used)
+                return
+            for (tc, _name, _args), res in zip(parsed, mcp_results):
+                await self._execute_single_tool_call(
+                    tc, tools_used, mcp_result_override=res
+                )
+            return
+        for tc in tool_calls:
+            await self._execute_single_tool_call(tc, tools_used)
 
     @staticmethod
     def _glossary_cache_key(session_id: UUID | None) -> UUID:
@@ -542,6 +561,72 @@ class ModularOrchestrator:
             mcp_tools=self.tools,
             settings=st,
         )
+
+    async def _build_system_package_async(self) -> tuple[str, str]:
+        st = get_settings()
+        digest = await self._digest_for_system_async()
+        tp_payload = MAESTRO_TOOLS_ONLY if self.current_agent == "maestro" else None
+        return build_system_package(
+            agent=self.current_agent,
+            skill_body=self.current_skill or "",
+            entity_glossary_markdown=self._entity_glossary or "",
+            mcp_digest_markdown=digest,
+            session_metadata=self._session_meta(),
+            tools_openai_payload=tp_payload,
+            mcp_tools=self.tools,
+            settings=st,
+        )
+
+    async def _openai_messages_for_turn(
+        self,
+        *,
+        query_for_semantic: str,
+        tools_payload: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        st = get_settings()
+        embed_fn = getattr(self.model, "embed_texts", None)
+        if not st.orchestrator_history_semantic_enabled or not callable(embed_fn):
+            embed_fn = None
+        msgs_work, _note = await build_compact_history_messages_for_llm(
+            self.messages,
+            self._session_meta(),
+            embed_texts=embed_fn,
+            query_fallback=query_for_semantic,
+            settings=st,
+        )
+        if st.orchestrator_system_layer_split_enabled:
+            core, ctx = await self._build_system_package_async()
+            core = core.strip()
+            ctx_st = (ctx or "").strip()
+            if ctx_st:
+                wrap = (
+                    "### Contexto de apoio (somente leitura)\n\n"
+                    + ctx_st
+                    + "\n\n### Fim do contexto"
+                )
+                msgs_work = [
+                    {"role": "user", "content": wrap, "_orch_synthetic": True},
+                    *msgs_work,
+                ]
+            merged = _messages_with_skill(core, msgs_work)
+            skill_est = core
+        else:
+            sys_t = await self._build_system_text_async()
+            merged = _messages_with_skill(sys_t, msgs_work)
+            skill_est = sys_t
+        merged = shrink_chat_messages_to_budget(skill_est, merged, tools_payload, st)
+        tlog = get_trace_logger()
+        if tlog and st.orchestrator_trace_system_chars:
+            et = estimate_full_prompt_tokens(skill_est, merged, tools_payload)
+            tlog.record(
+                "orchestrator.llm_payload.stats",
+                estimated_prompt_tokens=et,
+                system_est_chars=len(skill_est),
+                payload_messages=len(merged),
+                history_compact=st.orchestrator_history_compact_enabled,
+                system_layer_split=st.orchestrator_system_layer_split_enabled,
+            )
+        return merged
 
     async def _observer_narrative(self, user_input: str, tools_used: list[dict[str, Any]]) -> None:
         st = get_settings()
@@ -812,14 +897,28 @@ class ModularOrchestrator:
         text = str((result.get("assistant") or {}).get("content") or "")
         if not text.strip():
             return result
+        _disp, blocks_existing = split_reply_and_blocks(text)
+        if blocks_existing is not None:
+            md["formatador_ui_applied"] = True
+            md["layout_blocks"] = blocks_existing
+            self._observer_append(
+                "formatador_ui",
+                {"has_blocks": True, "shortcut": True},
+            )
+            return result
+        fm: SkillMetadata | None = None
         try:
-            skill, _ = self.skill_loader.load_skill("formatador_ui")
+            skill, fm = self.skill_loader.load_skill("formatador_ui")
         except (FileNotFoundError, ValueError):
             skill = (
                 "Formatador UI: preserva factos; no fim um fenced ```json com "
                 '{"version":1,"content_blocks":[{"type":"paragraph","text":"..."}]}'
             )
         mo = st.resolve_orchestrator_model_for_agent("formatador_ui")
+        if (mo is None or not str(mo).strip()) and fm is not None:
+            sm = str(fm.model or "").strip()
+            if sm:
+                mo = sm
         u = (
             "Pedido original (contexto):\n"
             + user_input[:4000]
@@ -829,15 +928,21 @@ class ModularOrchestrator:
         print(f"🔄 [formatador_ui] {self.current_agent} → formatador_ui (chamada ao modelo)")
         try:
             with llm_phase_context("orchestrator:formatador_ui"):
-                resp = await self.model.chat(
-                    [
-                        {"role": "system", "content": skill},
-                        {"role": "user", "content": u},
-                    ],
-                    tools=None,
-                    model_override=mo,
+                resp = await asyncio.wait_for(
+                    self.model.chat(
+                        [
+                            {"role": "system", "content": skill},
+                            {"role": "user", "content": u},
+                        ],
+                        tools=None,
+                        model_override=mo,
+                    ),
+                    timeout=float(st.formatador_ui_timeout_seconds),
                 )
             out = str((resp or {}).get("content") or "").strip()
+        except asyncio.TimeoutError:
+            _logger_orch.warning("formatador_ui timeout after %.1fs", st.formatador_ui_timeout_seconds)
+            return result
         except Exception as e:
             _logger_orch.warning("formatador_ui failed: %s", e)
             return result
@@ -1182,13 +1287,13 @@ class ModularOrchestrator:
                 )
 
             self._cap_messages()
-            sys_t = await self._build_system_text_async()
+            chat_messages = await self._openai_messages_for_turn(
+                query_for_semantic=user_input,
+                tools_payload=MAESTRO_TOOLS_ONLY,
+            )
             with llm_phase_context("orchestrator:maestro"):
                 response = await self.model.chat(
-                    messages=_messages_with_skill(
-                        sys_t,
-                        self.messages,
-                    ),
+                    messages=chat_messages,
                     tools=MAESTRO_TOOLS_ONLY,
                     tool_choice=maestro_tool_choice,
                     model_override=mo_maestro,
@@ -1469,6 +1574,8 @@ class ModularOrchestrator:
         self,
         tc: dict[str, Any],
         tools_used: list[dict[str, Any]],
+        *,
+        mcp_result_override: CallToolResult | None = None,
     ) -> None:
         tc_id = tc.get("id") or ""
         fn = tc.get("function") or {}
@@ -1532,7 +1639,12 @@ class ModularOrchestrator:
             })
             return
 
-        print(f"⚙️  [{self.current_agent}] Executing: {name}")
+        _exec_label = str(name)
+        if name == "run_analytics_query":
+            qid = args.get("query_id")
+            if qid is not None and str(qid).strip():
+                _exec_label = f"{name} query_id={qid!r}"
+        print(f"⚙️  [{self.current_agent}] Executing: {_exec_label}")
 
         st_exec = get_settings()
         preview_cap = max(1, int(st_exec.orchestrator_tool_result_preview_max))
@@ -1631,14 +1743,17 @@ class ModularOrchestrator:
 
         try:
             self._observer_append("tool_cache_miss", {"tool": name})
-            tout = float(st_exec.orchestrator_mcp_tool_call_timeout_seconds)
-            if tout > 0:
-                mcp_result = await asyncio.wait_for(
-                    self.client.call_tool(name, args),
-                    timeout=tout,
-                )
+            if mcp_result_override is not None:
+                mcp_result = mcp_result_override
             else:
-                mcp_result = await self.client.call_tool(name, args)
+                tout = float(st_exec.orchestrator_mcp_tool_call_timeout_seconds)
+                if tout > 0:
+                    mcp_result = await asyncio.wait_for(
+                        self.client.call_tool(name, args),
+                        timeout=tout,
+                    )
+                else:
+                    mcp_result = await self.client.call_tool(name, args)
             content = _mcp_result_to_text(mcp_result)
             preview = content[:preview_cap]
             if len(content) > preview_cap:
@@ -1727,14 +1842,14 @@ class ModularOrchestrator:
                 )
 
             self._cap_messages()
-            sys_t = await self._build_system_text_async()
+            chat_messages = await self._openai_messages_for_turn(
+                query_for_semantic=latest_user_text_for_semantic(self.messages),
+                tools_payload=tools_payload,
+            )
             mo_spec = st_sp.resolve_orchestrator_model_for_agent(self.current_agent)
             with llm_phase_context(f"orchestrator:specialist:{self.current_agent}"):
                 response = await self.model.chat(
-                    messages=_messages_with_skill(
-                        sys_t,
-                        self.messages,
-                    ),
+                    messages=chat_messages,
                     tools=tools_payload,
                     model_override=mo_spec,
                 )
@@ -1765,15 +1880,24 @@ class ModularOrchestrator:
                     step,
                 )
 
-            requested = [
-                n
-                for tc in tool_calls
-                if (n := tc.get("function", {}).get("name"))
-            ]
+            requested: list[str] = []
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                n = fn.get("name")
+                if not n:
+                    continue
+                if n == "run_analytics_query":
+                    a = _parse_tool_arguments(fn.get("arguments"))
+                    qid = a.get("query_id")
+                    if qid is not None and str(qid).strip():
+                        requested.append(f"{n}(query_id={qid!r})")
+                    else:
+                        requested.append(str(n))
+                else:
+                    requested.append(str(n))
             print(f"🔧 [{self.current_agent}] Tool request: {requested}")
 
-            for tc in tool_calls:
-                await self._execute_single_tool_call(tc, tools_used)
+            await self._dispatch_specialist_tool_calls(tool_calls, tools_used)
 
     def _semantic_debug_payload(self, event_type: str, detail: dict[str, Any]) -> None:
         st = get_settings()
@@ -1942,31 +2066,6 @@ class ModularOrchestrator:
                 )
                 if early is not None:
                     early = await self._run_f3_pipeline(early, user_input)
-                    st_mem = get_settings()
-                    if self._session_metadata is not None:
-                        await maybe_update_session_notes(
-                            self.model,
-                            self._session_metadata,
-                            json.dumps(
-                                {
-                                    "last_agent": early.get("agent"),
-                                    "user_excerpt": user_input[:1200],
-                                },
-                                ensure_ascii=False,
-                            ),
-                            st_mem,
-                        )
-                        excerpt = "\n".join(
-                            str(m.get("content") or "")[:500]
-                            for m in self.messages[-8:]
-                        )
-                        await maybe_update_conversation_summary(
-                            self.model,
-                            self._session_metadata,
-                            excerpt,
-                            st_mem,
-                        )
-                    await self._observer_narrative(user_input, tools_used)
                     if self._trace_run_id:
                         early["trace_run_id"] = self._trace_run_id
                     return early
@@ -1982,31 +2081,6 @@ class ModularOrchestrator:
                 )
                 out = await self._run_formatador_ui(out, user_input)
             out = await self._run_f3_pipeline(out, user_input)
-            st_mem = get_settings()
-            if self._session_metadata is not None:
-                await maybe_update_session_notes(
-                    self.model,
-                    self._session_metadata,
-                    json.dumps(
-                        {
-                            "last_agent": out.get("agent"),
-                            "user_excerpt": user_input[:1200],
-                        },
-                        ensure_ascii=False,
-                    ),
-                    st_mem,
-                )
-                excerpt = "\n".join(
-                    str(m.get("content") or "")[:500]
-                    for m in self.messages[-8:]
-                )
-                await maybe_update_conversation_summary(
-                    self.model,
-                    self._session_metadata,
-                    excerpt,
-                    st_mem,
-                )
-            await self._observer_narrative(user_input, tools_used)
             if self._trace_run_id:
                 out["trace_run_id"] = self._trace_run_id
             st_dbg = get_settings()

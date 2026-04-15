@@ -89,6 +89,8 @@ MYSQL_DATABASE=dealership_db
 EOF
 ```
 
+Variáveis úteis para **latência** (ver também [.env.example](.env.example)): ``OPENAI_HTTP_TIMEOUT_SECONDS`` (cliente OpenAI), ``ORCHESTRATOR_PARALLEL_TOOL_CALLS_ENABLED`` / ``ORCHESTRATOR_PARALLEL_TOOL_CALLS_MAX_CONCURRENT`` (várias tools MCP na mesma volta), ``FORMATADOR_UI_TIMEOUT_SECONDS``, ``AGENT_TRACE_FLUSH_ASYNC``. Com PostgreSQL activo, **notas de sessão**, **resumo**, **narrativa do observador** e **refresh do índice de contexto** (embed/K-Means) executam em **tarefa de fundo** após o JSON de resposta ao cliente.
+
 ### 3. Iniciar Servidor
 
 ```bash
