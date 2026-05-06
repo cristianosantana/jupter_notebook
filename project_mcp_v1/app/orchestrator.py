@@ -32,9 +32,11 @@ from app.mcp_session_cache import (
     entries_fingerprint,
 )
 from app.prompt_assembly import build_effective_system_text
+from app.pipeline_critique import format_critique_user_message, parse_critique_response
 from app.routing_tools import (
     MAESTRO_TOOLS_ONLY,
     ROUTE_TO_SPECIALIST_TOOL_NAME,
+    SPECIALIST_AGENTS,
     parse_route_arguments,
     specialist_from_text_fallback,
 )
@@ -48,6 +50,7 @@ from app.agent_trace import (
     take_openai_chat_stats,
 )
 from app.config import Settings, get_settings, resolve_agent_trace_dir
+from app.content_blocks import split_reply_and_blocks
 from mcp_client.client import Client
 from mcp.types import CallToolResult, Tool  # pyright: ignore[reportMissingImports]
 
@@ -84,19 +87,20 @@ class SkillLoader:
         self.skills_dir = skills_dir
         self._cache: dict[str, tuple[str, SkillMetadata]] = {}
 
-    def load_skill(self, agent_type: AgentType) -> tuple[str, SkillMetadata]:
-        """Carrega SKILL para agente, retorna (conteúdo, metadata)."""
-        if agent_type in self._cache:
-            return self._cache[agent_type]
+    def load_skill(self, skill_id: str) -> tuple[str, SkillMetadata]:
+        """Carrega SKILL por id de ficheiro (ex.: ``analise_os``, ``avaliador_critico``)."""
+        key = str(skill_id)
+        if key in self._cache:
+            return self._cache[key]
 
-        skill_file = self.skills_dir / f"{agent_type}.md"
+        skill_file = self.skills_dir / f"{key}.md"
         if not skill_file.is_file():
             raise FileNotFoundError(f"SKILL not found: {skill_file}")
 
         content = skill_file.read_text(encoding="utf-8")
         skill_text, metadata = self._parse_skill(content)
 
-        self._cache[agent_type] = (skill_text, metadata)
+        self._cache[key] = (skill_text, metadata)
         return skill_text, metadata
 
     @staticmethod
@@ -592,7 +596,16 @@ class ModularOrchestrator:
                 _logger_orch.warning("verifier pipeline failed: %s", e)
 
         if st.pipeline_compositor_enabled:
-            allow = True
+            skip_c = (
+                st.pipeline_skip_compositor_when_formatador_succeeds
+                and bool(md.get("formatador_ui_applied"))
+            )
+            if skip_c:
+                self._observer_append(
+                    "pipeline_compositor",
+                    {"skipped": True, "reason": "formatador_ui_applied"},
+                )
+            allow = not skip_c
             vs = str(md.get("verification_status") or "")
             if st.pipeline_verifier_enabled and "REPROVADO" in vs.upper():
                 allow = False
@@ -602,7 +615,7 @@ class ModularOrchestrator:
                 except (FileNotFoundError, ValueError):
                     c_skill = (
                         "Compositor: devolve **só** JSON válido "
-                        '{"version":1,"blocks":[{"type":"p","markdown":"..."}]}'
+                        '{"version":1,"content_blocks":[{"type":"p","markdown":"..."}]}'
                     )
                 c_user = f"Texto aprovado ou candidato:\n{text[:16000]}"
                 try:
@@ -619,14 +632,183 @@ class ModularOrchestrator:
                     raw = str((c_resp or {}).get("content") or "").strip()
                     try:
                         parsed = json.loads(raw)
-                        if isinstance(parsed, dict) and "blocks" in parsed:
-                            md["layout_blocks"] = parsed
-                            self._observer_append("pipeline_compositor", {"blocks": len(parsed.get("blocks") or [])})
+                        if isinstance(parsed, dict):
+                            arr = None
+                            for _k in ("content_blocks", "blocks"):
+                                _v = parsed.get(_k)
+                                if isinstance(_v, list):
+                                    arr = _v
+                                    break
+                            if arr is not None:
+                                md["layout_blocks"] = parsed
+                                self._observer_append(
+                                    "pipeline_compositor",
+                                    {"blocks": len(arr)},
+                                )
                     except json.JSONDecodeError:
                         md["layout_blocks"] = {"version": 1, "raw": raw[:8000]}
                 except Exception as e:
                     _logger_orch.warning("compositor pipeline failed: %s", e)
 
+        return result
+
+    async def _llm_critical_evaluate(
+        self,
+        user_input: str,
+        result: dict[str, Any],
+    ):
+        st = get_settings()
+        try:
+            skill, _ = self.skill_loader.load_skill("avaliador_critico")
+        except (FileNotFoundError, ValueError):
+            skill = (
+                "Avaliador crítico. Responde **só** JSON: "
+                '{"decisao":"APROVAR"|"DEVOLVER","justificativa_curta":"",'
+                '"pontos_a_acrescentar":[],"exige_novos_dados":false,"exige_pesquisa_web":false}'
+            )
+        digest = await self._digest_for_system_async()
+        text = str((result.get("assistant") or {}).get("content") or "")
+        payload = {
+            "pergunta": user_input[:6000],
+            "resposta_candidata": text[:16000],
+            "digest_mcp": digest[:12000],
+        }
+        mo = st.resolve_orchestrator_model_for_agent("avaliador_critico")
+        try:
+            with llm_phase_context("orchestrator:avaliador_critico"):
+                resp = await self.model.chat(
+                    [
+                        {"role": "system", "content": skill},
+                        {
+                            "role": "user",
+                            "content": json.dumps(payload, ensure_ascii=False)[:120_000],
+                        },
+                    ],
+                    tools=None,
+                    model_override=mo,
+                )
+            raw = str((resp or {}).get("content") or "")
+        except Exception as e:
+            _logger_orch.warning("critical evaluator failed: %s", e)
+            raw = (
+                '{"decisao":"APROVAR","justificativa_curta":"avaliador indisponível",'
+                '"pontos_a_acrescentar":[]}'
+            )
+        return parse_critique_response(raw)
+
+    async def _run_critique_refine_loop(
+        self,
+        result: dict[str, Any],
+        user_input: str,
+        tools_used: list[dict[str, Any]],
+        step: int,
+    ) -> tuple[dict[str, Any], int]:
+        st = get_settings()
+        if not st.pipeline_critical_evaluator_enabled:
+            return result, step
+        md = self._session_meta()
+        max_dev = max(1, int(st.orchestrator_max_critique_rounds))
+        devolutions = 0
+        while True:
+            print(
+                f"🔄 [avaliador_critico] {self.current_agent} → avaliador_critico "
+                f"(rodada {devolutions + 1}, max devoluções: {max_dev})"
+            )
+            verdict = await self._llm_critical_evaluate(user_input, result)
+            md["critique_last"] = {
+                "devolucoes_feitas": devolutions,
+                "decisao": verdict.decisao,
+                "justificativa_curta": verdict.justificativa_curta,
+                "exige_novos_dados": verdict.exige_novos_dados,
+                "exige_pesquisa_web": verdict.exige_pesquisa_web,
+            }
+            self._observer_append(
+                "critique_evaluator",
+                {"devolucoes": devolutions, "decisao": verdict.decisao},
+            )
+            print(
+                f"🔄 [avaliador_critico] decisão: {verdict.decisao} "
+                f"({verdict.justificativa_curta[:120] + '…' if len(verdict.justificativa_curta) > 120 else verdict.justificativa_curta})"
+            )
+            if verdict.aprovar:
+                return result, step
+            if devolutions >= max_dev:
+                md["critique_forced_stop"] = True
+                note = (
+                    "\n\n*[Resposta após o máximo de devoluções do avaliador "
+                    f"({max_dev}); pode haver lacunas.]*"
+                )
+                ac = dict(result.get("assistant") or {})
+                ac["content"] = str(ac.get("content") or "") + note
+                result = {**result, "assistant": ac}
+                return result, step
+            devolutions += 1
+            print(
+                f"🔄 [avaliador_critico] DEVOLVER → voltar a {self.current_agent} "
+                f"(tools={'sim' if (verdict.exige_novos_dados or verdict.exige_pesquisa_web) else 'não'})"
+            )
+            self._append_message({
+                "role": "user",
+                "content": format_critique_user_message(verdict),
+            })
+            tools_payload: list[dict[str, Any]] | None = None
+            if verdict.exige_novos_dados or verdict.exige_pesquisa_web:
+                tools_payload = self._tools_payload_for_specialist()
+            result, step = await self._run_specialist_loop(
+                tools_payload, tools_used, step
+            )
+
+    async def _run_formatador_ui(
+        self,
+        result: dict[str, Any],
+        user_input: str,
+    ) -> dict[str, Any]:
+        st = get_settings()
+        if not st.pipeline_formatador_ui_enabled:
+            return result
+        md = self._session_meta()
+        text = str((result.get("assistant") or {}).get("content") or "")
+        if not text.strip():
+            return result
+        try:
+            skill, _ = self.skill_loader.load_skill("formatador_ui")
+        except (FileNotFoundError, ValueError):
+            skill = (
+                "Formatador UI: preserva factos; no fim um fenced ```json com "
+                '{"version":1,"content_blocks":[{"type":"paragraph","text":"..."}]}'
+            )
+        mo = st.resolve_orchestrator_model_for_agent("formatador_ui")
+        u = (
+            "Pedido original (contexto):\n"
+            + user_input[:4000]
+            + "\n\nTexto aprovado a formatar:\n"
+            + text[:24000]
+        )
+        print(f"🔄 [formatador_ui] {self.current_agent} → formatador_ui (chamada ao modelo)")
+        try:
+            with llm_phase_context("orchestrator:formatador_ui"):
+                resp = await self.model.chat(
+                    [
+                        {"role": "system", "content": skill},
+                        {"role": "user", "content": u},
+                    ],
+                    tools=None,
+                    model_override=mo,
+                )
+            out = str((resp or {}).get("content") or "").strip()
+        except Exception as e:
+            _logger_orch.warning("formatador_ui failed: %s", e)
+            return result
+        if not out:
+            return result
+        _, blocks = split_reply_and_blocks(out)
+        ac = dict(result.get("assistant") or {})
+        ac["content"] = out
+        result = {**result, "assistant": ac}
+        if blocks is not None:
+            md["formatador_ui_applied"] = True
+            md["layout_blocks"] = blocks
+        self._observer_append("formatador_ui", {"has_blocks": blocks is not None})
         return result
 
     async def _refresh_entity_glossary(self, session_id: UUID | None = None) -> None:
@@ -877,6 +1059,25 @@ class ModularOrchestrator:
         if not self.tools:
             return None
         return [tool.model_dump() for tool in self.tools]
+
+    def _tools_payload_for_specialist(self) -> list[dict[str, Any]] | None:
+        """Tools MCP no formato OpenAI, com allowlist opcional por agente (``orchestrator_tool_allowlist_json``)."""
+        base = self._tools_payload_for_chat()
+        if not base:
+            return None
+        if self.current_agent not in SPECIALIST_AGENTS:
+            return base
+        mp = get_settings().specialist_mcp_tool_allowlist()
+        allow = mp.get(str(self.current_agent))
+        if not allow:
+            return base
+        out: list[dict[str, Any]] = []
+        for t in base:
+            fn = t.get("function") if isinstance(t.get("function"), dict) else None
+            name = (fn.get("name") if fn else None) or t.get("name")
+            if name and str(name) in allow:
+                out.append(t)
+        return out if out else base
 
     @staticmethod
     def _maestro_tool_choice_dict() -> dict[str, Any]:
@@ -1195,7 +1396,7 @@ class ModularOrchestrator:
         tools_payload: list[dict[str, Any]] | None,
         tools_used: list[dict[str, Any]],
         step: int,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int]:
         st_sp = get_settings()
         max_rounds_sp = max(1, int(st_sp.orchestrator_max_tool_rounds))
         while True:
@@ -1235,11 +1436,14 @@ class ModularOrchestrator:
             self._append_message(response)
 
             if not tool_calls:
-                return {
-                    "assistant": response,
-                    "tools_used": tools_used,
-                    "agent": self.current_agent,
-                }
+                return (
+                    {
+                        "assistant": response,
+                        "tools_used": tools_used,
+                        "agent": self.current_agent,
+                    },
+                    step,
+                )
 
             requested = [
                 n
@@ -1270,6 +1474,10 @@ class ModularOrchestrator:
         """
         self._session_metadata = session_metadata
         self._session_id_for_cache = session_id
+        if self._session_metadata is not None:
+            # Evita que flags do turno anterior saltem o compositor na F3.
+            self._session_metadata.pop("formatador_ui_applied", None)
+
         auto_route = target_agent is None
         tools_used: list[dict[str, Any]] = []
 
@@ -1311,7 +1519,7 @@ class ModularOrchestrator:
                 "_orch_anchor": True,
             })
 
-            tools_payload = self._tools_payload_for_chat()
+            tools_payload = self._tools_payload_for_specialist()
             step = 0
 
             if auto_route and self.current_agent == "maestro":
@@ -1349,9 +1557,14 @@ class ModularOrchestrator:
                         early["trace_run_id"] = self._trace_run_id
                     return early
 
-            out = await self._run_specialist_loop(
+            out, step = await self._run_specialist_loop(
                 tools_payload, tools_used, step
             )
+            if self.current_agent != "maestro":
+                out, step = await self._run_critique_refine_loop(
+                    out, user_input, tools_used, step
+                )
+                out = await self._run_formatador_ui(out, user_input)
             out = await self._run_f3_pipeline(out, user_input)
             st_mem = get_settings()
             if self._session_metadata is not None:

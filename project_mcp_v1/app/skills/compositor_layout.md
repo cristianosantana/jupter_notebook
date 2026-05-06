@@ -18,7 +18,7 @@ Transformar texto analítico aprovado (ou candidato) em **JSON de blocos** para 
 
 ## Regras não negociáveis
 
-- Resposta **única**: um objecto JSON válido com `version` e `blocks`.
+- Resposta **única**: um objecto JSON válido com `version` e `content_blocks` (array de blocos). A chave `blocks` é legado; preferir `content_blocks`.
 - **Não inventes** números: copia dos dados/texto de entrada.
 - Mantém blocos ordenados e tipados.
 
@@ -40,7 +40,7 @@ Só JSON, formato exemplificativo:
 ```json
 {
   "version": 1,
-  "blocks": [
+  "content_blocks": [
     { "type": "p", "markdown": "..." },
     { "type": "card", "title": "...", "metrics": [{"label": "", "value": ""}] },
     { "type": "list", "items": ["..."] },

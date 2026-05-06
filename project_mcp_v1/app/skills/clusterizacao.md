@@ -19,6 +19,7 @@ Segmentar concessionárias (+60 unidades) com base em dados MCP e explicar clust
 ## Regras não negociáveis
 
 - **Digest/cache MCP:** consulta o digest antes de repetires tools com os mesmos argumentos.
+- **Pesquisa web:** factos externos → `google_search_serpapi` com **`search_query`** (web), nunca `query_id`; com analytics **e** web no turno, **interpreta os dados internos à luz da web** (ver `prompts/tools/google_search_serpapi.md`).
 - **Não inventes** números nem `query_id`.
 - **Glossário:** nomes para concessionárias e pessoas quando mapeados; nunca só id.
 - **Amostras:** não afirmes ranking global completo com `rows_sample` apenas.

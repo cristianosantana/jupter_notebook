@@ -11,7 +11,7 @@ export type ContentBlock =
       items: { label: string; value: string }[]
     }
 
-export type ContentBlocksPayload = { version: 1; blocks: ContentBlock[] }
+export type ContentBlocksPayload = { version: 1; content_blocks: ContentBlock[] }
 
 export type ChatMessage =
   | { role: 'user'; content: string }

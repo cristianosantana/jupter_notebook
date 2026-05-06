@@ -20,7 +20,7 @@ export function StructuredAssistantMessage({
   const { displayContent, mergedBlocks, tsvInline } = useMemo(() => {
     const extracted = extractReplyContentBlocks(content)
     const fromApi =
-      contentBlocks != null && contentBlocks.blocks.length > 0
+      contentBlocks != null && contentBlocks.content_blocks.length > 0
         ? contentBlocks
         : null
     const payload = extracted.payload
@@ -28,7 +28,7 @@ export function StructuredAssistantMessage({
     let text = payload != null ? extracted.displayText : content
 
     const jsonTableMaxRows =
-      blocks?.blocks.reduce((m, b) => {
+      blocks?.content_blocks.reduce((m, b) => {
         if (b.type === 'table') return Math.max(m, b.rows.length)
         return m
       }, 0) ?? 0
@@ -40,7 +40,7 @@ export function StructuredAssistantMessage({
     }
 
     const { proseWithoutTable, table: tsvRaw } = extractTsvTableFromProse(text)
-    const hasJsonTable = blocks?.blocks.some(
+    const hasJsonTable = blocks?.content_blocks.some(
       (b) => b.type === 'table' && b.rows.length >= 2,
     )
     const tsvInline = hasJsonTable ? null : tsvRaw
@@ -53,7 +53,8 @@ export function StructuredAssistantMessage({
   }, [content, contentBlocks])
 
   const hasStructured =
-    (mergedBlocks != null && mergedBlocks.blocks.length > 0) || tsvInline != null
+    (mergedBlocks != null && mergedBlocks.content_blocks.length > 0) ||
+    tsvInline != null
   if (!hasStructured) {
     return <AssistantMessageBody content={displayContent} />
   }
@@ -62,8 +63,8 @@ export function StructuredAssistantMessage({
       {displayContent.trim() ? (
         <AssistantMessageBody content={displayContent} />
       ) : null}
-      {mergedBlocks != null && mergedBlocks.blocks.length > 0 ? (
-        <ContentBlocksView blocks={mergedBlocks.blocks} />
+      {mergedBlocks != null && mergedBlocks.content_blocks.length > 0 ? (
+        <ContentBlocksView blocks={mergedBlocks.content_blocks} />
       ) : null}
       {tsvInline ? <TsvInlineTableView table={tsvInline} /> : null}
     </div>

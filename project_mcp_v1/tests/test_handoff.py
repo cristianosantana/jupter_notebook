@@ -206,6 +206,8 @@ def test_auto_route_continues_specialist_on_second_message(monkeypatch):
     monkeypatch.setenv("OBSERVER_AGENT_ENABLED", "false")
     monkeypatch.setenv("PIPELINE_VERIFIER_ENABLED", "false")
     monkeypatch.setenv("PIPELINE_COMPOSITOR_ENABLED", "false")
+    monkeypatch.setenv("PIPELINE_CRITICAL_EVALUATOR_ENABLED", "false")
+    monkeypatch.setenv("PIPELINE_FORMATADOR_UI_ENABLED", "false")
     monkeypatch.setenv("MEMORY_PROMPTS_ENABLED", "false")
     monkeypatch.setenv("MCP_CACHE_DIGEST_LLM_ENABLED", "false")
     from app.config import get_settings

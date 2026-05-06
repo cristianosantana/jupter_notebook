@@ -118,6 +118,13 @@ class ChatRequest(BaseModel):
     session_id: UUID | None = None
 
 
+class McpToolCallRequest(BaseModel):
+    """Corpo para executar uma tool do servidor MCP ligado ao orquestrador."""
+
+    name: str
+    arguments: dict[str, object] | None = None
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""
@@ -265,6 +272,39 @@ async def api_chat(http_request: Request, body: ChatRequest):
     return await run_chat_with_disconnect(http_request, body)
 
 
+@api_router.get("/mcp/tools")
+async def api_mcp_list_tools():
+    """
+    Lista as ferramentas expostas pelo servidor MCP (mesma sessão que o orquestrador).
+    """
+    if agent is None:
+        raise HTTPException(status_code=503, detail="orquestrador / MCP não inicializado")
+    async with orchestrator_lock:
+        tools = await agent.client.list_tools()
+    serialized = [t.model_dump(mode="json") for t in tools]
+    return {"tools": serialized, "count": len(serialized)}
+
+
+@api_router.post("/mcp/tools/call")
+async def api_mcp_call_tool(body: McpToolCallRequest):
+    """
+    Executa uma tool MCP por nome. Útil para debug ou integrações directas.
+    Usa o mesmo cliente que o agente; pedidos são serializados com ``orchestrator_lock``.
+    """
+    if agent is None:
+        raise HTTPException(status_code=503, detail="orquestrador / MCP não inicializado")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name é obrigatório")
+    async with orchestrator_lock:
+        result = await agent.client.call_tool(name, body.arguments)
+    return {
+        "name": name,
+        "is_error": result.isError,
+        "result": result.model_dump(mode="json"),
+    }
+
+
 @api_router.get("/sessions")
 async def api_list_sessions(user_id: str | None = None, limit: int = 50):
     if session_store is None:
@@ -353,6 +393,8 @@ async def list_agents():
         "projecoes",
         "verificador",
         "compositor_layout",
+        "avaliador_critico",
+        "formatador_ui",
     ]
 
     for agent_type in agent_types:

@@ -63,18 +63,25 @@ export function normalizeContentBlockRaw(raw: unknown): unknown {
   return out
 }
 
+function rawBlocksArray(o: Record<string, unknown>): unknown[] | null {
+  if (Array.isArray(o.content_blocks)) return o.content_blocks
+  if (Array.isArray(o.blocks)) return o.blocks
+  return null
+}
+
 export function parseContentBlocks(raw: unknown): ContentBlocksPayload | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const ver = o.version
   if (ver !== 1 && ver !== '1') return null
-  if (!Array.isArray(o.blocks)) return null
-  const blocks = o.blocks
+  const rawArr = rawBlocksArray(o)
+  if (!rawArr) return null
+  const content_blocks = rawArr
     .map(normalizeContentBlockRaw)
     .filter(isContentBlock) as ContentBlock[]
-  if (blocks.length === 0) return null
-  return { version: 1, blocks }
+  if (content_blocks.length === 0) return null
+  return { version: 1, content_blocks }
 }
 
 /**
@@ -116,7 +123,10 @@ export function extractReplyContentBlocks(reply: string): {
     }
   }
   const stripped = text.trim()
-  if (stripped.startsWith('{') && stripped.includes('"blocks"')) {
+  if (
+    stripped.startsWith('{') &&
+    (stripped.includes('"content_blocks"') || stripped.includes('"blocks"'))
+  ) {
     try {
       const data = JSON.parse(stripped) as unknown
       const payload = parseContentBlocks(data)

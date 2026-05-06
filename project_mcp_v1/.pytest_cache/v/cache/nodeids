@@ -8,6 +8,7 @@
   "tests/test_agent_trace_and_sampling.py::test_openai_chat_stats_incomplete_request_no_complete",
   "tests/test_agent_trace_and_sampling.py::test_openai_provider_llm_phase_in_trace",
   "tests/test_content_blocks.py::test_invalid_fence_ignored",
+  "tests/test_content_blocks.py::test_legacy_blocks_key_still_parsed",
   "tests/test_content_blocks.py::test_strips_trailing_json_fence",
   "tests/test_content_blocks.py::test_whole_body_json",
   "tests/test_entity_glossary.py::test_primeiro_nome_display_first_token",
