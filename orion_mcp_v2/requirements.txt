@@ -1,0 +1,2 @@
+# Instalar em modo editável: pip install -e ".[dev]"
+-e .[dev]

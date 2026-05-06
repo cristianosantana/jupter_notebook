@@ -92,8 +92,8 @@ def parse_critique_response(raw: str) -> CritiqueVerdict:
     )
 
 
-def format_critique_user_message(v: CritiqueVerdict) -> str:
-    """Mensagem user interna para nova volta do especialista."""
+def format_critique_message(v: CritiqueVerdict) -> str:
+    """Texto interno para nova volta do especialista (persistido como role system)."""
     lines = [
         "[Avaliador crítico — feedback interno]",
         f"Decisão: {v.decisao}",

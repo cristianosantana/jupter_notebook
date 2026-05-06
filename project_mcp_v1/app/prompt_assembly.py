@@ -52,12 +52,18 @@ def load_tool_prompts_md(
     names: list[str],
     *,
     include_route_to_specialist: bool = False,
+    max_tools: int | None = None,
 ) -> str:
     chunks: list[str] = []
     seen: set[str] = set()
     ordered = list(names)
     if include_route_to_specialist and ROUTE_TO_SPECIALIST_TOOL_NAME not in ordered:
         ordered = [ROUTE_TO_SPECIALIST_TOOL_NAME] + ordered
+    if max_tools is not None and max_tools > 0:
+        if include_route_to_specialist and ordered and ordered[0] == ROUTE_TO_SPECIALIST_TOOL_NAME:
+            ordered = [ordered[0]] + ordered[1 : 1 + max(0, max_tools - 1)]
+        else:
+            ordered = ordered[:max_tools]
     for name in ordered:
         if name in seen:
             continue
@@ -76,9 +82,11 @@ def build_memory_blocks(metadata: dict[str, Any], settings: Settings | None = No
         return ""
     parts: list[str] = []
     if st.memory_conversation_summary_enabled:
-        s = metadata.get("conversation_summary")
-        if isinstance(s, str) and s.strip():
-            parts.append("## Resumo da conversa\n\n" + s.strip())
+        # Evita duplicar no system quando o orquestrador injecta o resumo no payload compacto.
+        if not st.orchestrator_history_compact_enabled:
+            s = metadata.get("conversation_summary")
+            if isinstance(s, str) and s.strip():
+                parts.append("## Resumo da conversa\n\n" + s.strip())
     if st.memory_session_notes_enabled:
         n = metadata.get("session_notes")
         if n is not None:
@@ -88,6 +96,68 @@ def build_memory_blocks(metadata: dict[str, Any], settings: Settings | None = No
         if ex is not None:
             parts.append("## Memória extraída\n\n```json\n" + str(ex) + "\n```")
     return "\n\n".join(parts).strip()
+
+
+def build_system_package(
+    *,
+    agent: str,
+    skill_body: str,
+    entity_glossary_markdown: str,
+    mcp_digest_markdown: str,
+    session_metadata: dict[str, Any],
+    tools_openai_payload: list[dict[str, Any]] | None,
+    mcp_tools: list[Tool] | None,
+    settings: Settings | None = None,
+) -> tuple[str, str]:
+    """
+    Parte o system em ``system_core`` (políticas + agente + skill) e ``context_block``
+    (instruções longas de tools + glossário + digest + memória), para montagem opcional
+    em mensagens separadas (ver ``ORCHESTRATOR_SYSTEM_LAYER_SPLIT_ENABLED``).
+    """
+    st = settings or get_settings()
+    fragments_core: list[str] = []
+
+    for rel in ("shared.md", "writing.md", "context-policy.md"):
+        block = _read_if_exists(rel)
+        if block:
+            fragments_core.append(block)
+
+    agent_md = _read_if_exists(f"agents/{agent}.md")
+    if agent_md:
+        fragments_core.append(agent_md)
+
+    skill = (skill_body or "").strip()
+    if skill:
+        fragments_core.append(skill)
+
+    max_t = max(0, int(st.orchestrator_tool_prompt_md_max_tools or 0))
+    mt = max_t if max_t > 0 else None
+    if agent == "maestro":
+        names = _tool_names_from_payload(tools_openai_payload)
+        tp = load_tool_prompts_md(names, include_route_to_specialist=True, max_tools=mt)
+    else:
+        names = _tool_names_from_mcp(mcp_tools)
+        tp = load_tool_prompts_md(names, include_route_to_specialist=False, max_tools=mt)
+
+    fragments_ctx: list[str] = []
+    if tp:
+        fragments_ctx.append(tp)
+
+    gloss = (entity_glossary_markdown or "").strip()
+    if gloss:
+        fragments_ctx.append(gloss)
+
+    digest = (mcp_digest_markdown or "").strip()
+    if digest:
+        fragments_ctx.append(digest)
+
+    mem = build_memory_blocks(session_metadata, st)
+    if mem:
+        fragments_ctx.append(mem)
+
+    core = "\n\n".join(f for f in fragments_core if f).strip()
+    ctx = "\n\n".join(f for f in fragments_ctx if f).strip()
+    return core, ctx
 
 
 def build_effective_system_text(
@@ -101,41 +171,14 @@ def build_effective_system_text(
     mcp_tools: list[Tool] | None,
     settings: Settings | None = None,
 ) -> str:
-    st = settings or get_settings()
-    fragments: list[str] = []
-
-    for rel in ("shared.md", "writing.md", "context-policy.md"):
-        block = _read_if_exists(rel)
-        if block:
-            fragments.append(block)
-
-    agent_md = _read_if_exists(f"agents/{agent}.md")
-    if agent_md:
-        fragments.append(agent_md)
-
-    skill = (skill_body or "").strip()
-    if skill:
-        fragments.append(skill)
-
-    if agent == "maestro":
-        names = _tool_names_from_payload(tools_openai_payload)
-        tp = load_tool_prompts_md(names, include_route_to_specialist=True)
-    else:
-        names = _tool_names_from_mcp(mcp_tools)
-        tp = load_tool_prompts_md(names, include_route_to_specialist=False)
-    if tp:
-        fragments.append(tp)
-
-    gloss = (entity_glossary_markdown or "").strip()
-    if gloss:
-        fragments.append(gloss)
-
-    digest = (mcp_digest_markdown or "").strip()
-    if digest:
-        fragments.append(digest)
-
-    mem = build_memory_blocks(session_metadata, st)
-    if mem:
-        fragments.append(mem)
-
-    return "\n\n".join(f for f in fragments if f).strip()
+    core, ctx = build_system_package(
+        agent=agent,
+        skill_body=skill_body,
+        entity_glossary_markdown=entity_glossary_markdown,
+        mcp_digest_markdown=mcp_digest_markdown,
+        session_metadata=session_metadata,
+        tools_openai_payload=tools_openai_payload,
+        mcp_tools=mcp_tools,
+        settings=settings,
+    )
+    return "\n\n".join(p for p in (core, ctx) if p).strip()

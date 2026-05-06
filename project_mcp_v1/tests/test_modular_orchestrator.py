@@ -137,8 +137,8 @@ class TestModelRouter:
         assert ModelRouter.get_model("maestro", s) == "gpt-5-mini"
 
     def test_falls_back_to_openai_model(self) -> None:
-        s = Settings(openai_model="gpt-4o-mini", orchestrator_model_maestro="")
-        assert ModelRouter.get_model("maestro", s) == "gpt-4o-mini"
+        s = Settings(openai_model="gpt-5-mini", orchestrator_model_maestro="")
+        assert ModelRouter.get_model("maestro", s) == "gpt-5-mini"
 
     def test_all_listed_agents_resolve(self) -> None:
         agent_types = [
@@ -168,8 +168,8 @@ class TestModelRouter:
             assert m == "gpt-test"
 
     def test_unknown_agent_uses_openai_model(self) -> None:
-        s = Settings(openai_model="gpt-4o-mini")
-        assert ModelRouter.get_model("agente_inexistente", s) == "gpt-4o-mini"
+        s = Settings(openai_model="gpt-5-mini")
+        assert ModelRouter.get_model("agente_inexistente", s) == "gpt-5-mini"
 
 
 class TestSkillMetadata:
@@ -364,7 +364,7 @@ class TestModularOrchestratorSetup:
     def test_agent_type_enum_values(self):
         """ModelRouter devolve string de modelo para agentes conhecidos."""
         valid_agents = {"maestro", "analise_os", "clusterizacao", "visualizador", "agregador", "projecoes"}
-        st = Settings(openai_model="gpt-4o-mini")
+        st = Settings(openai_model="gpt-5-mini")
         for agent in valid_agents:
             model = ModelRouter.get_model(agent, st)  # type: ignore
             assert model

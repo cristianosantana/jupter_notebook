@@ -1,5 +1,7 @@
 import type { ChatMessage, StoredMsg } from './types'
 
+export type SessionMetadataLike = { metadata?: Record<string, unknown> }
+
 export function contentToString(content: unknown): string {
   if (content === null || content === undefined) return ''
   if (typeof content === 'string') return content
@@ -22,4 +24,17 @@ export function mapStoredMessages(raw: StoredMsg[]): ChatMessage[] {
     else out.push({ role: 'assistant', content: `[${r}] ${c}` })
   }
   return out
+}
+
+/** Se o transcript não tiver bolha user, usa ``metadata.last_user_message`` (gravado no host). */
+export function mapStoredMessagesWithSessionFallback(
+  raw: StoredMsg[],
+  session?: SessionMetadataLike | null,
+): ChatMessage[] {
+  const mapped = mapStoredMessages(raw)
+  const hasUser = mapped.some((m) => m.role === 'user')
+  const lu = session?.metadata?.last_user_message
+  if (!hasUser && typeof lu === 'string' && lu.trim())
+    return [{ role: 'user', content: lu.trim() }, ...mapped]
+  return mapped
 }

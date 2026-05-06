@@ -1,0 +1,73 @@
+# Três serviços isolados (API, MCP server, cliente MCP smoke).
+# Executar a partir deste directório: docker compose up --build
+#
+# Rede externa obrigatória: docker-env_cs_backend (deve existir antes).
+# Os contentores cs_postgres, cs_redis, cs_mysql do outro stack devem estar nessa rede;
+# no .env use esses nomes como host (não localhost), ex. postgresql://...@cs_postgres:5432/...
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8010:8010"
+    # Com ORION_V2_LLM_IO_DUMP_ENABLED=true, monte o directório de dumps no host, ex.:
+    # volumes:
+    #   - ./llm_dumps:/tmp/orion_mcp_v2_llm_io
+    env_file:
+      - .env
+    environment:
+      ORION_V2_ENV: development
+      ORION_V2_DB_REQUIRED: "false"
+    networks:
+      - default
+      - docker-env_cs_backend
+    volumes:
+      - ./llm_dumps:/tmp/orion_mcp_v2_llm_io
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-server
+    ports:
+      - "8765:8765"
+    env_file:
+      - .env
+    environment:
+      ORION_V2_MCP_SRV_PORT: "8765"
+      ORION_V2_MCP_SRV_HOST: "0.0.0.0"
+    networks:
+      - default
+      - docker-env_cs_backend
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.socket(); s.settimeout(3); s.connect(('127.0.0.1',8765)); s.close()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  mcp-client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-client
+    env_file:
+      - .env
+    environment:
+      MCP_SERVER_URL: "http://mcp-server:8765/sse"
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    networks:
+      - default
+      - docker-env_cs_backend
+
+networks:
+  docker-env_cs_backend:
+    external: true
+    name: docker-env_cs_backend

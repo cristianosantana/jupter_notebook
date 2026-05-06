@@ -44,3 +44,49 @@ def test_digest_non_empty():
     }
     s = build_mcp_cache_digest_section(md)
     assert "list_analytics_queries" in s
+
+
+def test_digest_run_analytics_warns_not_full_data():
+    payload = (
+        '{"query_id":"q1","row_count":3943,"columns":["a","b"],'
+        '"rows":[{"a":1,"b":2},{"a":3,"b":4}]}'
+    )
+    md = {
+        "mcp_tool_cache": {
+            "entries": [
+                {
+                    "tool_name": "run_analytics_query",
+                    "args": {"query_id": "q1"},
+                    "result_text": payload,
+                    "row_count": 3943,
+                }
+            ]
+        }
+    }
+    s = build_mcp_cache_digest_section(md)
+    assert "run_analytics_query" in s
+    assert "3943" in s or "row_count" in s
+    assert "analytics_aggregate_session" in s
+    assert "context_retrieve_similar" in s
+    assert "colunas" in s
+
+
+def test_digest_includes_analytics_datasets_handles():
+    md = {
+        "mcp_tool_cache": {"entries": []},
+        "analytics_datasets": {
+            "by_id": {
+                "abc123": {
+                    "session_dataset_id": "abc123",
+                    "query_id": "servicos_x",
+                    "row_count": 100,
+                    "columns": ["x", "y"],
+                    "sample_only": False,
+                }
+            },
+            "order": ["abc123"],
+        },
+    }
+    s = build_mcp_cache_digest_section(md)
+    assert "abc123" in s
+    assert "Datasets de analytics" in s

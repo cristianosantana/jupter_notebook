@@ -4,3 +4,4 @@ backup
 __pycache__
 .cursor
 output
+.github

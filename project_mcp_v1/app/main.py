@@ -10,14 +10,17 @@ Uso:
 
 import asyncio
 import contextlib
+import copy
 import json
 import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -26,6 +29,7 @@ from openai import AsyncOpenAI
 from ai_provider.openai_provider import OpenAIProvider
 from app.config import get_settings, resolve_agent_trace_dir, sync_mysql_env_from_settings
 from app.content_blocks import split_reply_and_blocks
+from app.post_turn_tasks import merge_post_turn_metadata_from_db_row, run_all_post_turn_work
 from app.mcp_sampling import build_openai_sampling_callback
 from mcp_client.client import Client
 from mcp import types as mcp_types  # pyright: ignore[reportMissingImports]
@@ -33,6 +37,23 @@ from app.orchestrator import ModularOrchestrator, AgentType
 from app.session_store import SessionStore
 
 _logger = logging.getLogger(__name__)
+
+
+def ensure_transcript_includes_user_message(
+    messages: list[dict[str, Any]],
+    user_text: str,
+) -> bool:
+    """
+    Garante pelo menos uma mensagem ``role=user`` no transcript persistido.
+    Usado quando o orquestrador não deixou nenhuma linha user (regressão / podagem).
+    """
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if any((str(m.get("role") or "")).strip().lower() == "user" for m in messages):
+        return False
+    messages.insert(0, {"role": "user", "content": text})
+    return True
 
 agent: ModularOrchestrator | None = None
 session_store: SessionStore | None = None
@@ -56,10 +77,13 @@ async def lifespan(app: FastAPI):
         os.environ.pop("AGENT_TRACE_MAX_FIELD_CHARS", None)
 
     sync_mysql_env_from_settings(settings)
-    oai = AsyncOpenAI(api_key=settings.openai_api_key or None)
+    oai = AsyncOpenAI(
+        api_key=settings.openai_api_key or None,
+        timeout=float(settings.openai_http_timeout_seconds),
+    )
     sampling_cb = build_openai_sampling_callback(
         oai,
-        settings.openai_model or "gpt-4o-mini",
+        settings.openai_model or "gpt-5-mini",
     )
     client = Client(
         "mcp_server/server.py",
@@ -131,7 +155,10 @@ async def health():
     return {"status": "ok", "agent": agent.current_agent if agent else "not_initialized"}
 
 
-async def process_chat(request: ChatRequest) -> dict:
+async def process_chat(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict:
     """
     Lógica partilhada por ``POST /chat`` e ``POST /api/chat``.
 
@@ -140,7 +167,7 @@ async def process_chat(request: ChatRequest) -> dict:
 
     - ``new_conversation: true`` — limpa mensagens e recomeça pelo Maestro.
     - Com PostgreSQL activo: envia ``session_id`` nas mensagens seguintes; ``user_id`` é opcional.
-      O transcript persistido inclui só a conversa com especialistas (não o roteamento do Maestro).
+      O transcript persistido inclui **todas** as mensagens da sessão (Maestro e especialistas).
     """
     if agent is None:
         raise RuntimeError("Agent not initialized")
@@ -200,18 +227,47 @@ async def process_chat(request: ChatRequest) -> dict:
             raise
         assistant = out["assistant"]
 
+        transcript_excerpt = "\n".join(
+            str(m.get("content") or "")[:500] for m in agent.messages[-8:]
+        )
+
         if session_store is not None and sid is not None:
+            fresh_row = await session_store.get_session(sid)
+            merge_post_turn_metadata_from_db_row(session_metadata, fresh_row)
             await session_store.update_session_metadata(sid, session_metadata)
-            if out["agent"] != "maestro":
-                await session_store.replace_conversation_messages(sid, agent.messages)
-                await session_store.touch_session(sid, out["agent"])
-            else:
-                await session_store.touch_session(sid)
+            excerpt = (request.message or "").strip()
+            if excerpt:
+                await session_store.merge_session_metadata(
+                    sid,
+                    {
+                        "last_user_message": excerpt[:8000],
+                        "last_user_message_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            if excerpt:
+                ensure_transcript_includes_user_message(agent.messages, excerpt)
+            await session_store.replace_conversation_messages(sid, agent.messages)
+            await session_store.touch_session(sid, out["agent"])
             tr = out.get("trace_run_id")
             if tr:
                 await session_store.merge_session_metadata(
                     sid,
                     {"last_trace_run_id": str(tr)},
+                )
+            if background_tasks is not None:
+                meta_snap = copy.deepcopy(session_metadata)
+                background_tasks.add_task(
+                    run_all_post_turn_work,
+                    store=session_store,
+                    mcp_client=agent.client,
+                    session_id=sid,
+                    model=agent.model,
+                    metadata_snapshot=meta_snap,
+                    user_input=request.message,
+                    tools_used=list(out.get("tools_used") or []),
+                    agent_final=str(out.get("agent") or ""),
+                    transcript_excerpt=transcript_excerpt,
+                    settings=settings,
                 )
 
     display_reply, content_blocks = split_reply_and_blocks(assistant["content"])
@@ -230,6 +286,13 @@ async def process_chat(request: ChatRequest) -> dict:
         payload["session_id"] = str(sid)
     if request.user_id is not None:
         payload["user_id"] = request.user_id
+    dbg_sem = out.get("semantic_context_debug")
+    if dbg_sem is not None:
+        payload["semantic_context_debug"] = dbg_sem
+    ofm = out.get("orchestrator_flow_mode")
+    if ofm is not None:
+        payload["orchestrator_flow_mode"] = str(ofm)
+    payload["orchestrator_llm_cap_exceeded"] = bool(out.get("orchestrator_llm_cap_exceeded"))
     return payload
 
 
@@ -245,8 +308,12 @@ async def _cancel_task_on_disconnect(http_request: Request, task: "asyncio.Task[
         raise
 
 
-async def run_chat_with_disconnect(http_request: Request, body: ChatRequest) -> dict:
-    task = asyncio.create_task(process_chat(body))
+async def run_chat_with_disconnect(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict:
+    task = asyncio.create_task(process_chat(body, background_tasks))
     disconnect_watch = asyncio.create_task(
         _cancel_task_on_disconnect(http_request, task)
     )
@@ -259,17 +326,25 @@ async def run_chat_with_disconnect(http_request: Request, body: ChatRequest) -> 
 
 
 @app.post("/chat")
-async def chat(http_request: Request, body: ChatRequest):
+async def chat(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+):
     """Alias legado; preferir ``POST /api/chat`` no SmartChat."""
-    return await run_chat_with_disconnect(http_request, body)
+    return await run_chat_with_disconnect(http_request, body, background_tasks)
 
 
 api_router = APIRouter(prefix="/api")
 
 
 @api_router.post("/chat")
-async def api_chat(http_request: Request, body: ChatRequest):
-    return await run_chat_with_disconnect(http_request, body)
+async def api_chat(
+    http_request: Request,
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+):
+    return await run_chat_with_disconnect(http_request, body, background_tasks)
 
 
 @api_router.get("/mcp/tools")

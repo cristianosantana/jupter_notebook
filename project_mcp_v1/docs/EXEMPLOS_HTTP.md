@@ -21,7 +21,6 @@ curl -X GET "$BASE_URL/health"
 ```
 
 **Resposta:**
-
 ```json
 {
   "status": "ok",
@@ -40,7 +39,6 @@ curl -X GET "$BASE_URL/agents"
 ```
 
 **Resposta:**
-
 ```json
 {
   "maestro": {
@@ -109,24 +107,17 @@ curl -X POST "$BASE_URL/chat" \
 ```
 
 **O que acontece:**
-
-1. O orquestrador corre o **Maestro** só com a ferramenta virtual interna `route_to_specialist` (não há MCP nesta fase).
-2. O modelo escolhe o especialista, por exemplo `analise_os`, e o servidor faz **handoff** (histórico limpo, skill do especialista).
-3. O agente `analise_os` executa as ferramentas MCP necessárias.
-4. A resposta HTTP inclui `agent_used: "analise_os"` e, em `tools_used`, a primeira entrada costuma ser o handoff (`result_preview` tipo `handoff → analise_os`).
+1. Maestro recebe: "volume de ordens de serviço"
+2. Detecta: Relacionado a análise OS
+3. Roteia para: `agente_analise_os` (Sonnet)
+4. Executa ferramentas MCP
+5. Retorna resultado com agent_used="analise_os"
 
 **Resposta (simplificada):**
-
 ```json
 {
   "reply": "A última semana registrou 456 ordens de serviço distribuídas da seguinte forma:\n\n**Top 5 Concessionárias por Volume:**\n1. Concessionária SP-001: 85 OS\n2. Concessionária MG-002: 72 OS\n3. Concessionária RJ-003: 68 OS\n4. Concessionária BA-004: 55 OS\n5. Concessionária RS-005: 48 OS\n\n**Insights:**\n- Volume total: 456 OS\n- Ticket médio: R$ 1,240\n- Serviço mais vendido: Proteção Cerâmica (34%)\n- Taxa de retrabalho: 8.2%",
   "tools_used": [
-    {
-      "name": "route_to_specialist",
-      "arguments": {"agent": "analise_os", "reason": "Pergunta sobre volume de OS por concessionária"},
-      "ok": true,
-      "result_preview": "handoff → analise_os"
-    },
     {
       "name": "list_analytics_queries",
       "arguments": {},
@@ -137,8 +128,6 @@ curl -X POST "$BASE_URL/chat" \
       "name": "run_analytics_query",
       "arguments": {
         "query_id": "servicos_vendidos_por_concessionaria",
-        "date_from": "2025-01-01",
-        "date_to": "2025-12-31",
         "limit": 100,
         "offset": 0,
         "summarize": false
@@ -164,28 +153,20 @@ curl -X POST "$BASE_URL/chat" \
 ```
 
 **O que acontece:**
-
-1. Maestro chama `route_to_specialist` com `agent: "clusterizacao"` (handoff interno).
-2. O especialista corre com ferramentas MCP e devolve a análise (ex.: clusters, métricas).
+1. Maestro detecta: Clusterização / Blue Ocean
+2. Roteia para: `agente_clusterizacao` (Opus)
+3. Executa K-Means com 15 features
+4. Identifica clusters + outliers
 
 **Resposta:**
-
 ```json
 {
   "reply": "Identifiquei 4 clusters operacionais na rede:\n\n**Cluster A (12 unidades) - High Performers:**\n- Ticket médio: R$ 1,850\n- Cross-sell: 45%\n- Retrabalho: 5.2%\n- Potencial: Manutenção (já estão no pico)\n\n**Cluster B (18 unidades) - Growth Potential:**\n- Ticket médio: R$ 1,120\n- Cross-sell: 28%\n- Retrabalho: 8.1%\n- **Oportunidade:** Treinar em cross-sell (impacto +$145k/trimestre)\n\n**Cluster C (20 unidades) - Efficiency Focus:**\n- Ticket médio: R$ 980\n- Cross-sell: 18%\n- Retrabalho: 11.5%\n- **Oportunidade:** Reduzir retrabalho (impacto +$89k/trimestre)\n\n**Cluster D (10 unidades) - Outliers:**\n- Padrão único (análise manual recomendada)\n\n**Blue Ocean Identificado:**\nClusters B e C têm espaço para crescimento sem competição direta. Recomendo: programa de cross-sell para B, programa de qualidade para C.",
   "tools_used": [
     {
-      "name": "route_to_specialist",
-      "arguments": {"agent": "clusterizacao", "reason": "Segmentação e potencial de crescimento"},
-      "ok": true,
-      "result_preview": "handoff → clusterizacao"
-    },
-    {
       "name": "run_analytics_query",
       "arguments": {
-        "query_id": "performance_vendedor_mes",
-        "date_from": "2025-01-01",
-        "date_to": "2025-05-31",
+        "query_id": "performance_vendedor_periodo",
         "limit": 100
       },
       "ok": true,
@@ -211,7 +192,6 @@ curl -X POST "$BASE_URL/chat" \
 **Detecção:** Performance de vendedores → `agente_analise_os` (Sonnet)
 
 **Resposta:**
-
 ```json
 {
   "reply": "**Top 10 Vendedores (Abril 2025):**\n\n1. João Silva (SP-001): 95 OS, R$ 142.5k, Conversão: 87%\n2. Maria Santos (MG-002): 87 OS, R$ 131.2k, Conversão: 84%\n3. Carlos Costa (RJ-003): 78 OS, R$ 118.9k, Conversão: 81%\n...",
@@ -236,14 +216,12 @@ curl -X POST "$BASE_URL/chat" \
 ```
 
 **O que acontece:**
-
 1. Ignora Maestro
 2. Va direto para: `agente_visualizador` (Sonnet)
 3. Seleciona tipo de gráfico: Line Chart ou Heatmap
 4. Gera código Chart.js
 
 **Resposta:**
-
 ```json
 {
   "reply": "Selecionei **Line Chart** para mostrar a tendência de faturamento ao longo do tempo para cada concessionária. Este formato permite visualizar crescimento/queda e sazonalidade.\n\n**Gráfico gerado com sucesso!** Dados de mar/abr/mai inclusos.",
@@ -277,7 +255,6 @@ curl -X POST "$BASE_URL/chat" \
 ```
 
 **Resposta:**
-
 ```json
 {
   "reply": "**Projeção de Faturamento (Jun-Ago 2025):**\n\n**Cenário Base (Probabilidade 60%):**\n- Junho: R$ 4.2M (±15%)\n- Julho: R$ 4.5M (±18%)\n- Agosto: R$ 4.1M (±20%)\n- Total Trimestre: R$ 12.8M\n\n**Cenário Otimista (20%):**\n- Se implementar programa de cross-sell em Cluster B\n- Impacto esperado: +8% (R$ 1.02M adicional)\n\n**Cenário Pessimista (20%):**\n- Se taxa de retrabalho aumentar para 12%\n- Impacto esperado: -5% (R$ 640k a menos)\n\n**Confiança: MÉDIA**\n- Histórico: 12 semanas disponível\n- Sazonalidade: Identificada (alta em abr/mai)\n- Variabilidade: ±8% (normal para setor)",
@@ -300,7 +277,6 @@ curl -X POST "$BASE_URL/chat" \
 ```
 
 **Resposta:**
-
 ```json
 {
   "reply": "**RESUMO EXECUTIVO - REDE (Abril 2025)**\n\n| KPI | Valor | Trend |\n|-----|-------|-------|\n| Volume OS | 2,145 | ↑ 12% |\n| Faturamento | R$ 2.65M | ↑ 8% |\n| Ticket Médio | R$ 1,235 | → Flat |\n| Retrabalho | 8.4% | ↑ 1.2pp |\n| Cross-sell | 32% | ↑ 4pp |\n\n**Top 3 Insights:**\n1. Crescimento de 12% em volume compensado por ticket flat\n2. Cross-sell cresceu forte (benefício: +$187k)\n3. Retrabalho subiu — investigar qualidade\n\n**Recomendação Urgente:**\nAumentar foco em programa de qualidade para Cluster C. Impacto potencial: $89k/trimestre.",
@@ -320,7 +296,6 @@ curl -X POST "$BASE_URL/agent/set?agent_type=visualizador"
 ```
 
 **Resposta:**
-
 ```json
 {
   "message": "Agent set to visualizador",
@@ -339,41 +314,35 @@ curl -X POST "$BASE_URL/agent/set?agent_type=visualizador"
 
 ### Cenário: Análise Completa de Uma Concessionária
 
-**Passo 1: Health Check:**
-
+**Passo 1: Health Check**
 ```bash
 curl http://localhost:8000/health
 ```
 
-**Passo 2: Descobrir agentes:**
-
+**Passo 2: Descobrir agentes**
 ```bash
 curl http://localhost:8000/agents
 ```
 
-**Passo 3: Análise de OS:**
-
+**Passo 3: Análise de OS**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Performance de SP-001 no último trimestre"}'
 ```
 
-**Passo 4: Visualizar dados:**
-
+**Passo 4: Visualizar dados**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Gráfico de ticket por serviço", "target_agent": "visualizador"}'
 ```
 
-**Passo 5: Forecasting:**
-
+**Passo 5: Forecasting**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Projete faturamento para Q2", "target_agent": "projecoes"}'
 ```
 
-**Passo 6: Resumo Executivo:**
-
+**Passo 6: Resumo Executivo**
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Resuma em 3 bullets principais", "target_agent": "agregador"}'
@@ -427,14 +396,12 @@ print(f"Visualizador: {response.json()['reply']}")
 ### Use target_agent para evitar overhead do Maestro
 
 ❌ Lento (sempre passa por Maestro):
-
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{"message": "Visualize dados"}'
 ```
 
 ✅ Rápido (direto para agente):
-
 ```bash
 curl -X POST http://localhost:8000/chat \
   -d '{
@@ -475,7 +442,7 @@ time curl -X POST http://localhost:8000/chat \
 time curl -X POST http://localhost:8000/chat \
   -d '{"message": "Análise semanal OS"}'
 # Real: 1.67s (-28%)
-# Tokens: exemplo ilustrativo (Maestro com handoff + agente especialista em sequência)
+# Tokens: 1200 input + 1500 output (Maestro + agente em paralelo)
 # Custo: ~$0.006 (-95%)
 ```
 

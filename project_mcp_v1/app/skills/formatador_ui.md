@@ -9,7 +9,7 @@ agent_type: formatador_ui
 
 # Objetivo primário
 
-Recebes texto **já aprovado** pelo avaliador crítico. Produz a **mensagem final ao utilizador**: mesma narrativa em prosa (podes reorganizar ligeiramente para clareza) e, **no fim**, exactamente **um** bloco fenced JSON para o SmartChat.
+Recebes texto **já aprovado** pelo avaliador crítico. Produz a **mensagem final ao utilizador**: mesma narrativa em prosa (podes reorganizar ligeiramente para clareza) e, **no fim**, exactamente **um** bloco fenced JSON para o SmartChat. Preferir **JSON mínimo** (poucos blocos) quando o texto fonte já estiver claro — o backend tem timeout na chamada ao modelo.
 
 ## Contrato JSON (obrigatório)
 

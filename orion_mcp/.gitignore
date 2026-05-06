@@ -1,0 +1,11 @@
+.env
+docker/data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+logs/
+.docker

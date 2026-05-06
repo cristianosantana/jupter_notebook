@@ -10,7 +10,13 @@ from app.agent_trace import (
     get_trace_logger,
 )
 from app.config import get_settings
+from app.orchestrator_analysis import analise
+from app.orchestrator_llm_budget import (
+    degraded_llm_assistant_message,
+    llm_budget_try_consume,
+)
 from ai_provider.base import ModelProvider
+from ai_provider.openai_chat_sanitize import sanitize_openai_chat_messages
 
 
 def _normalized_assistant_message(completion: ChatCompletion) -> Dict[str, Any]:
@@ -62,8 +68,10 @@ class OpenAIProvider(ModelProvider):
 
     def __init__(self) -> None:
         settings = get_settings()
+        tout = float(settings.openai_http_timeout_seconds)
         self.client = AsyncOpenAI(
             api_key=settings.openai_api_key or None,
+            timeout=tout,
         )
         self.model = settings.openai_model
 
@@ -75,9 +83,24 @@ class OpenAIProvider(ModelProvider):
         model_override: str | None = None,
     ) -> Dict[str, Any]:
 
+        safe_messages = sanitize_openai_chat_messages(messages)
+        if not llm_budget_try_consume():
+            tr0 = get_trace_logger()
+            if tr0:
+                tr0.record(
+                    "llm.skipped_budget",
+                    model=(model_override or "").strip() or self.model,
+                    llm_phase=get_trace_llm_phase(),
+                )
+            analise(
+                "openai_chat_bloqueado_orçamento_llm",
+                modelo=(model_override or "").strip() or self.model,
+                fase_llm=get_trace_llm_phase(),
+            )
+            return degraded_llm_assistant_message()
         kwargs: Dict[str, Any] = {
             "model": (model_override or "").strip() or self.model,
-            "messages": messages,
+            "messages": safe_messages,
         }
         if tools:
             kwargs["tools"] = _tools_for_openai_api(tools)
@@ -89,11 +112,19 @@ class OpenAIProvider(ModelProvider):
 
         tr = get_trace_logger()
         llm_phase = get_trace_llm_phase()
+        analise(
+            "openai_chat_início",
+            modelo=kwargs["model"],
+            fase_llm=llm_phase,
+            indice_chamada=call_idx,
+            n_mensagens=len(safe_messages),
+            com_tools=bool(tools),
+        )
         if tr:
             tr.record(
                 "llm.request",
                 model=kwargs["model"],
-                messages=messages,
+                messages=safe_messages,
                 tools=tools,
                 tool_choice=tool_choice,
                 llm_phase=llm_phase,
@@ -114,4 +145,27 @@ class OpenAIProvider(ModelProvider):
                 llm_phase=llm_phase,
                 openai_call_index=call_idx,
             )
+        analise(
+            "openai_chat_fim",
+            modelo=response.model,
+            fase_llm=llm_phase,
+            duração_s=round(elapsed, 4),
+            tem_tool_calls=bool(out.get("tool_calls")),
+            content_preview=str(out.get("content") or "")[:240],
+        )
         return out
+
+    async def embed_texts(self, inputs: List[str]) -> List[List[float]]:
+        """Embeddings OpenAI (histórico semântico / kNN)."""
+        settings = get_settings()
+        model = (settings.context_embedding_model or "text-embedding-3-small").strip()
+        safe: List[str] = []
+        for s in inputs:
+            if not isinstance(s, str):
+                safe.append("")
+            else:
+                safe.append(s[:50000])
+        if not safe:
+            return []
+        resp = await self.client.embeddings.create(model=model, input=safe)
+        return [list(d.embedding) for d in resp.data]

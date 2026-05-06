@@ -6,7 +6,7 @@ import {
   type SubmitEvent,
 } from 'react'
 import { parseContentBlocks } from '../assistant/parseContentBlocks'
-import { mapStoredMessages } from '../chat/apiMapMessages'
+import { mapStoredMessagesWithSessionFallback } from '../chat/apiMapMessages'
 import { demoUserId, PIPELINE_STEPS } from '../chat/constants'
 import type {
   ChatMessage,
@@ -128,7 +128,9 @@ export default function App() {
       setSessionId(String(data.session.session_id ?? null))
       setAgentUsed(String(data.session.current_agent ?? null))
       setTraceRunId(String(data.trace_run_id ?? null))
-      setMessages(mapStoredMessages(data.messages ?? []))
+      setMessages(
+        mapStoredMessagesWithSessionFallback(data.messages ?? [], data.session),
+      )
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Falha ao carregar sessão'
       setError(msg)
