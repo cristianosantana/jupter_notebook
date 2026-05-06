@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     )
     sampling_cb = build_openai_sampling_callback(
         oai,
-        settings.openai_model or "gpt-4o-mini",
+        settings.openai_model or "gpt-5-mini",
     )
     client = Client(
         "mcp_server/server.py",

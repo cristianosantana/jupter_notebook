@@ -15,7 +15,7 @@ A refatoração implementa modelo **modular e especializado** em vez de monolít
 
 Os SKILLs foram criados em `app/skills/`:
 
-```txt
+```
 app/skills/
 ├── maestro.md              # Orquestrador (50k context, Opus)
 ├── agente_analise_os.md    # Análise OS (100k context, Sonnet)
@@ -62,7 +62,6 @@ curl http://localhost:8000/health
 ```
 
 Resposta:
-
 ```json
 {
   "status": "ok",
@@ -77,7 +76,6 @@ curl http://localhost:8000/agents
 ```
 
 Resposta:
-
 ```json
 {
   "maestro": {
@@ -110,29 +108,21 @@ curl -X POST http://localhost:8000/chat \
   }'
 ```
 
-O fluxo automático (`target_agent` omitido):
-
-1. O **Maestro** corre com a única ferramenta virtual `route_to_specialist` (sem MCP).
-2. O modelo devolve `agent` (ex.: `analise_os`); o orquestrador faz **handoff** e limpa o histórico.
-3. O especialista corre com ferramentas MCP e a resposta final traz `agent_used` desse agente.
-
-Em `tools_used`, a primeira entrada é tipicamente o handoff (`result_preview` como `handoff → analise_os`), seguida das tools MCP usadas pelo especialista.
+O Maestro automaticamente:
+1. Recebe: "Analise a performance..."
+2. Detecta: Relacionado a análise de OS/vendedores
+3. Roteia para: `agente_analise_os`
+4. Executa com SKILL especializado
+5. Retorna resultado
 
 Resposta:
-
 ```json
 {
   "reply": "[Resposta do agente]",
   "tools_used": [
     {
-      "name": "route_to_specialist",
-      "arguments": {"agent": "analise_os", "reason": "Performance de vendedores / OS"},
-      "ok": true,
-      "result_preview": "handoff → analise_os"
-    },
-    {
       "name": "run_analytics_query",
-      "arguments": {"query_id": "performance_vendedor_mes"},
+      "arguments": {"query_id": "performance_vendedor_periodo"},
       "ok": true,
       "result_preview": "..."
     }
@@ -153,7 +143,6 @@ curl -X POST http://localhost:8000/chat \
 ```
 
 Resposta:
-
 ```json
 {
   "reply": "[Análise de clusterização]",
@@ -169,7 +158,6 @@ curl -X POST http://localhost:8000/agent/set?agent_type=visualizador
 ```
 
 Resposta:
-
 ```json
 {
   "message": "Agent set to visualizador",
@@ -186,7 +174,7 @@ Resposta:
 
 ### Exemplo 1: Pergunta Aberta (Maestro Roteia)
 
-```txt
+```
 User: "Quais concessionárias têm maior potencial de crescimento?"
   ↓
 Maestro (Haiku, rápido)
@@ -204,7 +192,7 @@ Retorna ao User
 
 ### Exemplo 2: Pergunta Específica (Direct)
 
-```txt
+```
 User: "Visualize as tendências de faturamento dos últimos 3 meses"
   ├─ target_agent = "visualizador" (specified)
   ↓
@@ -276,7 +264,7 @@ result = await orchestrator.run("...", target_agent="visualizador")
 ## 📈 Benefícios vs. Monolítico
 
 | Métrica | Antes (Monolítico) | Depois (Modular) | Melhoria |
-|---------|--------------------|------------------|----------|
+|---------|-------------------|------------------|----------|
 | **Token Overhead** | 40% | 10% | -75% ↓ |
 | **Latência** (roteamento) | - | ~100ms (Haiku) | ✅ Rápido |
 | **Cost/Query** | $X | $0.7X | -30% ↓ |
@@ -288,7 +276,7 @@ result = await orchestrator.run("...", target_agent="visualizador")
 
 ### Problema: SKILL não encontrado
 
-```txt
+```
 FileNotFoundError: SKILL not found: app/skills/agente_analise_os.md
 ```
 
@@ -296,13 +284,12 @@ FileNotFoundError: SKILL not found: app/skills/agente_analise_os.md
 
 ### Problema: YAML frontmatter inválido
 
-```txt
+```
 ValueError: SKILL deve conter YAML frontmatter entre ---
 ```
 
-**Solução:** Garantir que SKILL começa com:
-
-```txt
+**Solução**: Garantir que SKILL começa com:
+```
 ---
 model: claude-sonnet-4.6
 ...
@@ -312,7 +299,6 @@ model: claude-sonnet-4.6
 ### Problema: Agent loop infinito
 
 Aumentar `MAX_TOOL_ROUNDS` em `modular_orchestrator.py`:
-
 ```python
 MAX_TOOL_ROUNDS = 48  # De 24 para 48
 ```

@@ -830,7 +830,7 @@ class Settings(BaseSettings):
         if o:
             return o
         base = (self.openai_model or "").strip()
-        return base if base else "gpt-4o-mini"
+        return base if base else "gpt-5-mini"
 
 
 @lru_cache

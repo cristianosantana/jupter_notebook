@@ -67,7 +67,7 @@ Ferramentas listadas em `requirements.txt` mas não no núcleo do fluxo chat+MCP
 |----------|------|-----------|
 
 | `OPENAI_API_KEY` | Host | Chave da API OpenAI. |
-| `OPENAI_MODEL` | Host | Modelo (ex.: `gpt-4o-mini`). Usado no provider e no sampling. |
+| `OPENAI_MODEL` | Host | Modelo (ex.: `gpt-5-mini`). Usado no provider e no sampling. |
 | `MYSQL_HOST` | Servidor MCP (herdado do processo pai) | Host MySQL. |
 | `MYSQL_PORT` | Idem | Porta (default comum 3306). |
 | `MYSQL_USER` | Idem | Utilizador. |
