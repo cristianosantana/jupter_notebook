@@ -1,0 +1,5 @@
+# Delega para a stack em `docker/` (Postgres, Redis, MCP, API).
+# Na raiz de `orion_mcp/`: `docker compose up --build`
+
+include:
+  - docker/docker-compose.yml

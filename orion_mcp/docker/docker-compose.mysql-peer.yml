@@ -1,0 +1,17 @@
+# Opcional: coloca o MCP na mesma rede Docker que o MySQL (ex. stack `docker-env`).
+# Uso (na raiz `orion_mcp/`):
+#   export ORION_MYSQL_PEER_NETWORK=docker-env_cs_backend   # ou o nome real: docker network ls
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.mysql-peer.yml up -d
+#
+# O nome da rede é o que aparece em `docker inspect cs_mysql --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+# (além de orion_mcp_orion_backend, se já ligaste o MySQL à stack Orion).
+
+services:
+  mcp-grpc:
+    networks:
+      mysql_peer: {}
+
+networks:
+  mysql_peer:
+    external: true
+    name: ${ORION_MYSQL_PEER_NETWORK}

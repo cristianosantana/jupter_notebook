@@ -1,0 +1,11 @@
+CREATE USER homestead WITH PASSWORD 'secret';
+
+-- Base `dev` (POSTGRES_DB): dono postgres; permissões para homestead em desenvolvimento
+GRANT CONNECT ON DATABASE dev TO homestead;
+GRANT USAGE, CREATE ON SCHEMA public TO homestead;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO homestead;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO homestead;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO homestead;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO homestead;
+
+CREATE EXTENSION IF NOT EXISTS vector;

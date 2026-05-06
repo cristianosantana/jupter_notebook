@@ -1,0 +1,142 @@
+# Stack local: Postgres (pgvector) + Redis + MCP (gRPC) + API.
+# Executar a partir da raiz do pacote `orion_mcp/`:
+#   docker compose -f docker/docker-compose.yml up --build
+# ou usar o `docker-compose.yml` na raiz que faz `include` deste ficheiro.
+#
+# MySQL noutro compose (ex. container `cs_mysql`): o MCP precisa de resolver o hostname.
+# Rede deste projecto (nome típico): `<pasta_do_projecto>_orion_backend` → ex. `orion_mcp_orion_backend`.
+#
+# Opção A — manual (uma vez por vida do container MySQL, se a rede Orion existir):
+#   docker network connect orion_mcp_orion_backend cs_mysql
+#
+# Opção B — declarativo: ver `docker/docker-compose.mysql-peer.yml` e variável
+#   `ORION_MYSQL_PEER_NETWORK` (liga o **mcp-grpc** à rede onde o MySQL já está).
+#
+# Confirma redes do MySQL: `docker inspect cs_mysql --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+# Em .env: ORION_MCP_MYSQL_URL=mysql://user:pass@cs_mysql:3306/db (host = nome do container MySQL)
+#
+# Dados persistentes: ./docker/data/pgdata, ./docker/data/redisdata
+# Init Postgres: ./docker/postgres/init.sql
+#
+# Depuração LLM / trace: ficheiros em /app/logs. Os serviços de aplicação (`api`, `mcp-grpc`)
+# montam ../logs → /app/logs (orion_mcp/logs/ no host). Postgres e Redis usam ./data/…
+# Inspeccionar: docker exec -it <container> ls -la /app/logs  (caminho absoluto /app/logs)
+
+services:
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    image: orion-mcp/orion_postgres:16-pgvector
+    container_name: orion_postgres
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: dev
+      SERVICE_TAGS: dev
+      SERVICE_NAME: orion_postgres
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      orion_backend:
+        ipv4_address: 172.26.0.8
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: orion_redis
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redisdata:/data
+    environment:
+      SERVICE_TAGS: dev
+      SERVICE_NAME: orion_redis
+    networks:
+      orion_backend:
+        ipv4_address: 172.26.0.9
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mcp-grpc:
+    build:
+      context: ..
+      dockerfile: docker/app/Dockerfile
+    command: ["python", "-m", "orion_mcp.mcp_adapter.server"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - ../logs:/app/logs
+    # Mesmo .env que a API: ORION_MCP_MYSQL_URL é lida **neste** processo (não na API).
+    # O host na URL tem de ser alcançável a partir deste container (não use localhost se o MySQL está no host).
+    env_file:
+      - ../.env
+    environment:
+      ORION_LLM_DEBUG_LOG_DIR: /app/logs
+      ORION_MCP_SERVER_GRPC_HOST: "0.0.0.0"
+      ORION_MCP_SERVER_GRPC_PORT: "50051"
+      ORION_MCP_REDIS_URL: redis://redis:6379/2
+      ORION_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      orion_backend:
+        ipv4_address: 172.26.0.10
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',50051),2); s.close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 6
+      start_period: 10s
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/app/Dockerfile
+    command: ["python", "-m", "uvicorn", "orion_mcp.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      # ORION_LLM_DEBUG_LOG_DIR por defeito = /app/logs (ver Settings); sincroniza com o repo no host
+      - ../logs:/app/logs
+    env_file:
+      - ../.env
+    environment:
+      # Sempre dentro do volume `../logs:/app/logs` (trace + halt JSON). Um .env de dev com caminho local não deve desviar isto.
+      ORION_LLM_DEBUG_LOG_DIR: /app/logs
+      ORION_DATABASE_URL: postgresql://postgres:secret@postgres:5432/dev
+      ORION_REDIS_URL: redis://redis:6379/0
+      ORION_CELERY_BROKER_URL: redis://redis:6379/1
+      ORION_MCP_GRPC_TARGET: mcp-grpc:50051
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-grpc:
+        condition: service_healthy
+    networks:
+      - orion_backend
+
+networks:
+  orion_backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.26.0.0/16
+          gateway: 172.26.0.1
