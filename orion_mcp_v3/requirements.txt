@@ -1,0 +1,12 @@
+# Orion MCP v3 — instalar no venv:  pip install -r requirements.txt
+#
+# Inclui dependências do pacote (pyproject.toml) + ferramentas para aplicar
+# migrações PostgreSQL sem cliente psql instalado no sistema.
+
+# Pacote (connection_hub + backends)
+asyncpg>=0.30.0
+asyncmy>=0.2.9
+redis>=5.2.0
+
+# Carregar orion_mcp_v3/.env no script de migrações
+python-dotenv>=1.0.0

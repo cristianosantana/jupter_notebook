@@ -1,0 +1,6 @@
+-- Pré-requisito: pgvector instalado no mesmo host que o servidor PostgreSQL.
+-- O script `scripts/apply_migrations.py` executa `CREATE EXTENSION IF NOT EXISTS vector`
+-- antes de aplicar estes ficheiros (mensagem de erro legível se faltar o pacote).
+--
+-- Se aplicar migrações só com `psql`, execute primeiro na base:
+--   CREATE EXTENSION IF NOT EXISTS vector;
