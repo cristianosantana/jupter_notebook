@@ -5,3 +5,4 @@ __pycache__
 .cursor
 output
 .github
+.venv
