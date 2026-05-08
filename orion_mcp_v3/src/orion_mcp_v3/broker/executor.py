@@ -15,12 +15,27 @@ from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 
 # Colunas mínimas por tabela quando o plano NL não traz `sql_columns`.
 _DEFAULT_SQL_COLUMNS: dict[str, tuple[str, ...]] = {
-    "vendas": ("id", "data_venda", "valor", "status"),
-    "clientes": ("id", "nome", "email", "concessionaria_id"),
-    "os": ("id", "data_criacao", "status", "concessionaria_id"),
-    "servicos": ("id", "nome", "preco_custo", "categoria_id"),
-    "funcionarios": ("id", "nome", "cargo", "concessionaria_id"),
-    "concessionarias": ("id", "nome", "cidade", "estado"),
+    "clientes": ("id", "nome"),
+    "os": ("id", "cliente_id"),
+    "os_servicos": ("id", "os_id", "servico_id", "valor_venda_real"),
+    "funcionarios": ("id", "nome"),
+    "concessionarias": ("id", "nome"),
+}
+
+# SELECT por defeito em ``os``: JOIN clientes + ``os.paga = 1``, ORDER BY ``os.id`` DESC (compilador SQL seguro).
+_DEFAULT_OS_SQL_HINTS: dict[str, Any] = {
+    "sql_joins": (
+        {
+            "join_table": "clientes",
+            "alias": "cli",
+            "on_left_column": "cliente_id",
+            "on_right_column": "id",
+        },
+    ),
+    "sql_filters": (
+        {"qualifier": "os", "column": "paga", "op": "=", "value": 1},
+    ),
+    "sql_order_by": {"column": "id", "direction": "desc", "qualifier": "os"},
 }
 
 
@@ -43,7 +58,7 @@ class AnalyticsExecutor:
         allowlist: SqlAllowlist,
         *,
         default_limit: int = 1000,
-        default_sql_table: str = "vendas",
+        default_sql_table: str = "os",
     ) -> None:
         self._mysql = mysql_client
         self._allowlist = allowlist
@@ -71,10 +86,21 @@ class AnalyticsExecutor:
                 cols = tuple(sorted(allowed))[:8]
             hints["sql_columns"] = cols
 
+        if table == "os" and "sql_joins" not in hints:
+            hints.update(_DEFAULT_OS_SQL_HINTS)
+
         if "limit" not in hints and "sql_limit" not in hints:
             hints["limit"] = self.default_limit
 
         return replace(plan, hints=hints)
+
+    def prepare_execution_plan(
+        self,
+        plan: SemanticQueryPlan,
+        sql_hints: Mapping[str, Any] | None = None,
+    ) -> SemanticQueryPlan:
+        """Funde hints executáveis (tabela/colunas/limit) para :func:`~compile_select`."""
+        return self._merge_executable_hints(plan, sql_hints)
 
     async def execute(
         self,

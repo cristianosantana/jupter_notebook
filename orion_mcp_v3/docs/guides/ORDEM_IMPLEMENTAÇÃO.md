@@ -253,7 +253,7 @@ Criar governança mínima.
 
 ---
 
-# 4️⃣ QUARTO
+# 4️⃣ QUARTO - OK
 
 # ROADMAP_COM_MYSQL_INTEGRADO
 

@@ -36,7 +36,8 @@ class CompiledSql:
 def _quote_ident(name: str) -> str:
     if not name.replace("_", "").isalnum():
         raise SqlCompilationError(f"identificador inválido: {name!r}")
-    return f'"{name}"'
+    # Backticks — dialecto MySQL (asyncmy); aspas duplas falham em modo SQL típico.
+    return f"`{name}`"
 
 
 def _validate_table(allowlist: SqlAllowlist, table: str) -> str:
@@ -73,6 +74,40 @@ def _filters_from_hints(hints: Mapping[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _joins_from_hints(hints: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = hints.get("sql_joins")
+    if raw is None:
+        return []
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise SqlCompilationError("sql_joins deve ser uma sequência")
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise SqlCompilationError("cada JOIN deve ser um mapeamento")
+        out.append(dict(item))
+    return out
+
+
+def _valid_alias(name: str) -> bool:
+    return bool(name) and name.replace("_", "").isalnum()
+
+
+def _column_allowed_for_qualifier(
+    allowlist: SqlAllowlist,
+    *,
+    qualifier: str,
+    column: str,
+    base_table: str,
+    alias_to_table: Mapping[str, str],
+) -> bool:
+    if qualifier == base_table:
+        return column in allowlist.columns_by_table.get(base_table, frozenset())
+    resolved = alias_to_table.get(qualifier)
+    if not resolved:
+        return False
+    return column in allowlist.columns_by_table.get(resolved, frozenset())
+
+
 def compile_select(
     plan: SemanticQueryPlan,
     allowlist: SqlAllowlist,
@@ -89,6 +124,10 @@ def compile_select(
     * ``sql_filters``: opcional, lista de ``{column, op, value}`` com ``op`` em
       ``=``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``IN`` (valor lista para IN)
     * ``sql_order_by``: opcional, ``{column, direction}`` com direction ``asc``/``desc``
+    * ``sql_joins``: opcional, sequência de
+      ``{join_table, alias, on_left_column, on_right_column}`` (JOIN à tabela base ``sql_table``)
+    * Filtros podem ter ``qualifier`` (nome da tabela base ou alias do JOIN) para colunas qualificadas
+    * ``sql_order_by`` pode ter ``qualifier`` quando há JOIN
     * ``limit`` ou ``sql_limit``: inteiro positivo (senão ``default_limit``)
     """
     h = dict(plan.hints)
@@ -110,8 +149,41 @@ def compile_select(
     if limit <= 0:
         raise SqlCompilationError("LIMIT deve ser > 0")
 
-    select_list = ", ".join(_quote_ident(c) for c in columns)
-    from_clause = _quote_ident(table)
+    join_rows = _joins_from_hints(h)
+    alias_to_table: dict[str, str] = {}
+    join_sql_parts: list[str] = []
+    for jr in join_rows:
+        jt = jr.get("join_table")
+        alias = jr.get("alias")
+        left_c = jr.get("on_left_column")
+        right_c = jr.get("on_right_column")
+        if not isinstance(jt, str) or not isinstance(alias, str):
+            raise SqlCompilationError("JOIN requer join_table e alias (strings)")
+        if not isinstance(left_c, str) or not isinstance(right_c, str):
+            raise SqlCompilationError("JOIN requer on_left_column e on_right_column")
+        jt = _validate_table(allowlist, jt.strip())
+        if not _valid_alias(alias.strip()):
+            raise SqlCompilationError(f"alias de JOIN inválido: {alias!r}")
+        alias = alias.strip()
+        if alias == table:
+            raise SqlCompilationError("alias de JOIN não pode coincidir com a tabela base")
+        _validate_columns(allowlist, table, (left_c,))
+        _validate_columns(allowlist, jt, (right_c,))
+        if alias in alias_to_table:
+            raise SqlCompilationError(f"alias duplicado no JOIN: {alias!r}")
+        alias_to_table[alias] = jt
+        join_sql_parts.append(
+            f" JOIN {_quote_ident(jt)} AS {_quote_ident(alias)} ON "
+            f"{_quote_ident(alias)}.{_quote_ident(right_c)} = {_quote_ident(table)}.{_quote_ident(left_c)}"
+        )
+
+    has_join = bool(join_sql_parts)
+    if has_join:
+        select_list = ", ".join(f"{_quote_ident(table)}.{_quote_ident(c)}" for c in columns)
+    else:
+        select_list = ", ".join(_quote_ident(c) for c in columns)
+
+    from_clause = _quote_ident(table) + "".join(join_sql_parts)
 
     params: list[Any] = []
     where_parts: list[str] = []
@@ -120,11 +192,37 @@ def compile_select(
         col = filt.get("column")
         op = filt.get("op")
         val = filt.get("value")
-        if not isinstance(col, str) or col not in allowlist.columns_by_table.get(table, frozenset()):
-            raise SqlCompilationError(f"filtro em coluna inválida: {col!r}")
+        qual = filt.get("qualifier")
+        if not isinstance(col, str):
+            raise SqlCompilationError("filtro requer column (string)")
         if op not in ("=", "!=", "<", ">", "<=", ">=", "IN"):
             raise SqlCompilationError(f"operador SQL não suportado: {op!r}")
-        qcol = _quote_ident(col)
+
+        if qual is not None:
+            if not isinstance(qual, str) or not _valid_alias(qual.strip()):
+                raise SqlCompilationError(f"qualifier inválido: {qual!r}")
+            qkey = qual.strip()
+            if has_join:
+                if qkey != table and qkey not in alias_to_table:
+                    raise SqlCompilationError(f"qualifier desconhecido: {qkey!r}")
+            elif qkey != table:
+                raise SqlCompilationError("qualifier só é permitido com sql_joins ou igual à tabela base")
+            if not _column_allowed_for_qualifier(
+                allowlist,
+                qualifier=qkey,
+                column=col,
+                base_table=table,
+                alias_to_table=alias_to_table,
+            ):
+                raise SqlCompilationError(f"filtro em coluna inválida para {qkey}.{col}")
+            qcol = f"{_quote_ident(qkey)}.{_quote_ident(col)}"
+        else:
+            if has_join:
+                raise SqlCompilationError("com JOIN, cada filtro deve definir qualifier (tabela base ou alias)")
+            if col not in allowlist.columns_by_table.get(table, frozenset()):
+                raise SqlCompilationError(f"filtro em coluna inválida: {col!r}")
+            qcol = _quote_ident(col)
+
         if op == "IN":
             if not isinstance(val, Sequence) or isinstance(val, (str, bytes)):
                 raise SqlCompilationError("valor IN deve ser sequência")
@@ -144,11 +242,32 @@ def compile_select(
             raise SqlCompilationError("sql_order_by deve ser um mapeamento")
         ocol = ob.get("column")
         direction = str(ob.get("direction", "asc")).lower()
+        oqual = ob.get("qualifier")
         if direction not in ("asc", "desc"):
             raise SqlCompilationError("direction deve ser asc ou desc")
-        if not isinstance(ocol, str) or ocol not in allowlist.columns_by_table.get(table, frozenset()):
-            raise SqlCompilationError(f"ORDER BY coluna inválida: {ocol!r}")
-        order_clause = f" ORDER BY {_quote_ident(ocol)} {direction.upper()}"
+        if not isinstance(ocol, str):
+            raise SqlCompilationError("ORDER BY requer column")
+        if has_join:
+            if oqual is None:
+                raise SqlCompilationError("com JOIN, sql_order_by deve incluir qualifier")
+            if not isinstance(oqual, str) or not _valid_alias(oqual.strip()):
+                raise SqlCompilationError(f"ORDER BY qualifier inválido: {oqual!r}")
+            oqk = oqual.strip()
+            if oqk != table and oqk not in alias_to_table:
+                raise SqlCompilationError(f"ORDER BY qualifier desconhecido: {oqk!r}")
+            if not _column_allowed_for_qualifier(
+                allowlist,
+                qualifier=oqk,
+                column=ocol,
+                base_table=table,
+                alias_to_table=alias_to_table,
+            ):
+                raise SqlCompilationError(f"ORDER BY coluna inválida: {oqk}.{ocol}")
+            order_clause = f" ORDER BY {_quote_ident(oqk)}.{_quote_ident(ocol)} {direction.upper()}"
+        else:
+            if ocol not in allowlist.columns_by_table.get(table, frozenset()):
+                raise SqlCompilationError(f"ORDER BY coluna inválida: {ocol!r}")
+            order_clause = f" ORDER BY {_quote_ident(ocol)} {direction.upper()}"
 
     sql = (
         f"SELECT {select_list} FROM {from_clause}"

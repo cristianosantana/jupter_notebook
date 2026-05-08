@@ -110,6 +110,40 @@ def test_compile_select_rejects_unknown_table() -> None:
         compile_select(plan, allow)
 
 
+def test_compile_select_join_os_clientes_paga() -> None:
+    allow = SqlAllowlist(
+        tables=frozenset({"os", "clientes"}),
+        columns_by_table={
+            "os": frozenset({"id", "cliente_id", "paga"}),
+            "clientes": frozenset({"id", "paga"}),
+        },
+    )
+    plan = SemanticQueryPlan(
+        intent_slug="x",
+        strategy=RetrievalStrategy.EXACT_LOOKUP,
+        hints={
+            "sql_table": "os",
+            "sql_columns": ("id", "cliente_id"),
+            "sql_joins": (
+                {
+                    "join_table": "clientes",
+                    "alias": "cli",
+                    "on_left_column": "cliente_id",
+                    "on_right_column": "id",
+                },
+            ),
+            "sql_filters": ({"qualifier": "os", "column": "paga", "op": "=", "value": 1},),
+            "sql_order_by": {"column": "id", "direction": "desc", "qualifier": "os"},
+            "limit": 50,
+        },
+    )
+    c = compile_select(plan, allow)
+    assert "FROM `os` JOIN `clientes` AS `cli` ON `cli`.`id` = `os`.`cliente_id`" in c.sql
+    assert "`os`.`paga` = %s" in c.sql
+    assert "ORDER BY `os`.`id` DESC" in c.sql
+    assert c.params == (1, 50)
+
+
 def test_compile_select_where_in() -> None:
     allow = SqlAllowlist(
         tables=frozenset({"sales"}),

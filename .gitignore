@@ -6,3 +6,5 @@ __pycache__
 output
 .github
 .venv
+logs
+.pytest_cache

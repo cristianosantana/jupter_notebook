@@ -6,74 +6,48 @@ from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 
 _ANALYTICS_TABLES: frozenset[str] = frozenset(
     {
-        "vendas",
         "clientes",
         "os",
-        "servicos",
+        "os_servicos",
         "funcionarios",
         "concessionarias",
     }
 )
 
 _ANALYTICS_COLUMNS: dict[str, frozenset[str]] = {
-    "vendas": frozenset(
-        {
-            "id",
-            "os_id",
-            "concessionaria_id",
-            "vendedor_id",
-            "servico_id",
-            "valor",
-            "data_venda",
-            "status",
-        }
-    ),
     "clientes": frozenset(
         {
             "id",
             "nome",
-            "email",
-            "telefone",
-            "concessionaria_id",
             "created_at",
+            "paga",
         }
     ),
     "os": frozenset(
         {
             "id",
+            "cliente_id",
             "concessionaria_id",
-            "vendedor_id",
-            "status",
-            "data_criacao",
-            "reaberta",
+            "created_at",
+            "paga",
         }
     ),
-    "servicos": frozenset(
+    "os_servicos": frozenset(
         {
             "id",
-            "nome",
-            "categoria_id",
-            "preco_custo",
-            "descricao",
+            "valor_venda_real",
         }
     ),
     "funcionarios": frozenset(
         {
             "id",
             "nome",
-            "email",
-            "cargo",
-            "concessionaria_id",
-            "ativo",
         }
     ),
     "concessionarias": frozenset(
         {
             "id",
             "nome",
-            "cidade",
-            "estado",
-            "cnpj",
         }
     ),
 }
