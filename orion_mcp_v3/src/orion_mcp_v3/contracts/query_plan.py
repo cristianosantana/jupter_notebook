@@ -17,6 +17,20 @@ class RetrievalStrategy(Enum):
     BROKER_FANOUT = "broker_fanout"
 
 
+class AnalyticsStrategy(Enum):
+    """
+    Modo de análise cognitiva endereçável (MySQL integrado — separa digest de query engine).
+
+    Valores alinhados ao guia de implementação (trend, ranking, temporal, comparison, anomaly).
+    """
+
+    TREND = "trend"
+    RANKING = "ranking"
+    TEMPORAL = "temporal"
+    COMPARISON = "comparison"
+    ANOMALY = "anomaly"
+
+
 @dataclass(frozen=True, slots=True)
 class SemanticQueryPlan:
     """
@@ -30,3 +44,4 @@ class SemanticQueryPlan:
     target_collections: tuple[str, ...] = ()
     hints: Mapping[str, Any] = field(default_factory=dict)
     correlation_id: str | None = None
+    analytics_strategy: AnalyticsStrategy | None = None

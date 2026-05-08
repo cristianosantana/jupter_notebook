@@ -7,7 +7,7 @@ from orion_mcp_v3.contracts.cognitive_plan import (
 )
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
-from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
+from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 
 __all__ = [
     "AnalyticalDigest",
@@ -18,5 +18,6 @@ __all__ = [
     "ContextSource",
     "IntentType",
     "SemanticQueryPlan",
+    "AnalyticsStrategy",
     "RetrievalStrategy",
 ]
