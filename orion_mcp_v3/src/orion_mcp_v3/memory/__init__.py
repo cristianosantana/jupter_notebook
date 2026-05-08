@@ -2,6 +2,8 @@
 
 from orion_mcp_v3.memory.blocks import message_to_context_block, messages_to_context_blocks
 from orion_mcp_v3.memory.composer import MemoryComposer
+from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
+from orion_mcp_v3.memory.semantic_retriever import SemanticRetriever
 from orion_mcp_v3.memory.repositories import (
     ConversationMessage,
     ConversationStateRepository,
@@ -17,6 +19,7 @@ from orion_mcp_v3.memory.summary_cache import (
 __all__ = [
     "ConversationMessage",
     "ConversationStateRepository",
+    "EpisodicRetriever",
     "InMemoryConversationStateRepository",
     "InMemorySummaryCache",
     "MemoryComposer",
@@ -24,6 +27,7 @@ __all__ = [
     "messages_to_context_blocks",
     "NullSummaryCache",
     "RedisSummaryCache",
+    "SemanticRetriever",
     "SummaryCachePort",
 ]
 
