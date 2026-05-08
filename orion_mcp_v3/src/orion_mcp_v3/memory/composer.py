@@ -12,14 +12,7 @@ from orion_mcp_v3.memory.repositories.conversation_state import ConversationStat
 from orion_mcp_v3.memory.summary_cache import NullSummaryCache, SummaryCachePort
 from orion_mcp_v3.runtime import AttentionPolicy
 from orion_mcp_v3.runtime.budget_allocator import allocate
-
-
-def _render_blocks(blocks: Sequence[ContextBlock]) -> str:
-    parts: list[str] = []
-    for b in blocks:
-        header = b.role.value
-        parts.append(f"[{header.upper()}]\n{b.text.strip()}")
-    return "\n\n".join(parts).strip()
+from orion_mcp_v3.runtime.prompt_render import render_blocks_to_prompt
 
 
 class MemoryComposer:
@@ -64,4 +57,4 @@ class MemoryComposer:
         recent = self._repo.get_recent(session_id, limit=recent_limit)
         blocks.extend(messages_to_context_blocks(recent))
         fitted = allocate(blocks, max_tokens, policy=policy)
-        return _render_blocks(fitted)
+        return render_blocks_to_prompt(fitted)

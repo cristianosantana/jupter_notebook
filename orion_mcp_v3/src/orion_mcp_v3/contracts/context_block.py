@@ -27,6 +27,8 @@ class ContextRole(Enum):
     ASSISTANT = "assistant"
     TOOL = "tool"
     NEUTRAL = "neutral"
+    DATA = "data"
+    CONTEXT = "context"
 
 
 @dataclass(frozen=True, slots=True)
