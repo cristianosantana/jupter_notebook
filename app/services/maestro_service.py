@@ -37,6 +37,9 @@ class MaestroService:
         mysql_injetar_namespace: Optional[Dict] = None,
         dataframe_preexistente: Optional[str] = None,
         skills_dir: Optional[str] = None,
+        gerar_graficos_cluster_automatico: bool = True,
+        graficos_cluster_output_dir: Optional[str] = None,
+        invocar_visualizador_final: bool = True,
         **kwargs: Any,
     ) -> Dict:
         """Executa o fluxo Maestro e retorna o dict de resultado."""
@@ -60,5 +63,18 @@ class MaestroService:
             mysql_injetar_namespace=mysql_injetar_namespace,
             dataframe_preexistente=dataframe_preexistente,
             skills_dir=skills_dir or s.skills_dir,
+            gerar_graficos_cluster_automatico=gerar_graficos_cluster_automatico,
+            graficos_cluster_output_dir=graficos_cluster_output_dir,
+            invocar_visualizador_final=invocar_visualizador_final,
             **kwargs,
         )
+
+    def gerar_graficos_cluster(
+        self,
+        resultado_maestro: Dict[str, Any],
+        output_dir: str = "output/graficos_cluster",
+    ) -> Dict[str, str]:
+        """Delega à skill `agente_clusterizacao_concessionaria` (PNG a partir da resposta FASE 2 + specs)."""
+        from app.services.graficos_cluster import gerar_graficos_cluster_resultado
+
+        return gerar_graficos_cluster_resultado(resultado_maestro, output_dir=output_dir)
