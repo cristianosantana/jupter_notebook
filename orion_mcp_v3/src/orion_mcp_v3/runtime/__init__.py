@@ -1,6 +1,10 @@
 """Runtime: eventos, proveniência e ciclo de vida do Orion v3 (Fase 0+)."""
 
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy, AttentionShares, policy_shares
+from orion_mcp_v3.runtime.intent_resolver import (
+    IntentResolver,
+    map_attention_profile_to_policy,
+)
 from orion_mcp_v3.runtime.budget_allocator import allocate, estimate_tokens
 from orion_mcp_v3.runtime.prompt_render import render_blocks_to_prompt
 from orion_mcp_v3.runtime.context_builder import AnalyticalContextBuilder
@@ -13,6 +17,8 @@ __all__ = [
     "AnalyticalContextBuilder",
     "AttentionPolicy",
     "AttentionShares",
+    "IntentResolver",
+    "map_attention_profile_to_policy",
     "ContextState",
     "CoverageInfo",
     "estimate_tokens",

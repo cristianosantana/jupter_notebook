@@ -12,6 +12,9 @@ class AttentionPolicy(Enum):
     CONVERSATIONAL = "conversational"
     ANALYTICAL = "analytical"
     PLANNING = "planning"
+    HYBRID = "hybrid"
+    MONITORING = "monitoring"
+    EXECUTION = "execution"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +35,9 @@ _SHARE_TABLE: dict[AttentionPolicy, tuple[float, float, float]] = {
     AttentionPolicy.CONVERSATIONAL: (0.12, 0.35, 0.53),
     AttentionPolicy.ANALYTICAL: (0.18, 0.22, 0.60),
     AttentionPolicy.PLANNING: (0.20, 0.28, 0.52),
+    AttentionPolicy.HYBRID: (0.15, 0.25, 0.60),
+    AttentionPolicy.MONITORING: (0.14, 0.18, 0.68),
+    AttentionPolicy.EXECUTION: (0.22, 0.18, 0.60),
 }
 
 
