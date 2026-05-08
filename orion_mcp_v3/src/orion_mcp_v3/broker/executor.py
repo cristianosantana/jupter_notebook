@@ -22,7 +22,8 @@ _DEFAULT_SQL_COLUMNS: dict[str, tuple[str, ...]] = {
     "concessionarias": ("id", "nome", "created_at"),
 }
 
-# SELECT por defeito em ``os``: JOIN clientes + ``os.paga = 1``, ORDER BY ``os.id`` DESC (compilador SQL seguro).
+# SELECT por defeito em ``os``: agregar por cliente — ``SUM(svc.valor_venda_real)`` por ``os.cliente_id``,
+# JOIN ``clientes`` e ``os_servicos``, filtros ``paga`` e janela ``created_at``, ``ORDER BY`` total, ``LIMIT`` via ``top_n``.
 _DEFAULT_OS_SQL_HINTS: dict[str, Any] = {
     "sql_joins": (
         {
@@ -31,11 +32,31 @@ _DEFAULT_OS_SQL_HINTS: dict[str, Any] = {
             "on_left_column": "cliente_id",
             "on_right_column": "id",
         },
+        {
+            "join_table": "os_servicos",
+            "alias": "svc",
+            "on_left_column": "id",
+            "on_right_column": "os_id",
+        },
+    ),
+    "sql_columns": (
+        {"qualifier": "os", "column": "cliente_id"},
+        {
+            "agg": "SUM",
+            "qualifier": "svc",
+            "column": "valor_venda_real",
+            "alias": "total_faturamento",
+        },
+    ),
+    "sql_group_by": (
+        {"qualifier": "os", "column": "cliente_id"},
     ),
     "sql_filters": (
         {"qualifier": "os", "column": "paga", "op": "=", "value": 1},
+        {"qualifier": "os", "column": "created_at", "op": ">=", "value": "2026-01-01"},
     ),
-    "sql_order_by": {"column": "id", "direction": "desc", "qualifier": "os"},
+    "sql_order_by": {"direction": "desc", "alias": "total_faturamento"},
+    "sql_omit_limit": False,
 }
 
 
@@ -88,8 +109,16 @@ class AnalyticsExecutor:
 
         if table == "os" and "sql_joins" not in hints:
             hints.update(_DEFAULT_OS_SQL_HINTS)
+            tn = hints.get("top_n")
+            if tn is not None:
+                try:
+                    hints["limit"] = max(1, int(tn))
+                except (TypeError, ValueError):
+                    hints["limit"] = 5
+            else:
+                hints.setdefault("limit", 5)
 
-        if "limit" not in hints and "sql_limit" not in hints:
+        if "limit" not in hints and "sql_limit" not in hints and not hints.get("sql_omit_limit"):
             hints["limit"] = self.default_limit
 
         return replace(plan, hints=hints)

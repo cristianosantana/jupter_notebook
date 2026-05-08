@@ -27,7 +27,12 @@ def test_execute_simple_query_returns_rows_and_sql() -> None:
         )
         assert result.row_count > 0
         assert "SELECT" in result.sql
-        assert "LIMIT" in result.sql
+        assert "`os`.`created_at` >= %s" in result.sql or "created_at` >= %s" in result.sql
+        assert "SUM(`svc`.`valor_venda_real`)" in result.sql
+        assert "GROUP BY `os`.`cliente_id`" in result.sql
+        assert "JOIN `os_servicos` AS `svc`" in result.sql
+        assert "ORDER BY `total_faturamento` DESC" in result.sql
+        assert "LIMIT %s" in result.sql
         assert result.rows == rows
         assert result.plan.hints.get("aggregation_kind") == "temporal"
 
@@ -58,8 +63,8 @@ def test_execute_propagates_compiled_params() -> None:
         await executor.execute(
             "teste",
             sql_hints={
-                "sql_table": "os",
-                "sql_columns": ("created_at",),
+                "sql_table": "clientes",
+                "sql_columns": ("id", "nome", "created_at"),
                 "limit": 10,
             },
         )

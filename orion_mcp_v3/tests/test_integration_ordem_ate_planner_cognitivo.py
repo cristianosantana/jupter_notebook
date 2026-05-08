@@ -1,6 +1,6 @@
 """
-Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo) e bloco 5
-(camada analítica cognitiva sobre linhas — aggregators / samplers / reducers).
+Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
+(EvidenceBuilder sobre linhas SQL) e bloco 5 (aggregators / samplers / reducers).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -22,6 +22,7 @@ import pytest
 from asyncmy.errors import OperationalError, ProgrammingError
 
 from orion_mcp_v3.broker import (
+    EvidenceBuilder,
     aggregate_groups,
     merge_cognitive_artifacts,
     sample_recent_structured,
@@ -47,6 +48,7 @@ from integration_pipeline_logger import (
     cognitive_plan_snapshot,
     conflict_resolution_snapshot,
     context_block_snapshot,
+    evidence_block_snapshot,
     rows_for_json,
     semantic_query_plan_snapshot,
 )
@@ -59,6 +61,67 @@ def _project_logs_dir() -> Path:
 def _mysql_url() -> str | None:
     u = (os.environ.get("ORION_MYSQL_URL") or os.environ.get("MYSQL_URL") or "").strip()
     return u or None
+
+
+_NUMERIC_VALUE_PRIORITY: tuple[str, ...] = (
+    "total_faturamento",
+    "valor_venda_real",
+    "valor",
+    "amount",
+    "total",
+    "rev",
+    "v",
+    "score",
+)
+_SKIP_AUTOPICK_KEYS: frozenset[str] = frozenset(
+    {"id", "cliente_id", "concessionaria_id", "os_id", "servico_id", "paga"}
+)
+
+
+def _pick_evidence_keys(rows: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """Escolhe métrica temporal (`valor_venda_real`, etc.) e tempo (`created_at`) a partir do schema real."""
+    if not rows:
+        return None, None
+    sample = rows[0]
+    time_key: str | None = "created_at" if "created_at" in sample else None
+    for vk in _NUMERIC_VALUE_PRIORITY:
+        if vk in sample:
+            return vk, time_key
+    for k, v in sample.items():
+        if k in _SKIP_AUTOPICK_KEYS or k == time_key:
+            continue
+        try:
+            float(v)
+            return k, time_key
+        except (TypeError, ValueError):
+            continue
+    return None, time_key
+
+
+def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> None:
+    """Bloco 6: resultado SQL → ``EvidenceBlock`` (registado em JSONL)."""
+    if not rows:
+        logger.step(
+            "evidence_builder_skipped",
+            input_data={},
+            output_data={"reason": "sem linhas (URL MySQL ausente ou SELECT vazio)"},
+        )
+        return
+    value_key, time_key = _pick_evidence_keys(rows)
+    if not value_key:
+        logger.step(
+            "evidence_builder_skipped",
+            input_data={"row_keys_sample": sorted(rows[0].keys())},
+            output_data={"reason": "nenhuma coluna numérica conhecida ou inferível nas linhas"},
+        )
+        return
+    id_key: str | None = "id" if "id" in rows[0] else None
+    block = EvidenceBuilder().build(rows, value_key=value_key, time_key=time_key, id_key=id_key)
+    logger.step(
+        "evidence_builder",
+        input_data={"value_key": value_key, "time_key": time_key, "row_count": len(rows)},
+        output_data=evidence_block_snapshot(block),
+    )
 
 
 async def _mysql_real_execution(
@@ -356,6 +419,7 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     assert semantic_nl_free.analytics_strategy == AnalyticsStrategy.TREND
 
     mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
+    _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
 
     log.step(

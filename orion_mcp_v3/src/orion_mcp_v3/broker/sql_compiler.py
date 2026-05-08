@@ -1,7 +1,8 @@
 """
 Compilador mínimo SELECT → SQL (Fase 3.2).
 
-Apenas SELECT, LIMIT obrigatório, identificadores validados por allowlist.
+SELECT seguro com identificadores validados por allowlist; LIMIT por defeito,
+ou omitido quando ``sql_omit_limit`` está activo e não há ``limit`` / ``sql_limit`` explícitos.
 Filtros só via estruturas (sem SQL cru do utilizador).
 """
 
@@ -13,6 +14,8 @@ from typing import Any, Literal, Mapping, Sequence
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 
 SqlOperator = Literal["=", "!=", "<", ">", "<=", ">=", "IN"]
+
+_AGG_FUNCS: frozenset[str] = frozenset({"SUM", "COUNT", "AVG", "MIN", "MAX"})
 
 
 class SqlCompilationError(ValueError):
@@ -108,6 +111,128 @@ def _column_allowed_for_qualifier(
     return column in allowlist.columns_by_table.get(resolved, frozenset())
 
 
+def _qualified_pair_from_mapping(
+    item: Mapping[str, Any],
+    *,
+    base_table: str,
+    alias_to_table: Mapping[str, str],
+    allowlist: SqlAllowlist,
+) -> tuple[str, str]:
+    qual = item.get("qualifier")
+    col = item.get("column")
+    if not isinstance(qual, str) or not isinstance(col, str):
+        raise SqlCompilationError("coluna qualificada requer qualifier e column (strings)")
+    qk = qual.strip()
+    ck = col.strip()
+    if not qk or not ck:
+        raise SqlCompilationError("qualifier ou column vazio")
+    if qk != base_table and qk not in alias_to_table:
+        raise SqlCompilationError(f"qualifier desconhecido: {qk!r}")
+    if not _column_allowed_for_qualifier(
+        allowlist,
+        qualifier=qk,
+        column=ck,
+        base_table=base_table,
+        alias_to_table=alias_to_table,
+    ):
+        raise SqlCompilationError(f"coluna não permitida: {qk}.{ck}")
+    return qk, ck
+
+
+def _group_by_entries_from_hints(
+    raw: Any,
+    *,
+    base_table: str,
+    alias_to_table: Mapping[str, str],
+    allowlist: SqlAllowlist,
+) -> list[tuple[str, str]]:
+    if raw is None:
+        return []
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise SqlCompilationError("sql_group_by deve ser uma sequência de mapeamentos")
+    out: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise SqlCompilationError("sql_group_by: cada entrada deve ser mapeamento qualifier/column")
+        out.append(_qualified_pair_from_mapping(item, base_table=base_table, alias_to_table=alias_to_table, allowlist=allowlist))
+    return out
+
+
+def _format_plain_select(
+    qual: str,
+    col: str,
+    *,
+    has_join: bool,
+) -> str:
+    if has_join:
+        return f"{_quote_ident(qual)}.{_quote_ident(col)}"
+    return _quote_ident(col)
+
+
+def _build_select_list_sql(
+    cols_raw: Sequence[Any],
+    *,
+    base_table: str,
+    alias_to_table: Mapping[str, str],
+    allowlist: SqlAllowlist,
+    has_join: bool,
+    group_keys: frozenset[tuple[str, str]],
+) -> tuple[str, frozenset[tuple[str, str]]]:
+    """
+    Devolve o texto do SELECT e o conjunto de pares (qual, col) em colunas simples
+    (sem agregação), para validação contra ``sql_group_by``.
+    """
+    has_join_effective = has_join or bool(alias_to_table)
+    fragments: list[str] = []
+    plain_selected: set[tuple[str, str]] = set()
+    has_aggregate = False
+
+    for item in cols_raw:
+        if isinstance(item, str):
+            col = item.strip()
+            if not col:
+                raise SqlCompilationError("nome de coluna vazio em sql_columns")
+            _validate_columns(allowlist, base_table, (col,))
+            plain_selected.add((base_table, col))
+            fragments.append(_format_plain_select(base_table, col, has_join=has_join_effective))
+        elif isinstance(item, Mapping):
+            agg_raw = item.get("agg") or item.get("aggregate")
+            if agg_raw is not None:
+                has_aggregate = True
+                fn = str(agg_raw).strip().upper()
+                if fn not in _AGG_FUNCS:
+                    raise SqlCompilationError(f"agregação não suportada: {fn!r}")
+                alias_raw = item.get("alias") or item.get("as")
+                if not isinstance(alias_raw, str) or not _valid_alias(alias_raw.strip()):
+                    raise SqlCompilationError("agregação requer alias (identificador SQL válido)")
+                alias = alias_raw.strip()
+                if fn == "COUNT" and item.get("column") in (None, "*"):
+                    raise SqlCompilationError("COUNT(*) não suportado neste compilador")
+                qk, ck = _qualified_pair_from_mapping(item, base_table=base_table, alias_to_table=alias_to_table, allowlist=allowlist)
+                inner = f"{_quote_ident(qk)}.{_quote_ident(ck)}"
+                fragments.append(f"{fn}({inner}) AS {_quote_ident(alias)}")
+            else:
+                qk, ck = _qualified_pair_from_mapping(item, base_table=base_table, alias_to_table=alias_to_table, allowlist=allowlist)
+                if not has_join_effective:
+                    raise SqlCompilationError("colunas qualificadas em sql_columns exigem sql_joins")
+                plain_selected.add((qk, ck))
+                fragments.append(_format_plain_select(qk, ck, has_join=has_join_effective))
+        else:
+            raise SqlCompilationError(
+                "sql_columns: cada entrada deve ser string, mapeamento qualifier/column ou agregação"
+            )
+
+    if group_keys:
+        if plain_selected != set(group_keys):
+            raise SqlCompilationError(
+                "sql_group_by e colunas simples do SELECT devem coincidir exactamente"
+            )
+        if not has_aggregate:
+            raise SqlCompilationError("GROUP BY exige pelo menos uma agregação no SELECT")
+
+    return ", ".join(fragments), frozenset(plain_selected)
+
+
 def compile_select(
     plan: SemanticQueryPlan,
     allowlist: SqlAllowlist,
@@ -115,12 +240,13 @@ def compile_select(
     default_limit: int = 1000,
 ) -> CompiledSql:
     """
-    Gera ``SELECT ... FROM ... WHERE ... ORDER BY ... LIMIT n``.
+    Gera ``SELECT ... FROM ... WHERE ... ORDER BY ...`` e opcionalmente ``LIMIT n``.
 
     ``plan.hints`` esperados (MVP):
 
     * ``sql_table``: nome da tabela (allowlist)
-    * ``sql_columns``: sequência de nomes de colunas
+    * ``sql_columns``: sequência de nomes da tabela base (strings) e/ou
+      ``{"qualifier": "<alias ou tabela>", "column": "<nome>"}`` para colunas de JOINs
     * ``sql_filters``: opcional, lista de ``{column, op, value}`` com ``op`` em
       ``=``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``IN`` (valor lista para IN)
     * ``sql_order_by``: opcional, ``{column, direction}`` com direction ``asc``/``desc``
@@ -129,6 +255,11 @@ def compile_select(
     * Filtros podem ter ``qualifier`` (nome da tabela base ou alias do JOIN) para colunas qualificadas
     * ``sql_order_by`` pode ter ``qualifier`` quando há JOIN
     * ``limit`` ou ``sql_limit``: inteiro positivo (senão ``default_limit``)
+    * ``sql_omit_limit``: se verdadeiro **e** não existir ``limit`` nem ``sql_limit`` nos hints,
+      não gera cláusula ``LIMIT``
+    * ``sql_group_by``: sequência de ``{qualifier, column}`` (deve coincidir com as colunas simples do SELECT)
+    * agregação em ``sql_columns``: ``{agg, qualifier, column, alias}`` com ``agg`` ∈ SUM, COUNT, AVG, MIN, MAX
+    * ``sql_order_by``: pode usar ``alias`` (nome do ``AS`` de uma agregação) em vez de ``column``/``qualifier``
     """
     h = dict(plan.hints)
     table_raw = h.get("sql_table")
@@ -138,16 +269,21 @@ def compile_select(
 
     cols_raw = h.get("sql_columns")
     if not isinstance(cols_raw, Sequence) or isinstance(cols_raw, (str, bytes)):
-        raise SqlCompilationError("hints['sql_columns'] deve ser uma sequência de strings")
-    columns = _validate_columns(allowlist, table, [str(c) for c in cols_raw])
+        raise SqlCompilationError("hints['sql_columns'] deve ser uma sequência")
+    if not cols_raw:
+        raise SqlCompilationError("hints['sql_columns'] não pode ser vazio")
 
-    limit_val = h.get("limit", h.get("sql_limit", default_limit))
-    try:
-        limit = int(limit_val)
-    except (TypeError, ValueError) as e:
-        raise SqlCompilationError("limit deve ser inteiro") from e
-    if limit <= 0:
-        raise SqlCompilationError("LIMIT deve ser > 0")
+    explicit_limit = "limit" in h or "sql_limit" in h
+    omit_limit = bool(h.get("sql_omit_limit")) and not explicit_limit
+    limit = 0
+    if not omit_limit:
+        limit_val = h.get("limit", h.get("sql_limit", default_limit))
+        try:
+            limit = int(limit_val)
+        except (TypeError, ValueError) as e:
+            raise SqlCompilationError("limit deve ser inteiro") from e
+        if limit <= 0:
+            raise SqlCompilationError("LIMIT deve ser > 0")
 
     join_rows = _joins_from_hints(h)
     alias_to_table: dict[str, str] = {}
@@ -178,10 +314,29 @@ def compile_select(
         )
 
     has_join = bool(join_sql_parts)
-    if has_join:
-        select_list = ", ".join(f"{_quote_ident(table)}.{_quote_ident(c)}" for c in columns)
-    else:
-        select_list = ", ".join(_quote_ident(c) for c in columns)
+
+    group_entries = _group_by_entries_from_hints(
+        h.get("sql_group_by"),
+        base_table=table,
+        alias_to_table=alias_to_table,
+        allowlist=allowlist,
+    )
+    group_keys = frozenset(group_entries)
+
+    select_list, _ = _build_select_list_sql(
+        cols_raw,
+        base_table=table,
+        alias_to_table=alias_to_table,
+        allowlist=allowlist,
+        has_join=has_join,
+        group_keys=group_keys,
+    )
+
+    hj = has_join or bool(alias_to_table)
+    group_clause = ""
+    if group_keys:
+        gb_frags = [_format_plain_select(q, c, has_join=hj) for q, c in group_entries]
+        group_clause = " GROUP BY " + ", ".join(gb_frags)
 
     from_clause = _quote_ident(table) + "".join(join_sql_parts)
 
@@ -240,38 +395,44 @@ def compile_select(
     if ob is not None:
         if not isinstance(ob, Mapping):
             raise SqlCompilationError("sql_order_by deve ser um mapeamento")
-        ocol = ob.get("column")
         direction = str(ob.get("direction", "asc")).lower()
-        oqual = ob.get("qualifier")
         if direction not in ("asc", "desc"):
             raise SqlCompilationError("direction deve ser asc ou desc")
-        if not isinstance(ocol, str):
-            raise SqlCompilationError("ORDER BY requer column")
-        if has_join:
-            if oqual is None:
-                raise SqlCompilationError("com JOIN, sql_order_by deve incluir qualifier")
-            if not isinstance(oqual, str) or not _valid_alias(oqual.strip()):
-                raise SqlCompilationError(f"ORDER BY qualifier inválido: {oqual!r}")
-            oqk = oqual.strip()
-            if oqk != table and oqk not in alias_to_table:
-                raise SqlCompilationError(f"ORDER BY qualifier desconhecido: {oqk!r}")
-            if not _column_allowed_for_qualifier(
-                allowlist,
-                qualifier=oqk,
-                column=ocol,
-                base_table=table,
-                alias_to_table=alias_to_table,
-            ):
-                raise SqlCompilationError(f"ORDER BY coluna inválida: {oqk}.{ocol}")
-            order_clause = f" ORDER BY {_quote_ident(oqk)}.{_quote_ident(ocol)} {direction.upper()}"
+        oalias = ob.get("alias") or ob.get("as")
+        if oalias is not None:
+            if not isinstance(oalias, str) or not _valid_alias(oalias.strip()):
+                raise SqlCompilationError("ORDER BY alias inválido")
+            order_clause = f" ORDER BY {_quote_ident(oalias.strip())} {direction.upper()}"
         else:
-            if ocol not in allowlist.columns_by_table.get(table, frozenset()):
-                raise SqlCompilationError(f"ORDER BY coluna inválida: {ocol!r}")
-            order_clause = f" ORDER BY {_quote_ident(ocol)} {direction.upper()}"
+            ocol = ob.get("column")
+            oqual = ob.get("qualifier")
+            if not isinstance(ocol, str):
+                raise SqlCompilationError("ORDER BY requer column ou alias")
+            if has_join:
+                if oqual is None:
+                    raise SqlCompilationError("com JOIN, sql_order_by deve incluir qualifier (ou alias)")
+                if not isinstance(oqual, str) or not _valid_alias(oqual.strip()):
+                    raise SqlCompilationError(f"ORDER BY qualifier inválido: {oqual!r}")
+                oqk = oqual.strip()
+                if oqk != table and oqk not in alias_to_table:
+                    raise SqlCompilationError(f"ORDER BY qualifier desconhecido: {oqk!r}")
+                if not _column_allowed_for_qualifier(
+                    allowlist,
+                    qualifier=oqk,
+                    column=ocol,
+                    base_table=table,
+                    alias_to_table=alias_to_table,
+                ):
+                    raise SqlCompilationError(f"ORDER BY coluna inválida: {oqk}.{ocol}")
+                order_clause = f" ORDER BY {_quote_ident(oqk)}.{_quote_ident(ocol)} {direction.upper()}"
+            else:
+                if ocol not in allowlist.columns_by_table.get(table, frozenset()):
+                    raise SqlCompilationError(f"ORDER BY coluna inválida: {ocol!r}")
+                order_clause = f" ORDER BY {_quote_ident(ocol)} {direction.upper()}"
 
-    sql = (
-        f"SELECT {select_list} FROM {from_clause}"
-        f"{where_clause}{order_clause} LIMIT %s"
-    )
+    sql = f"SELECT {select_list} FROM {from_clause}{where_clause}{group_clause}{order_clause}"
+    if omit_limit:
+        return CompiledSql(sql=sql, params=tuple(params))
+    sql = f"{sql} LIMIT %s"
     params.append(limit)
     return CompiledSql(sql=sql, params=tuple(params))

@@ -367,7 +367,7 @@ Já implementar:
 
 ---
 
-# 6️⃣ SEXTO
+# 6️⃣ SEXTO - OK
 
 # NOVA CAMADA
 
