@@ -1,16 +1,18 @@
 """
-Planner heurístico (Fase 3.1): texto natural → metadados no :class:`~SemanticQueryPlan`.
+Planner heurístico (Fase 3.1 + MySQL integrado): :class:`~CognitivePlan` → :class:`~SemanticQueryPlan`.
 
-Sem LLM: padrões PT/EN para agregação temporal e ranking.
+Texto cru só entra como refinamento opcional (hints de agregação); o eixo principal é o plano cognitivo.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
-from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
+from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
+from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 
 _TEMPORAL_RX = re.compile(
     r"(últimos?\s+\d+\s*meses?|"
@@ -36,6 +38,100 @@ def _merge_hints(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     out.update(extra)
     return out
+
+
+def infer_analytics_strategy(
+    cognitive: CognitivePlan,
+    nl_hints: Mapping[str, Any] | None = None,
+) -> AnalyticsStrategy | None:
+    """
+    Deriva o modo de análise a partir do cognitivo + fragmentos NL já inferidos.
+
+    Prioridade: sinais explícitos de agregação no texto, depois flags do ``CognitivePlan``,
+    depois tipo de intenção (ex.: monitorização → anomalia).
+    """
+    h = nl_hints or {}
+    kind = h.get("aggregation_kind")
+    if kind == "ranking":
+        return AnalyticsStrategy.RANKING
+    if kind == "temporal":
+        return AnalyticsStrategy.TEMPORAL
+    if kind == "mixed":
+        return AnalyticsStrategy.TREND
+
+    if cognitive.needs_comparison:
+        return AnalyticsStrategy.COMPARISON
+    if cognitive.intent_type == IntentType.MONITORING:
+        return AnalyticsStrategy.ANOMALY
+    if cognitive.needs_trend_analysis:
+        return AnalyticsStrategy.TREND
+    if cognitive.needs_temporal_context:
+        return AnalyticsStrategy.TEMPORAL
+    if cognitive.needs_analytics:
+        return AnalyticsStrategy.RANKING
+    return None
+
+
+def _execution_retrieval_strategy(
+    cognitive: CognitivePlan,
+    nl_hints: dict[str, Any],
+) -> RetrievalStrategy:
+    """Camada de dados analíticos usa fan-out; resto segue o cognitivo."""
+    if cognitive.needs_analytics or bool(nl_hints.get("aggregation_kind")):
+        return RetrievalStrategy.BROKER_FANOUT
+    return cognitive.retrieval_strategy
+
+
+def build_query_plan(
+    cognitive: CognitivePlan,
+    *,
+    query_text: str | None = None,
+    intent_slug: str | None = None,
+    base: SemanticQueryPlan | None = None,
+    correlation_id: str | None = None,
+) -> SemanticQueryPlan:
+    """
+    Constrói :class:`SemanticQueryPlan` a partir de :class:`CognitivePlan` (caminho principal).
+
+    ``query_text`` é opcional: quando presente, funde :func:`infer_aggregation_hints` no plano.
+    """
+    nl_raw = (query_text or "").strip()
+    nl_hints = infer_aggregation_hints(nl_raw) if nl_raw else {}
+    analytics = infer_analytics_strategy(cognitive, nl_hints)
+    strategy = _execution_retrieval_strategy(cognitive, nl_hints)
+
+    merged_cognitive_hints = _merge_hints(dict(cognitive.hints), nl_hints)
+    merged_cognitive_hints["cognitive"] = {
+        "intent_type": cognitive.intent_type.value,
+        "confidence": cognitive.confidence,
+        "time_scope": cognitive.time_scope,
+        "metrics": cognitive.metrics,
+    }
+    if analytics is not None:
+        merged_cognitive_hints["analytics_strategy"] = analytics.value
+
+    slug = intent_slug or f"analytics.{cognitive.intent_type.value}"
+    cid = correlation_id
+
+    if base is None:
+        return SemanticQueryPlan(
+            intent_slug=slug,
+            strategy=strategy,
+            target_collections=(),
+            hints=merged_cognitive_hints,
+            correlation_id=cid,
+            analytics_strategy=analytics,
+        )
+
+    merged_hints = _merge_hints(dict(base.hints), merged_cognitive_hints)
+    return replace(
+        base,
+        intent_slug=slug,
+        strategy=strategy,
+        hints=merged_hints,
+        correlation_id=cid if cid is not None else base.correlation_id,
+        analytics_strategy=analytics if analytics is not None else base.analytics_strategy,
+    )
 
 
 def infer_aggregation_hints(query_text: str) -> dict[str, Any]:
@@ -79,26 +175,20 @@ def plan_from_natural_language(
     intent_slug: str = "analytics.generic",
     base: SemanticQueryPlan | None = None,
     correlation_id: str | None = None,
+    cognitive: CognitivePlan | None = None,
 ) -> SemanticQueryPlan:
     """
-    Constrói ou enriquece um plano semântico com heurísticas de agregação.
-    """
-    inferred = infer_aggregation_hints(query_text)
-    if base is None:
-        merged = inferred
-        cid = correlation_id
-        return SemanticQueryPlan(
-            intent_slug=intent_slug,
-            strategy=RetrievalStrategy.BROKER_FANOUT,
-            target_collections=(),
-            hints=merged,
-            correlation_id=cid,
-        )
+    Compatibilidade: texto → :class:`CognitivePlan` (heurística) → :func:`build_query_plan`.
 
-    merged_hints = _merge_hints(dict(base.hints), inferred)
-    return replace(
-        base,
-        hints=merged_hints,
-        strategy=RetrievalStrategy.BROKER_FANOUT,
-        correlation_id=correlation_id if correlation_id is not None else base.correlation_id,
+    Se ``cognitive`` for passado, esse plano é usado em vez de resolver de novo a partir do texto.
+    """
+    from orion_mcp_v3.runtime.intent_resolver import IntentResolver
+
+    cp = cognitive if cognitive is not None else IntentResolver().resolve(query_text)
+    return build_query_plan(
+        cp,
+        query_text=query_text,
+        intent_slug=intent_slug,
+        base=base,
+        correlation_id=correlation_id,
     )

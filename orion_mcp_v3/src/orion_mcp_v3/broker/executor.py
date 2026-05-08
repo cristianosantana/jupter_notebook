@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
-from orion_mcp_v3.broker.planner import plan_from_natural_language
+from orion_mcp_v3.broker.planner import build_query_plan
+from orion_mcp_v3.runtime.intent_resolver import IntentResolver
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
 from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
@@ -83,8 +84,10 @@ class AnalyticsExecutor:
         *,
         sql_hints: Mapping[str, Any] | None = None,
     ) -> AnalyticsResult:
-        plan = plan_from_natural_language(
-            query_text,
+        cognitive = IntentResolver().resolve(query_text)
+        plan = build_query_plan(
+            cognitive,
+            query_text=query_text,
             intent_slug=intent_slug,
             correlation_id=correlation_id,
         )

@@ -7,17 +7,20 @@ import pytest
 from orion_mcp_v3.broker import (
     SqlAllowlist,
     SqlCompilationError,
+    build_query_plan,
     compile_select,
     group_by,
     infer_aggregation_hints,
+    infer_analytics_strategy,
     outlier_sampler,
     plan_from_natural_language,
     recent_sampler,
     time_series,
     top_n,
 )
+from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
-from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
+from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.runtime.provenance import CoverageInfo
 
 
@@ -39,6 +42,38 @@ def test_plan_from_nl_sets_broker_fanout() -> None:
     p = plan_from_natural_language("últimos meses")
     assert p.strategy == RetrievalStrategy.BROKER_FANOUT
     assert p.hints.get("aggregation_kind") == "temporal"
+    assert p.analytics_strategy == AnalyticsStrategy.TEMPORAL
+
+
+def test_build_query_plan_from_cognitive_temporal() -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.TEMPORAL,
+        needs_temporal_context=True,
+        needs_analytics=False,
+    )
+    p = build_query_plan(cp, query_text="últimos 2 meses", intent_slug="analytics.generic")
+    assert p.analytics_strategy == AnalyticsStrategy.TEMPORAL
+    assert p.hints.get("lookback_months") == 2
+
+
+def test_infer_analytics_strategy_ranking_from_nl_hints() -> None:
+    cp = CognitivePlan(intent_type=IntentType.ANALYTICAL, needs_analytics=True)
+    h = infer_aggregation_hints("top 5 clientes")
+    assert infer_analytics_strategy(cp, h) == AnalyticsStrategy.RANKING
+
+
+def test_infer_analytics_strategy_monitoring_anomaly() -> None:
+    cp = CognitivePlan(intent_type=IntentType.MONITORING, needs_analytics=False)
+    assert infer_analytics_strategy(cp, {}) == AnalyticsStrategy.ANOMALY
+
+
+def test_infer_analytics_strategy_comparison() -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.COMPARATIVE,
+        needs_comparison=True,
+        needs_analytics=True,
+    )
+    assert infer_analytics_strategy(cp, {}) == AnalyticsStrategy.COMPARISON
 
 
 def test_compile_select_basic() -> None:
