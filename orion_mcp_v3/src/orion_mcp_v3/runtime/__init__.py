@@ -9,14 +9,30 @@ from orion_mcp_v3.runtime.budget_allocator import allocate, estimate_tokens
 from orion_mcp_v3.runtime.prompt_render import render_blocks_to_prompt
 from orion_mcp_v3.runtime.context_builder import AnalyticalContextBuilder
 from orion_mcp_v3.runtime.context_state import ContextState
+from orion_mcp_v3.runtime.conflict_resolution import (
+    ConflictResolutionResult,
+    cap_system_blocks,
+    resolve_duplicate_blocks,
+)
+from orion_mcp_v3.runtime.decay import (
+    apply_decay,
+    apply_decay_to_sequence,
+    apply_decay_with_clock,
+    resolve_age_seconds,
+)
 from orion_mcp_v3.runtime.events import RuntimeEvent, RuntimeEventType
 from orion_mcp_v3.runtime.provenance import CoverageInfo, ProvenanceAnchor
 
 __all__ = [
     "allocate",
     "AnalyticalContextBuilder",
+    "apply_decay",
+    "apply_decay_to_sequence",
+    "apply_decay_with_clock",
     "AttentionPolicy",
     "AttentionShares",
+    "cap_system_blocks",
+    "ConflictResolutionResult",
     "IntentResolver",
     "map_attention_profile_to_policy",
     "ContextState",
@@ -24,6 +40,8 @@ __all__ = [
     "estimate_tokens",
     "render_blocks_to_prompt",
     "policy_shares",
+    "resolve_age_seconds",
+    "resolve_duplicate_blocks",
     "ProvenanceAnchor",
     "RuntimeEvent",
     "RuntimeEventType",
