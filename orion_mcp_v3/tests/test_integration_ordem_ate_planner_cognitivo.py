@@ -1,6 +1,6 @@
 """
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
-(EvidenceBuilder), bloco 5 (aggregators / samplers / reducers) e bloco 7 (map-reduce semântico + DriftGuard).
+(EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard) e bloco 8 (memory pipeline → ContextBlocks).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -34,6 +34,12 @@ from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.planner import build_query_plan
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
 from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
+from orion_mcp_v3.memory import (
+    EpisodicRetriever,
+    InMemoryConversationStateRepository,
+    MemoryComposer,
+    SemanticRetriever,
+)
 from orion_mcp_v3.connection_hub.pools import close_mysql_pool, create_mysql_pool
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
@@ -325,6 +331,64 @@ def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, A
     )
 
 
+_MEMORY_SESSION_ID = "integration-orion-memory"
+
+
+def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> None:
+    """
+    Bloco 8 (ORDEM_IMPLEMENTAÇÃO): EpisodicRetriever + SemanticRetriever + MemoryComposer.compose_blocks
+    — saída formal :class:`~ContextBlock`, não texto de prompt cru.
+    """
+    repo = InMemoryConversationStateRepository()
+    repo.append_message(_MEMORY_SESSION_ID, "user", "Preciso comparar períodos no relatório.")
+    repo.append_message(_MEMORY_SESSION_ID, "assistant", "Posso usar analytics e ranking por cliente.")
+    repo.append_message(_MEMORY_SESSION_ID, "user", utterance)
+
+    episodic = EpisodicRetriever(repo)
+    semantic = SemanticRetriever(repo)
+    composer = MemoryComposer(repo)
+
+    ep_blocks = episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
+    logger.step(
+        "memory_episodic_retrieve",
+        input_data={"session_id": _MEMORY_SESSION_ID, "limit": 10},
+        output_data={
+            "block_count": len(ep_blocks),
+            "blocks": [context_block_snapshot(b) for b in ep_blocks],
+        },
+    )
+
+    sem_blocks = semantic.retrieve(utterance, _MEMORY_SESSION_ID, pool_limit=20, top_k=4)
+    logger.step(
+        "memory_semantic_retrieve",
+        input_data={"session_id": _MEMORY_SESSION_ID, "query_preview": utterance[:96]},
+        output_data={
+            "block_count": len(sem_blocks),
+            "blocks": [context_block_snapshot(b) for b in sem_blocks],
+        },
+    )
+
+    merged = composer.compose_blocks(
+        _MEMORY_SESSION_ID,
+        max_tokens=4096,
+        recent_limit=10,
+        semantic_query=utterance,
+        semantic_retriever=semantic,
+        episodic_retriever=episodic,
+    )
+    logger.step(
+        "memory_compose_blocks",
+        input_data={
+            "session_id": _MEMORY_SESSION_ID,
+            "semantic_query_preview": utterance[:120],
+        },
+        output_data={
+            "fitted_block_count": len(merged),
+            "blocks": [context_block_snapshot(b) for b in merged],
+        },
+    )
+
+
 def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     utterance = "mostre o top 5 clientes por faturamento nos últimos 3 meses"
 
@@ -484,6 +548,7 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
     _apply_map_reduce_phase7(log, mysql_rows)
+    _apply_memory_pipeline_phase8(log, utterance)
 
     log.step(
         "run_done",

@@ -474,7 +474,7 @@ Porque agora já existem:
 
 ---
 
-# 8️⃣ OITAVO
+# 8️⃣ OITAVO - OK
 
 # ROADMAP_EXECUTAVEL
 
