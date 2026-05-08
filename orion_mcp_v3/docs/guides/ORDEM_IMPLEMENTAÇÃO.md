@@ -78,7 +78,7 @@ Antes:
 
 ---
 
-# 1️⃣ PRIMEIRO
+# 1️⃣ PRIMEIRO - OK
 
 # ROADMAP_EXECUTAVEL
 
@@ -138,7 +138,7 @@ Porque TODO o resto depende disso.
 
 ---
 
-# 2️⃣ SEGUNDO
+# 2️⃣ SEGUNDO - OK
 
 # NOVA FASE COGNITIVA
 
