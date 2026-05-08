@@ -1,4 +1,4 @@
-"""Unidade formal de contexto (Fase 0.2 — sem allocator, truncagem nem scoring)."""
+"""Unidade formal de contexto — ROADMAP_EXECUTÁVEL Fase 0.2 (`ContextSource`, `ContextRole`, `ContextBlock`)."""
 
 from __future__ import annotations
 
