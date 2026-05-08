@@ -1,6 +1,8 @@
 """
-Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md` (§ dependência bloco 4):
-o planner deve receber :class:`~CognitivePlan`, não só texto cru.
+Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo) e bloco 5
+(camada analítica cognitiva sobre linhas — aggregators / samplers / reducers).
+
+O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
 Cada passo é registado em JSONL (entrada/saída com dados). Execução MySQL opcional
 via ``ORION_MYSQL_URL`` ou ``MYSQL_URL`` — pool asyncmy real, sem mocks.
@@ -14,10 +16,16 @@ import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from asyncmy.errors import OperationalError, ProgrammingError
 
+from orion_mcp_v3.broker import (
+    aggregate_groups,
+    merge_cognitive_artifacts,
+    sample_recent_structured,
+)
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.planner import build_query_plan
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
@@ -35,6 +43,7 @@ from orion_mcp_v3.runtime.provenance import CoverageInfo
 
 from integration_pipeline_logger import (
     JsonlPipelineLogger,
+    cognitive_artifact_snapshot,
     cognitive_plan_snapshot,
     conflict_resolution_snapshot,
     context_block_snapshot,
@@ -52,8 +61,14 @@ def _mysql_url() -> str | None:
     return u or None
 
 
-async def _mysql_real_execution(logger: JsonlPipelineLogger, semantic: SemanticQueryPlan) -> None:
-    """SELECT real na BD via compilador + allowlist (mesmo caminho que ``AnalyticsExecutor``)."""
+async def _mysql_real_execution(
+    logger: JsonlPipelineLogger,
+    semantic: SemanticQueryPlan,
+) -> list[dict[str, Any]]:
+    """SELECT real na BD via compilador + allowlist (mesmo caminho que ``AnalyticsExecutor``).
+
+    Devolve as linhas seleccionadas para a etapa de redução analítica (bloco 5); lista vazia se não houver URL.
+    """
     url = _mysql_url()
     logger.step(
         "mysql_env",
@@ -71,16 +86,16 @@ async def _mysql_real_execution(logger: JsonlPipelineLogger, semantic: SemanticQ
                 "reason": "Defina ORION_MYSQL_URL ou MYSQL_URL para executar SELECT real.",
             },
         )
-        return
+        return []
 
     allowlist = SqlAllowlist(
         tables=frozenset({"clientes", "os", "os_servicos", "funcionarios", "concessionarias"}),
         columns_by_table={
-            "clientes": frozenset({"id", "nome", "paga"}),
+            "clientes": frozenset({"id", "nome", "paga", "created_at"}),
             "os": frozenset({"id", "cliente_id", "concessionaria_id", "created_at", "paga"}),
-            "os_servicos": frozenset({"id", "valor_venda_real"}),
-            "funcionarios": frozenset({"id", "nome"}),
-            "concessionarias": frozenset({"id", "nome"}),
+            "os_servicos": frozenset({"id", "os_id", "servico_id", "valor_venda_real", "created_at"}),
+            "funcionarios": frozenset({"id", "nome", "created_at"}),
+            "concessionarias": frozenset({"id", "nome", "created_at"}),
         },
     )
 
@@ -90,6 +105,7 @@ async def _mysql_real_execution(logger: JsonlPipelineLogger, semantic: SemanticQ
         pytest.fail("create_mysql_pool devolveu None com URL definida")
 
     client = MysqlDatastoreClient(pool)
+    selected: list[dict[str, Any]] = []
     try:
         ping = await client.select("SELECT 1 AS ok", ())
         logger.step(
@@ -98,7 +114,7 @@ async def _mysql_real_execution(logger: JsonlPipelineLogger, semantic: SemanticQ
             output_data={"rows": rows_for_json(list(ping))},
         )
 
-        executor = AnalyticsExecutor(client, allowlist, default_limit=50)
+        executor = AnalyticsExecutor(client, allowlist, default_limit=1000)
         plan_exec = executor.prepare_execution_plan(semantic, None)
         logger.step(
             "mysql_plan_merge",
@@ -125,8 +141,63 @@ async def _mysql_real_execution(logger: JsonlPipelineLogger, semantic: SemanticQ
                 "rows": rows_for_json(list(rows)),
             },
         )
+        selected = list(rows)
     finally:
         await close_mysql_pool(pool)
+
+    return selected
+
+
+def _apply_analytical_reduction(
+    logger: JsonlPipelineLogger,
+    rows: list[dict[str, Any]],
+) -> None:
+    """
+    Bloco 5 (ORDEM_IMPLEMENTAÇÃO): aggregators → samplers → ``merge_cognitive_artifacts``.
+
+    Regista apenas :class:`~CognitiveArtifact` serializado — não duplica o lote SQL completo.
+    """
+    if not rows:
+        logger.step(
+            "analytical_reduction_skipped",
+            input_data={},
+            output_data={"reason": "sem linhas do MySQL (URL ausente ou resultado vazio)"},
+        )
+        return
+
+    group_art = aggregate_groups(rows, "cliente_id")
+    logger.step(
+        "analytical_reduction_aggregate_groups",
+        input_data={"group_key": "cliente_id", "mysql_row_count": len(rows)},
+        output_data=cognitive_artifact_snapshot(group_art),
+    )
+
+    artifacts: list[Any] = [group_art]
+    has_time = any("created_at" in r for r in rows[: min(10, len(rows))])
+    if has_time:
+        k = min(5, len(rows))
+        sample_art = sample_recent_structured(
+            rows,
+            time_key="created_at",
+            k=k,
+            projection_keys=("id", "cliente_id"),
+        )
+        logger.step(
+            "analytical_reduction_sample_recent",
+            input_data={"time_key": "created_at", "k": k},
+            output_data=cognitive_artifact_snapshot(sample_art),
+        )
+        artifacts.append(sample_art)
+
+    merged = merge_cognitive_artifacts(*artifacts)
+    logger.step(
+        "analytical_reduction_merge",
+        input_data={
+            "artifact_kinds": [a.kind for a in artifacts],
+            "merged_kind": merged.kind,
+        },
+        output_data=cognitive_artifact_snapshot(merged),
+    )
 
 
 def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
@@ -284,7 +355,8 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     assert isinstance(semantic_nl_free, SemanticQueryPlan)
     assert semantic_nl_free.analytics_strategy == AnalyticsStrategy.TREND
 
-    asyncio.run(_mysql_real_execution(log, semantic))
+    mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
+    _apply_analytical_reduction(log, mysql_rows)
 
     log.step(
         "run_done",

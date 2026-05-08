@@ -12,7 +12,7 @@ from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
 def _executor_with_mock_rows(rows: list[dict]) -> tuple[AnalyticsExecutor, AsyncMock]:
     mysql = MagicMock()
     mysql.select = AsyncMock(return_value=rows)
-    ex = AnalyticsExecutor(mysql, ANALYTICS_ALLOWLIST, default_limit=100)
+    ex = AnalyticsExecutor(mysql, ANALYTICS_ALLOWLIST, default_limit=1000)
     return ex, mysql.select
 
 

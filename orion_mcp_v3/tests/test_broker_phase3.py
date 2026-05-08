@@ -114,8 +114,8 @@ def test_compile_select_join_os_clientes_paga() -> None:
     allow = SqlAllowlist(
         tables=frozenset({"os", "clientes"}),
         columns_by_table={
-            "os": frozenset({"id", "cliente_id", "paga"}),
-            "clientes": frozenset({"id", "paga"}),
+            "os": frozenset({"id", "cliente_id", "paga", "created_at"}),
+            "clientes": frozenset({"id", "paga", "created_at"}),
         },
     )
     plan = SemanticQueryPlan(
@@ -123,7 +123,7 @@ def test_compile_select_join_os_clientes_paga() -> None:
         strategy=RetrievalStrategy.EXACT_LOOKUP,
         hints={
             "sql_table": "os",
-            "sql_columns": ("id", "cliente_id"),
+            "sql_columns": ("id", "cliente_id", "created_at"),
             "sql_joins": (
                 {
                     "join_table": "clientes",

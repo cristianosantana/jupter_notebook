@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from orion_mcp_v3.contracts.cognitive_artifact import CognitiveArtifact
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.context_block import ContextBlock
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
@@ -48,6 +49,24 @@ def cognitive_plan_snapshot(cp: CognitivePlan) -> dict[str, Any]:
         "retrieval_strategy": cp.retrieval_strategy.value,
         "attention_profile": cp.attention_profile.value,
         "hints": dict(cp.hints),
+    }
+
+
+def cognitive_artifact_snapshot(a: CognitiveArtifact) -> dict[str, Any]:
+    return {
+        "kind": a.kind,
+        "summary": dict(a.summary),
+        "confidence": a.confidence,
+        "coverage": {"labels": dict(a.coverage.labels), "notes": a.coverage.notes},
+        "provenance": [
+            {
+                "artifact_id": p.artifact_id,
+                "source": p.source,
+                "lineage": list(p.lineage),
+                "metadata": dict(p.metadata),
+            }
+            for p in a.provenance
+        ],
     }
 
 
