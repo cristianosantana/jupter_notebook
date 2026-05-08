@@ -11,6 +11,7 @@ from orion_mcp_v3.broker.aggregators import (
     top_n,
 )
 from orion_mcp_v3.broker.chunking import chunk_rows, estimate_chunk_tokens, rows_blob
+from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder, evidence_block_to_digest
 from orion_mcp_v3.broker.data_pipeline import DataPipeline
 from orion_mcp_v3.broker.executor import AnalyticsExecutor, AnalyticsResult
 from orion_mcp_v3.broker.planner import (
@@ -49,6 +50,8 @@ __all__ = [
     "SqlAllowlist",
     "SqlCompilationError",
     "compile_select",
+    "EvidenceBuilder",
+    "evidence_block_to_digest",
     "aggregate_groups",
     "aggregate_ranking",
     "aggregate_temporal_series",

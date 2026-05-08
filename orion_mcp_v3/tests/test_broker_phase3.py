@@ -76,6 +76,45 @@ def test_infer_analytics_strategy_comparison() -> None:
     assert infer_analytics_strategy(cp, {}) == AnalyticsStrategy.COMPARISON
 
 
+def test_compile_select_omit_limit_without_explicit_limit() -> None:
+    allow = SqlAllowlist(
+        tables=frozenset({"sales"}),
+        columns_by_table={"sales": frozenset({"id", "amount"})},
+    )
+    plan = SemanticQueryPlan(
+        intent_slug="x",
+        strategy=RetrievalStrategy.EXACT_LOOKUP,
+        hints={
+            "sql_table": "sales",
+            "sql_columns": ("amount",),
+            "sql_omit_limit": True,
+        },
+    )
+    c = compile_select(plan, allow, default_limit=99)
+    assert "LIMIT" not in c.sql
+    assert c.params == ()
+
+
+def test_compile_select_explicit_limit_overrides_omit_flag() -> None:
+    allow = SqlAllowlist(
+        tables=frozenset({"sales"}),
+        columns_by_table={"sales": frozenset({"id", "amount"})},
+    )
+    plan = SemanticQueryPlan(
+        intent_slug="x",
+        strategy=RetrievalStrategy.EXACT_LOOKUP,
+        hints={
+            "sql_table": "sales",
+            "sql_columns": ("amount",),
+            "sql_omit_limit": True,
+            "limit": 7,
+        },
+    )
+    c = compile_select(plan, allow)
+    assert "LIMIT %s" in c.sql
+    assert c.params[-1] == 7
+
+
 def test_compile_select_basic() -> None:
     allow = SqlAllowlist(
         tables=frozenset({"sales"}),
@@ -142,6 +181,91 @@ def test_compile_select_join_os_clientes_paga() -> None:
     assert "`os`.`paga` = %s" in c.sql
     assert "ORDER BY `os`.`id` DESC" in c.sql
     assert c.params == (1, 50)
+
+
+def test_compile_select_join_os_servicos_valor_venda_real() -> None:
+    allow = SqlAllowlist(
+        tables=frozenset({"os", "clientes", "os_servicos"}),
+        columns_by_table={
+            "os": frozenset({"id", "cliente_id", "paga", "created_at"}),
+            "clientes": frozenset({"id", "nome"}),
+            "os_servicos": frozenset({"id", "os_id", "valor_venda_real"}),
+        },
+    )
+    plan = SemanticQueryPlan(
+        intent_slug="x",
+        strategy=RetrievalStrategy.EXACT_LOOKUP,
+        hints={
+            "sql_table": "os",
+            "sql_columns": (
+                "id",
+                {"qualifier": "svc", "column": "valor_venda_real"},
+            ),
+            "sql_joins": (
+                {
+                    "join_table": "clientes",
+                    "alias": "cli",
+                    "on_left_column": "cliente_id",
+                    "on_right_column": "id",
+                },
+                {
+                    "join_table": "os_servicos",
+                    "alias": "svc",
+                    "on_left_column": "id",
+                    "on_right_column": "os_id",
+                },
+            ),
+            "sql_filters": ({"qualifier": "os", "column": "paga", "op": "=", "value": 1},),
+            "limit": 10,
+        },
+    )
+    c = compile_select(plan, allow)
+    assert "`svc`.`valor_venda_real`" in c.sql
+    assert "JOIN `os_servicos` AS `svc`" in c.sql
+    assert c.params[-1] == 10
+
+
+def test_compile_select_group_by_sum_order_alias() -> None:
+    allow = SqlAllowlist(
+        tables=frozenset({"os", "os_servicos"}),
+        columns_by_table={
+            "os": frozenset({"id", "cliente_id", "paga", "created_at"}),
+            "os_servicos": frozenset({"os_id", "valor_venda_real"}),
+        },
+    )
+    plan = SemanticQueryPlan(
+        intent_slug="x",
+        strategy=RetrievalStrategy.EXACT_LOOKUP,
+        hints={
+            "sql_table": "os",
+            "sql_columns": (
+                {"qualifier": "os", "column": "cliente_id"},
+                {
+                    "agg": "SUM",
+                    "qualifier": "svc",
+                    "column": "valor_venda_real",
+                    "alias": "total_faturamento",
+                },
+            ),
+            "sql_joins": (
+                {
+                    "join_table": "os_servicos",
+                    "alias": "svc",
+                    "on_left_column": "id",
+                    "on_right_column": "os_id",
+                },
+            ),
+            "sql_group_by": ({"qualifier": "os", "column": "cliente_id"},),
+            "sql_filters": ({"qualifier": "os", "column": "paga", "op": "=", "value": 1},),
+            "sql_order_by": {"direction": "desc", "alias": "total_faturamento"},
+            "limit": 5,
+        },
+    )
+    c = compile_select(plan, allow)
+    assert "GROUP BY `os`.`cliente_id`" in c.sql
+    assert "SUM(`svc`.`valor_venda_real`) AS `total_faturamento`" in c.sql
+    assert "ORDER BY `total_faturamento` DESC" in c.sql
+    assert c.params == (1, 5)
 
 
 def test_compile_select_where_in() -> None:

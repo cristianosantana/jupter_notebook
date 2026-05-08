@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from orion_mcp_v3.contracts.cognitive_artifact import CognitiveArtifact
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.context_block import ContextBlock
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
@@ -49,6 +50,27 @@ def cognitive_plan_snapshot(cp: CognitivePlan) -> dict[str, Any]:
         "retrieval_strategy": cp.retrieval_strategy.value,
         "attention_profile": cp.attention_profile.value,
         "hints": dict(cp.hints),
+    }
+
+
+def evidence_block_snapshot(eb: EvidenceBlock) -> dict[str, Any]:
+    return {
+        "summary": eb.summary,
+        "insights": dict(eb.insights),
+        "metrics": dict(eb.metrics),
+        "confidence": eb.confidence,
+        "coverage": {"labels": dict(eb.coverage.labels), "notes": eb.coverage.notes},
+        "sample_refs": list(eb.sample_refs),
+        "supporting_data": dict(eb.supporting_data),
+        "provenance": [
+            {
+                "artifact_id": p.artifact_id,
+                "source": p.source,
+                "lineage": list(p.lineage),
+                "metadata": dict(p.metadata),
+            }
+            for p in eb.provenance
+        ],
     }
 
 

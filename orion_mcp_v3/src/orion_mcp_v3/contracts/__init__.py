@@ -12,10 +12,12 @@ from orion_mcp_v3.contracts.cognitive_artifact import (
 )
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 
 __all__ = [
     "AnalyticalDigest",
+    "EvidenceBlock",
     "AttentionProfile",
     "CognitivePlan",
     "CognitiveArtifact",
