@@ -194,7 +194,7 @@ class IntentResolver:
             ("revenue", "faturamento"),
             ("revenue", "revenue"),
             ("ticket", "ticket"),
-            ("sales", "vendas"),
+            ("sales", "os"),
         ):
             if needle in lower and label not in out:
                 out.append(label)

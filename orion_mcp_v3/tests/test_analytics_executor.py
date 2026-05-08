@@ -41,12 +41,12 @@ def test_execute_accepts_sql_hints_override_table() -> None:
     async def run() -> None:
         result = await executor.execute(
             "lista",
-            sql_hints={"sql_table": "clientes", "sql_columns": ("id", "nome", "email")},
+            sql_hints={"sql_table": "clientes", "sql_columns": ("id", "nome", "created_at")},
         )
         assert result.row_count == 1
         args, kwargs = select_mock.await_args
         sql = args[0]
-        assert '"clientes"' in sql
+        assert "`clientes`" in sql
 
     asyncio.run(run())
 
@@ -58,9 +58,8 @@ def test_execute_propagates_compiled_params() -> None:
         await executor.execute(
             "teste",
             sql_hints={
-                "sql_table": "vendas",
-                "sql_columns": ("valor",),
-                "sql_filters": [{"column": "status", "op": "=", "value": "fechado"}],
+                "sql_table": "os",
+                "sql_columns": ("created_at",),
                 "limit": 10,
             },
         )
