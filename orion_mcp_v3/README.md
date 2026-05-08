@@ -2,6 +2,16 @@
 
 Pacote base (`connection_hub`: Postgres, MySQL, Redis), migrações de memória conversacional em PostgreSQL e especificação Redis.
 
+## Documentação (ecossistema)
+
+| Documento | Conteúdo |
+|-----------|------------|
+| [`docs/README.md`](docs/README.md) | Índice da pasta `docs/` |
+| **[`docs/architecture/ORION_V3_MASTER_ARCHITECTURE.md`](docs/architecture/ORION_V3_MASTER_ARCHITECTURE.md)** | Índice mestre: infraestrutura analytics × plano incremental × cognição |
+| [`docs/execution/PLANO_EXECUCAO.md`](docs/execution/PLANO_EXECUCAO.md) | Roadmap técnico incremental |
+| [`docs/roadmaps/ROADMAP_COM_MYSQL_INTEGRADO.md`](docs/roadmaps/ROADMAP_COM_MYSQL_INTEGRADO.md) | Pipeline analytics + MySQL |
+| [`docs/architecture/ARQUITETURA_COGNITIVA_CENTRAL.md`](docs/architecture/ARQUITETURA_COGNITIVA_CENTRAL.md) | Arquitetura cognitiva superior |
+
 ## Arranque rápido
 
 ```bash

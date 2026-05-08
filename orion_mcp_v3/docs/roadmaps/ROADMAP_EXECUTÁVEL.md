@@ -1,5 +1,7 @@
 # Estratégia implementação
 
+> **Índice entre documentos:** [`ORION_V3_MASTER_ARCHITECTURE.md`](../architecture/ORION_V3_MASTER_ARCHITECTURE.md) — liga este roadmap genérico (fases 0–6) ao plano incremental e ao pipeline MySQL/cognitivo.
+
 # ✅ Vertical slices evolutivos
 
 Cada etapa deve:
@@ -362,7 +364,7 @@ Sem invalidação complexa ainda.
 
 ---
 
-# 🚀 FASE 3 — BROKER ANALÍTICO
+# 🚀 FASE 3 — BROKER ANALÍTICO - OK
 
 Agora começa Big Data.
 
@@ -471,7 +473,7 @@ coverage
 
 ---
 
-# 🚀 FASE 4 — DESTILAÇÃO
+# 🚀 FASE 4 — DESTILAÇÃO - OK
 
 Agora entra map-reduce.
 

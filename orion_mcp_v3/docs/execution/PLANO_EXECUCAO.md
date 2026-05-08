@@ -68,6 +68,21 @@ todos:
 isProject: false
 ---
 
+## Papel deste documento no ecossistema Orion v3
+
+Este ficheiro é o **roadmap técnico incremental**: responde *«o que implementar primeiro?»* — ordem de trabalho, contratos estáveis antes de pipelines pesados, milestones e **testes de fluxo cognitivo**.
+
+**Não substitui:**
+
+| Documento | Papel |
+|-----------|--------|
+| [`ROADMAP_COM_MYSQL_INTEGRADO.md`](../roadmaps/ROADMAP_COM_MYSQL_INTEGRADO.md) | Pipeline analytics + dados reais no runtime (SQL seguro, executor, integração). |
+| [`ARQUITETURA_COGNITIVA_CENTRAL.md`](../architecture/ARQUITETURA_COGNITIVA_CENTRAL.md) | Camada cognitiva superior — intenção, evidência, fusão de contexto, orquestração. |
+
+**Índice mestre:** [`ORION_V3_MASTER_ARCHITECTURE.md`](../architecture/ORION_V3_MASTER_ARCHITECTURE.md).
+
+---
+
 # Plano: Cognitive Context Infrastructure — `orion_mcp_v3`
 
 ## Posicionamento
@@ -90,10 +105,10 @@ O pacote deixa de ser “framework MCP com memória” e converge para **infraes
 
 ## Estado actual no repositório
 
-- **[`connection_hub`](orion_mcp_v3/src/orion_mcp_v3/connection_hub/)**
-- **[Migrações Postgres](orion_mcp_v3/src/orion_mcp_v3/infra/postgres/migrations/)**
-- **[Redis](orion_mcp_v3/src/orion_mcp_v3/infra/redis/MEMORY_KEYSPACE.md)**
-- **[COMO_GEMINI_FUNCIONA.md](orion_mcp_v3/docs/COMO_GEMINI_FUNCIONA.md)**
+- **[`connection_hub`](../../src/orion_mcp_v3/connection_hub/)**
+- **[Migrações Postgres](../../src/orion_mcp_v3/infra/postgres/migrations/)**
+- **[Redis](../../src/orion_mcp_v3/infra/redis/MEMORY_KEYSPACE.md)**
+- **[COMO_GEMINI_FUNCIONA.md](../guides/COMO_GEMINI_FUNCIONA.md)**
 
 ---
 
@@ -377,10 +392,21 @@ flowchart TB
 - **Fase M2 — Broker + RetrievalStrategy + DSL.**  
 - **Fase M3 — Destilação + compositor + scheduler avançado.**
 
+### Pontes cognitivas (sem remover C0–M3)
+
+Estas fases **acrescentam checkpoints** alinhados a [`ARQUITETURA_COGNITIVA_CENTRAL.md`](../architecture/ARQUITETURA_COGNITIVA_CENTRAL.md); mantêm incrementalismo e entregas testáveis.
+
+| Fase | Nome | Objetivo |
+|------|------|----------|
+| **Fase 2.5 — Cognitive Foundation** | Contratos e resolvedores mínimos para separar *entendimento* de *execução* (`CognitivePlan`, `IntentResolver`, ligação a `SemanticQueryPlan`). | Evoluir de *digest mecânico* para *evidência endereçável*. |
+| **Fase 5.5 — Cognitive Orchestrator** | `ContextFusion` + política de turno: evidência analítica + memória conversacional + `allocate` sob uma orquestração explícita. | Fechar *pergunta → evidência → contexto LLM* sem abandonar SQL nem milestones. |
+
+Dependências típicas: **2.5** após C2 e contratos base; **5.5** após broker/runtime estáveis (M2+) e integração descrita no roadmap MySQL.
+
 ---
 
 ## Notas de âmbito
 
-- Tudo sob [`orion_mcp_v3/`](orion_mcp_v3/).  
+- Tudo sob a raiz deste pacote ([`../../`](../../)) — código em [`src/orion_mcp_v3/`](../../src/orion_mcp_v3/).  
 - Coerência cognitiva depende mais de **contratos + governança** do que de quantidade de features.  
 - **v3** = fundação; **Context Graph** = evolução documentada.
