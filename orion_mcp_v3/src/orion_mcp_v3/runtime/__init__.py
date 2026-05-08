@@ -21,7 +21,13 @@ from orion_mcp_v3.runtime.decay import (
     resolve_age_seconds,
 )
 from orion_mcp_v3.runtime.events import RuntimeEvent, RuntimeEventType
-from orion_mcp_v3.runtime.provenance import CoverageInfo, ProvenanceAnchor
+from orion_mcp_v3.runtime.drift_guard import DriftGuard, DriftReport, DriftSignal
+from orion_mcp_v3.runtime.provenance import (
+    CoverageInfo,
+    ProvenanceAnchor,
+    merge_coverage_infos,
+    merge_provenance_anchors,
+)
 
 __all__ = [
     "allocate",
@@ -36,7 +42,12 @@ __all__ = [
     "IntentResolver",
     "map_attention_profile_to_policy",
     "ContextState",
+    "merge_coverage_infos",
+    "merge_provenance_anchors",
     "CoverageInfo",
+    "DriftGuard",
+    "DriftReport",
+    "DriftSignal",
     "estimate_tokens",
     "render_blocks_to_prompt",
     "policy_shares",

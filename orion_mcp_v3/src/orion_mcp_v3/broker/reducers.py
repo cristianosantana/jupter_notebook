@@ -5,6 +5,7 @@ e fusão de artefactos cognitivos (bloco 5).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Mapping, Sequence
 
 from orion_mcp_v3.broker.chunking import chunk_rows
@@ -30,10 +31,12 @@ class ChunkReducer:
         *,
         aggregation_logic: str = "map_reduce_concat_v1",
         merge_separator: str = "\n\n---\n\n",
+        semantic_merge: Callable[[list[str]], str] | None = None,
     ) -> None:
         self._summarizer = summarizer
         self._aggregation_logic = aggregation_logic
         self._merge_separator = merge_separator
+        self._semantic_merge = semantic_merge
 
     def reduce(
         self,
@@ -51,7 +54,10 @@ class ChunkReducer:
             summaries.append(self._summarizer.summarize_chunk(rows, i))
             refs.append(f"chunk:{i}")
 
-        merged = self._merge_separator.join(summaries)
+        if self._semantic_merge is not None:
+            merged = self._semantic_merge(summaries)
+        else:
+            merged = self._merge_separator.join(summaries)
 
         flat_sample: list[Mapping[str, Any]] = []
         for ch in chunks:

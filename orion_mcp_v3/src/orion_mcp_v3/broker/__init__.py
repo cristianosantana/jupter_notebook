@@ -13,6 +13,7 @@ from orion_mcp_v3.broker.aggregators import (
 from orion_mcp_v3.broker.chunking import chunk_rows, estimate_chunk_tokens, rows_blob
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder, evidence_block_to_digest
 from orion_mcp_v3.broker.data_pipeline import DataPipeline
+from orion_mcp_v3.broker.map_reduce import distill_with_semantic_merge, semantic_merge_sections
 from orion_mcp_v3.broker.executor import AnalyticsExecutor, AnalyticsResult
 from orion_mcp_v3.broker.planner import (
     build_query_plan,
@@ -50,6 +51,7 @@ __all__ = [
     "SqlAllowlist",
     "SqlCompilationError",
     "compile_select",
+    "distill_with_semantic_merge",
     "EvidenceBuilder",
     "evidence_block_to_digest",
     "aggregate_groups",
@@ -68,6 +70,7 @@ __all__ = [
     "sample_recent_structured",
     "sample_stratified_keys",
     "plan_from_natural_language",
+    "semantic_merge_sections",
     "recent_sampler",
     "rows_blob",
     "time_series",

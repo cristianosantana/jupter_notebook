@@ -1,6 +1,6 @@
 """
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
-(EvidenceBuilder sobre linhas SQL) e bloco 5 (aggregators / samplers / reducers).
+(EvidenceBuilder), bloco 5 (aggregators / samplers / reducers) e bloco 7 (map-reduce semântico + DriftGuard).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,10 @@ from asyncmy.errors import OperationalError, ProgrammingError
 from orion_mcp_v3.broker import (
     EvidenceBuilder,
     aggregate_groups,
+    distill_with_semantic_merge,
     merge_cognitive_artifacts,
     sample_recent_structured,
+    semantic_merge_sections,
 )
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.planner import build_query_plan
@@ -33,9 +36,10 @@ from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
 from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
 from orion_mcp_v3.connection_hub.pools import close_mysql_pool, create_mysql_pool
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
+from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
-from orion_mcp_v3.runtime import AttentionPolicy, ContextState
+from orion_mcp_v3.runtime import AttentionPolicy, ContextState, DriftGuard
 from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.conflict_resolution import cap_system_blocks, resolve_duplicate_blocks
 from orion_mcp_v3.runtime.decay import apply_decay_with_clock
@@ -44,10 +48,12 @@ from orion_mcp_v3.runtime.provenance import CoverageInfo
 
 from integration_pipeline_logger import (
     JsonlPipelineLogger,
+    analytical_digest_snapshot,
     cognitive_artifact_snapshot,
     cognitive_plan_snapshot,
     conflict_resolution_snapshot,
     context_block_snapshot,
+    drift_report_snapshot,
     evidence_block_snapshot,
     rows_for_json,
     semantic_query_plan_snapshot,
@@ -263,6 +269,62 @@ def _apply_analytical_reduction(
     )
 
 
+def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> None:
+    """
+    Bloco 7 (ORDEM_IMPLEMENTAÇÃO): chunk summarization → merge semântico → digest;
+    em seguida :class:`DriftGuard` vs. digest sintético “anterior” (volume baixo).
+    """
+    if not rows:
+        logger.step(
+            "map_reduce_skipped",
+            input_data={},
+            output_data={"reason": "sem linhas do MySQL (URL ausente ou SELECT vazio)"},
+        )
+        return
+
+    class _IntegrationChunkSummarizer:
+        def summarize_chunk(self, chunk: Sequence[Mapping[str, Any]], chunk_index: int) -> str:
+            n = len(chunk)
+            keys = sorted(chunk[0].keys()) if chunk else []
+            return f"chunk_index={chunk_index} row_count={n} columns={keys}"
+
+    chunk_row_cap = min(3, max(1, len(rows)))
+    base_cov = CoverageInfo(labels={"pipeline": "integration_map_reduce"}, notes="bloco7")
+    digest = distill_with_semantic_merge(
+        rows,
+        _IntegrationChunkSummarizer(),
+        max_rows=chunk_row_cap,
+        max_tokens=100_000,
+        semantic_merge=semantic_merge_sections,
+        base_coverage=base_cov,
+    )
+    logger.step(
+        "map_reduce_digest",
+        input_data={
+            "mysql_row_count": len(rows),
+            "chunk_max_rows": chunk_row_cap,
+            "aggregation_logic": digest.aggregation_logic,
+        },
+        output_data=analytical_digest_snapshot(digest),
+    )
+
+    synthetic_prior = AnalyticalDigest(
+        summary="(prior sintético para integração)",
+        volume=1,
+        confidence=0.99,
+        coverage=CoverageInfo(labels={"role": "synthetic_prior"}, notes="drift_guard_demo"),
+    )
+    drift = DriftGuard(volume_change_ratio=2.0, confidence_drop_threshold=0.5).evaluate(
+        synthetic_prior,
+        digest,
+    )
+    logger.step(
+        "drift_guard",
+        input_data={"prior_volume": synthetic_prior.volume, "current_volume": digest.volume},
+        output_data=drift_report_snapshot(drift),
+    )
+
+
 def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     utterance = "mostre o top 5 clientes por faturamento nos últimos 3 meses"
 
@@ -421,6 +483,7 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
     _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
+    _apply_map_reduce_phase7(log, mysql_rows)
 
     log.step(
         "run_done",
