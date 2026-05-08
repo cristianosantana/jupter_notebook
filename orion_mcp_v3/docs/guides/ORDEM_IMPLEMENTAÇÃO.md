@@ -199,7 +199,7 @@ Isso precisa do:
 
 ---
 
-# 3️⃣ TERCEIRO
+# 3️⃣ TERCEIRO - OK
 
 # ROADMAP_EXECUTAVEL
 
