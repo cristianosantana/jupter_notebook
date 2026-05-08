@@ -319,9 +319,9 @@ cognitive analytics runtime
 
 ---
 
-# 5️⃣ QUINTO
+# 5️⃣ QUINTO - OK
 
-# ROADMAP_MYSQL
+# ROADMAP_COM_MYSQL_INTEGRADO
 
 ## aggregators/samplers/reducers
 

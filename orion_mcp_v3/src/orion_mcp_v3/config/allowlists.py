@@ -35,19 +35,24 @@ _ANALYTICS_COLUMNS: dict[str, frozenset[str]] = {
     "os_servicos": frozenset(
         {
             "id",
+            "os_id",
+            "servico_id",
             "valor_venda_real",
+            "created_at",
         }
     ),
     "funcionarios": frozenset(
         {
             "id",
             "nome",
+            "created_at",
         }
     ),
     "concessionarias": frozenset(
         {
             "id",
             "nome",
+            "created_at",
         }
     ),
 }

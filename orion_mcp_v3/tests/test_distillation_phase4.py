@@ -36,6 +36,7 @@ def test_chunk_reducer_merge_and_provenance() -> None:
     assert d.source_refs == ("chunk:0", "chunk:1")
     assert d.aggregation_logic == "test_logic"
     assert d.coverage.labels.get("chunk_count") == 2
+    assert d.confidence is not None and 0.0 <= d.confidence <= 1.0
 
 
 def test_distill_end_to_end() -> None:

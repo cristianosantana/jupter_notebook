@@ -6,16 +6,30 @@
 
 ---
 
+## Novo princípio arquitetural
+
+O pipeline analítico **deixa de entregar apenas dados brutos** (`raw SQL rows`) e passa a entregar **evidências cognitivas compactadas**: cada camada reduz cardinalidade e aumenta densidade informativa até algo consumível pelo runtime LLM com **provenance** e **coverage** explícitos.
+
+Objetivo cognitivo:
+
+```text
+query engine  →  evidence extraction engine
+```
+
+---
+
 ## 📋 VISÃO GERAL
 
 O OrionMCP V3 precisa responder **perguntas sobre dados no MySQL**.
 
 ```
-User Query → Decision Engine → Planner (hints)
+User Query → Decision Engine → Planner (SemanticQueryPlan / intenção analítica)
           → SQL Compiler (safe)
           → MySQL Executor
-          → Data Pipeline (resumo + amostra)
-          → Context Builder
+          → Analytical Reduction Layer (aggregators → samplers → reducers)
+          → EvidenceBuilder → AnalyticalDigest (evidence-oriented)
+          → Context Fusion (analytics + memory → ContextBlocks)
+          → BudgetAllocator
           → LLM Narrator
 ```
 
@@ -267,6 +281,133 @@ async def test_execute_simple_query():
 
 ---
 
+## Analytical Reduction Layer
+
+**Problema cognitivo:** `raw SQL result != analytical evidence`. Linhas devolvidas pelo MySQL não são, por si só, evidência analítica — são material bruto que precisa de **redução**, **amostragem** e **interpretação estruturada** antes de alimentar o LLM.
+
+Pipeline explícito (a implementar / consolidar no broker):
+
+```text
+SQL rows
+  ↓
+aggregators        → group by, séries temporais, ranking, comparações, normalização de métricas
+  ↓
+samplers           → linhas recentes, outliers, amostras representativas, estratificação, redução de cardinalidade
+  ↓
+reducers           → dados agregados → insights semânticos (crescimento, queda, tendência, sazonalidade, anomalia, mudança de comportamento)
+  ↓
+EvidenceBuilder    → reducers + samples → EvidenceBlock (+ digest agregado)
+  ↓
+AnalyticalDigest     → contexto analítico orientado a evidência (não apenas “resumo de linhas”)
+```
+
+### Estrutura alvo em `broker/`
+
+```text
+broker/
+├── planner.py
+├── sql_compiler.py
+├── executor.py
+├── aggregators.py
+├── samplers.py
+├── reducers.py
+├── evidence_builder.py
+├── policies.py
+├── data_pipeline.py      # pode orquestrar ou delegar à camada acima
+└── chunking.py           # existente
+```
+
+### `aggregators.py`
+
+- Agrupamentos (`group_by`), agregação temporal, ranking, comparações, normalização de métricas.
+
+### `samplers.py`
+
+- Linhas recentes, amostragem de anomalias, amostras representativas, amostragem estratificada, redução de cardinalidade.
+
+### `reducers.py`
+
+- Transformar **dados agregados** em **insights semânticos** (crescimento, queda, tendência, sazonalidade, anomalia, mudança de comportamento).
+
+### `evidence_builder.py`
+
+- Combinar saídas de reducers + samples em **`EvidenceBlock`** (e feeds para **`AnalyticalDigest`**) com **confidence**, **provenance**, **coverage**, **summary**, **supporting_data**.
+
+### Contrato sugerido: `EvidenceBlock` (contracts)
+
+Campos orientativos:
+
+- `summary`, `insights`, `metrics`
+- `provenance`, `coverage`, `confidence`
+- `sample_refs` (referências às amostras / chunks suporte)
+
+### `AnalyticalDigest` — papel conceptual (alteração)
+
+- **Antes (mentalidade simples):** digest = resumo final dos números.
+- **Depois:** digest = **contexto analítico orientado a evidência** — agrega digestível o que reducers + builder declararam, sempre ancorado em provenance/coverage.
+
+### Provenance Anchoring (digest / map-reduce analítico)
+
+Cada insight deve poder explicar:
+
+- **origem** (qual execução SQL / qual plano semântico),
+- **chunks** ou subconjuntos de dados que o suportam,
+- **coverage** (quanto dos dados entrou na conta),
+- **aggregation logic** (que agregação ou reducer produziu o insight).
+
+### BudgetAllocator e camada de evidência
+
+Os **reducers** e o **EvidenceBuilder** devem, numa evolução próxima, calcular ou expor metadados utilizáveis pelo orçamento:
+
+- **information_density**
+- **cognitive_weight**
+- **estimated_token_cost**
+
+para integração futura com **BudgetAllocator** (competição por tokens entre blocos de analytics e de memória).
+
+---
+
+## Analytical Reasoning Pipeline
+
+Fluxo lógico end-to-end:
+
+```text
+User Intent
+    ↓
+Planner (SemanticQueryPlan — intenção analítica estruturada; ver nota abaixo)
+    ↓
+SemanticQueryPlan
+    ↓
+SQL Execution
+    ↓
+Aggregation
+    ↓
+Sampling
+    ↓
+Reduction
+    ↓
+EvidenceBuilder
+    ↓
+AnalyticalDigest
+```
+
+### Planner: não devolve SQL
+
+O **Planner** devolve **intenção analítica estruturada** (`SemanticQueryPlan` + hints), não texto SQL. O compilador + executor geram SQL a partir desse plano.
+
+Exemplo ilustrativo de *forma* de intenção (ilustrativo; o contrato real é `SemanticQueryPlan` / hints):
+
+```json
+{
+  "intent": "trend_analysis",
+  "metric": "ticket_medio",
+  "group_by": "month",
+  "comparison": "previous_period"
+}
+```
+
+---
+
 ## ✅ RESULTADO FASE 1.5
 
 Você terá:
@@ -281,7 +422,7 @@ Caminho funcional: pergunta → planer → compilador → mysql → resultado
 
 ## Objetivo
 
-Melhorar pipeline para trabalhar com dados REAIS do MySQL.
+Melhorar pipeline para trabalhar com dados REAIS do MySQL e, em paralelo, **encaixar** a **Analytical Reduction Layer** (aggregators → samplers → reducers → `EvidenceBuilder` → `AnalyticalDigest`), evitando o salto perigoso **SQL → digest** sem agregação e redução explícitas.
 
 ---
 
@@ -455,6 +596,16 @@ MySQL rows → Processados com schema inference
            → Insights detectados
            → Sample extraído
 ```
+
+---
+
+## Context Fusion Layer (analytics + memory)
+
+**Estado:** especificado no roadmap; implementação pode ser incremental.
+
+- Tanto **analytics** (digest / EvidenceBlocks) como **memory** conversacional devem convergir para **`ContextBlock`** formais.
+- A **fusão** ocorre **antes** do **BudgetAllocator**: um único conjunto de blocos compete pelo orçamento de tokens.
+- Evoluções futuras: **deduplicação** entre fontes, **resolução de conflitos** já previstas no runtime mínimo, priorização por relevância / densidade.
 
 ---
 
@@ -762,12 +913,13 @@ Integrado e funcionando.
 ## COM MySQL (OrionMCP v3)
 
 ```
-✅ Query → Planner → SQL Compiler → MySQL
-✅ Dados agregados + sampled
-✅ LLM só narra (dados certos)
+✅ Query → Planner (intenção analítica) → SQL Compiler → MySQL
+✅ Analytical Reduction Layer: aggregators → samplers → reducers → EvidenceBuilder → digest orientado a evidência
+✅ Dados agregados + sampled + reduzidos semanticamente (não só "rows → resumo")
+✅ LLM só narra a partir de evidência estruturada
 ✅ SQL seguro (allowlist + parameterizado)
-✅ Memory integrada
-✅ Context estruturado + budget
+✅ Memory integrada + Context Fusion (competição por budget)
+✅ Provenance / coverage ancoráveis a cada insight
 ```
 
 ---
@@ -786,6 +938,8 @@ Integrado e funcionando.
 - [ ] Schema-aware DataPipeline (melhorado)
 - [ ] Testes DataPipeline com MySQL real
 - [ ] Integração com AnalyticsResult
+- [ ] `reducers.py` + `evidence_builder.py` + `policies.py` (ou equivalente) conforme **Analytical Reduction Layer**
+- [ ] Contrato `EvidenceBlock` + provenance anchoring nos insights
 
 ### FASE 3.5 — Context Builder para Dados
 
@@ -817,21 +971,21 @@ Integrado e funcionando.
 │    ├─ SQL Compiler: hints → SELECT from vendas ...         │
 │    └─ MySQL: execute + retorna rows                        │
 │                                                             │
-│ 2. DataPipeline                                             │
-│    ├─ infer_schema(rows)                                   │
-│    ├─ build_summary(rows)                                  │
-│    ├─ extract_insights(rows)                               │
-│    └─ build_sample(rows)                                   │
+│ 2. Analytical Reduction Layer (+ DataPipeline orquestrando) │
+│    ├─ aggregators → group_by / temporal / ranking …        │
+│    ├─ samplers → recent / outliers / estratificação        │
+│    ├─ reducers → insights semânticos                       │
+│    ├─ EvidenceBuilder → EvidenceBlock                      │
+│    └─ AnalyticalDigest (evidence-oriented)                  │
 │                                                             │
 │ 3. MemoryComposer                                           │
 │    └─ get_memory(conc_001, FATURAMENTO)                   │
 │       (previous insights, key_metrics)                     │
 │                                                             │
-│ 4. AnalyticalContextBuilder                                │
-│    ├─ SYSTEM block (hints análise)                         │
-│    ├─ DATA block (summary + sample)                        │
-│    ├─ MEMORY block (memory curta)                          │
-│    └─ BudgetAllocator (respeit budget)                    │
+│ 4. Context Fusion + AnalyticalContextBuilder                │
+│    ├─ fundir blocos analytics + memory                     │
+│    ├─ SYSTEM / DATA / MEMORY ContextBlocks                 │
+│    └─ BudgetAllocator (tokens; density / cost futuros)     │
 │                                                             │
 │ 5. Save to PostgreSQL                                      │
 │    └─ conversation_state + memory_embeddings               │
@@ -843,6 +997,16 @@ Integrado e funcionando.
 │ Retorna: resposta acionável                                │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Futura evolução
+
+```text
+analytics pipeline → evidence reasoning engine
+```
+
+O salto perigoso cognitivamente é **`SQL rows → digest`** sem camadas intermediárias de **aggregation → sampling → reduction → evidence**. Este roadmap passa a explicitar essa **Analytical Reduction Layer** para evitar esse salto.
 
 ---
 

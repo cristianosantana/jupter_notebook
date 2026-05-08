@@ -22,3 +22,4 @@ class AnalyticalDigest:
     coverage: CoverageInfo = field(default_factory=CoverageInfo)
     source_refs: tuple[str, ...] = ()
     aggregation_logic: str | None = None
+    confidence: float | None = None

@@ -15,11 +15,11 @@ from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 
 # Colunas mínimas por tabela quando o plano NL não traz `sql_columns`.
 _DEFAULT_SQL_COLUMNS: dict[str, tuple[str, ...]] = {
-    "clientes": ("id", "nome"),
-    "os": ("id", "cliente_id"),
-    "os_servicos": ("id", "os_id", "servico_id", "valor_venda_real"),
-    "funcionarios": ("id", "nome"),
-    "concessionarias": ("id", "nome"),
+    "clientes": ("id", "nome", "created_at"),
+    "os": ("id", "cliente_id", "concessionaria_id", "created_at"),
+    "os_servicos": ("id", "os_id", "servico_id", "valor_venda_real", "created_at"),
+    "funcionarios": ("id", "nome", "created_at"),
+    "concessionarias": ("id", "nome", "created_at"),
 }
 
 # SELECT por defeito em ``os``: JOIN clientes + ``os.paga = 1``, ORDER BY ``os.id`` DESC (compilador SQL seguro).
