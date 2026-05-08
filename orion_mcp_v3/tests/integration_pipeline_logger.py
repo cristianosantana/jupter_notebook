@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from orion_mcp_v3.contracts.cognitive_artifact import CognitiveArtifact
+from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.context_block import ContextBlock
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 from orion_mcp_v3.runtime.conflict_resolution import ConflictResolutionResult
+from orion_mcp_v3.runtime.drift_guard import DriftReport
 
 
 def _json_fallback(obj: Any) -> Any:
@@ -88,6 +90,31 @@ def cognitive_artifact_snapshot(a: CognitiveArtifact) -> dict[str, Any]:
                 "metadata": dict(p.metadata),
             }
             for p in a.provenance
+        ],
+    }
+
+
+def analytical_digest_snapshot(d: AnalyticalDigest, *, summary_max: int = 4000) -> dict[str, Any]:
+    """Digest map-reduce (bloco 7) — trunca texto longo para JSONL legível."""
+    sm = d.summary
+    truncated = len(sm) > summary_max
+    return {
+        "summary": sm if not truncated else sm[:summary_max] + "…",
+        "summary_was_truncated": truncated,
+        "volume": d.volume,
+        "confidence": d.confidence,
+        "aggregation_logic": d.aggregation_logic,
+        "coverage": {"labels": dict(d.coverage.labels), "notes": d.coverage.notes},
+        "source_refs": list(d.source_refs),
+        "sample_row_keys_preview": [list(r.keys()) for r in d.sample[:5]],
+    }
+
+
+def drift_report_snapshot(r: DriftReport) -> dict[str, Any]:
+    return {
+        "refresh_recommended": r.refresh_recommended,
+        "signals": [
+            {"code": s.code, "message": s.message, "severity": s.severity} for s in r.signals
         ],
     }
 

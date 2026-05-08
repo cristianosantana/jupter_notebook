@@ -6,6 +6,40 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
+def merge_coverage_infos(*infos: "CoverageInfo", notes: str | None = None) -> "CoverageInfo":
+    """
+    Agrega várias :class:`CoverageInfo` num único registo (rótulos com prefixo ``layer_<i>_``).
+    ORDEM_IMPLEMENTAÇÃO §7 — coverage aggregation para map-reduce.
+    """
+    if not infos:
+        return CoverageInfo(labels={}, notes=notes)
+    merged: dict[str, Any] = {}
+    note_parts: list[str] = []
+    for i, c in enumerate(infos):
+        for k, v in dict(c.labels).items():
+            merged[f"layer_{i}_{k}"] = v
+        if c.notes:
+            note_parts.append(c.notes)
+    final_notes = notes if notes is not None else (" | ".join(note_parts) if note_parts else None)
+    return CoverageInfo(labels=merged, notes=final_notes)
+
+
+def merge_provenance_anchors(
+    *bundles: tuple["ProvenanceAnchor", ...],
+) -> tuple["ProvenanceAnchor", ...]:
+    """Concatena e deduplica por ``(artifact_id, source)`` — provenance merge (§7)."""
+    seen: set[tuple[str, str | None]] = set()
+    out: list[ProvenanceAnchor] = []
+    for b in bundles:
+        for p in b:
+            key = (p.artifact_id, p.source)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(p)
+    return tuple(out)
+
+
 @dataclass(frozen=True, slots=True)
 class ProvenanceAnchor:
     """Referência estável ao artefacto ou passo gerador."""

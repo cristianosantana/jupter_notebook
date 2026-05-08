@@ -418,7 +418,7 @@ Aqui nasce:
 
 ---
 
-# 7️⃣ SÉTIMO
+# 7️⃣ SÉTIMO - OK
 
 # ROADMAP_EXECUTAVEL
 
