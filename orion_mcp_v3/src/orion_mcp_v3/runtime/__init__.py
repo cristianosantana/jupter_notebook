@@ -1,6 +1,12 @@
 """Runtime: eventos, proveniência e ciclo de vida do Orion v3 (Fase 0+)."""
 
-from orion_mcp_v3.runtime.attention_policy import AttentionPolicy, AttentionShares, policy_shares
+from orion_mcp_v3.runtime.attention_policy import (
+    AttentionPolicy,
+    AttentionShares,
+    ElasticFreeTierParams,
+    elastic_free_tier_params,
+    policy_shares,
+)
 from orion_mcp_v3.runtime.intent_resolver import (
     IntentResolver,
     map_attention_profile_to_policy,
@@ -14,6 +20,7 @@ from orion_mcp_v3.runtime.conflict_resolution import (
     cap_system_blocks,
     resolve_duplicate_blocks,
 )
+from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
 from orion_mcp_v3.runtime.decay import (
     apply_decay,
     apply_decay_to_sequence,
@@ -39,6 +46,8 @@ __all__ = [
     "AttentionShares",
     "cap_system_blocks",
     "ConflictResolutionResult",
+    "ContextFusion",
+    "ContextFusionResult",
     "IntentResolver",
     "map_attention_profile_to_policy",
     "ContextState",
@@ -48,6 +57,8 @@ __all__ = [
     "DriftGuard",
     "DriftReport",
     "DriftSignal",
+    "ElasticFreeTierParams",
+    "elastic_free_tier_params",
     "estimate_tokens",
     "render_blocks_to_prompt",
     "policy_shares",

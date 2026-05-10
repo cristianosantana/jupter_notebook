@@ -8,3 +8,4 @@ Requires-Dist: asyncmy>=0.2.9
 Requires-Dist: redis>=5.2.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: python-dotenv>=1.0.0; extra == "dev"

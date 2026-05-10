@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
-from orion_mcp_v3.runtime import allocate, estimate_tokens
+from orion_mcp_v3.runtime import allocate, estimate_tokens, AttentionPolicy
 
 
 def _blob(prefix: str, token_target: int) -> str:
@@ -45,3 +45,26 @@ def test_higher_relevance_wins_tight_budget() -> None:
 
 def test_allocate_empty() -> None:
     assert allocate([], max_tokens=100) == []
+
+
+def test_elastic_path_orders_data_before_memory_zones() -> None:
+    """Com DATA+MEMORY presentes, a fracção livre usa trilha elástica; ordem: DATA depois MEMORY."""
+    data = ContextBlock(
+        "D" + "x" * 200,
+        ContextRole.DATA,
+        ContextSource.BROKER,
+        block_id="bloco-data",
+        relevance_score=0.4,
+    )
+    mem = ContextBlock(
+        "M" + "y" * 200,
+        ContextRole.CONTEXT,
+        ContextSource.MEMORY,
+        block_id="bloco-mem",
+        relevance_score=0.99,
+    )
+    out = allocate([data, mem], max_tokens=500, policy=AttentionPolicy.ANALYTICAL)
+    assert len(out) == 2
+    assert out[0].block_id == "bloco-data"
+    assert out[1].block_id == "bloco-mem"
+    assert sum(estimate_tokens(b.text) for b in out) <= 500
