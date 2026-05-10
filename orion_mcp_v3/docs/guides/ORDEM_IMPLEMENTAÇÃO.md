@@ -619,7 +619,7 @@ Porque agora já existem:
 
 ---
 
-# 1️⃣1️⃣ DÉCIMO PRIMEIRO
+# 1️⃣1️⃣ DÉCIMO PRIMEIRO - OK
 
 # ROADMAP_EXECUTAVEL
 

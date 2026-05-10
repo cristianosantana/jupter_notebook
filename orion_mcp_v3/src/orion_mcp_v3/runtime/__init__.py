@@ -21,6 +21,12 @@ from orion_mcp_v3.runtime.conflict_resolution import (
     resolve_duplicate_blocks,
 )
 from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
+from orion_mcp_v3.runtime.scheduler import (
+    SchedulerProfile,
+    composite_score,
+    schedule_blocks,
+    scheduler_profile_from_attention,
+)
 from orion_mcp_v3.runtime.decay import (
     apply_decay,
     apply_decay_to_sequence,
@@ -67,4 +73,8 @@ __all__ = [
     "ProvenanceAnchor",
     "RuntimeEvent",
     "RuntimeEventType",
+    "SchedulerProfile",
+    "composite_score",
+    "schedule_blocks",
+    "scheduler_profile_from_attention",
 ]

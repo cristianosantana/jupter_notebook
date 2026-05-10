@@ -1,7 +1,8 @@
 """
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
 (EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard), bloco 8 (memory pipeline → ContextBlocks),
-bloco 9 (ContextFusion) e bloco 10 (BudgetAllocator: zonas elásticas + competição DATA vs MEMORY pós-fusão).
+bloco 9 (ContextFusion), bloco 10 (BudgetAllocator elástico) e bloco 11 (scheduler por score composto
++ perfis analytical / conversational / hybrid, antes do allocator pós-fusão).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -53,9 +54,12 @@ from orion_mcp_v3.runtime import (
     ContextFusionResult,
     ContextState,
     DriftGuard,
+    SchedulerProfile,
     allocate,
     elastic_free_tier_params,
     estimate_tokens,
+    schedule_blocks,
+    scheduler_profile_from_attention,
 )
 from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.conflict_resolution import cap_system_blocks, resolve_duplicate_blocks
@@ -466,14 +470,45 @@ def _apply_context_fusion_phase9(
 _POST_FUSION_TOKEN_BUDGET = 4096
 
 
+def _apply_scheduler_phase11(
+    logger: JsonlPipelineLogger,
+    blocks: Sequence[ContextBlock],
+    sched_profile: SchedulerProfile,
+    *,
+    now: float | None = None,
+) -> list[ContextBlock]:
+    """Bloco 11: ordenação por score composto (relevância × recência × confiança × perfil)."""
+    scheduled = schedule_blocks(blocks, sched_profile, now=now)
+    logger.step(
+        "scheduler",
+        input_data={
+            "profile": sched_profile.value,
+            "incoming_count": len(blocks),
+        },
+        output_data={
+            "ordered_count": len(scheduled),
+            "order_block_ids": [b.block_id for b in scheduled[:24]],
+            "scores_preview": [
+                {
+                    "block_id": b.block_id,
+                    "scheduler_score": b.metadata.get("scheduler_score"),
+                    "relevance_after": b.relevance_score,
+                }
+                for b in scheduled[:16]
+            ],
+        },
+    )
+    return scheduled
+
+
 def _apply_budget_allocator_phase10(
     logger: JsonlPipelineLogger,
-    fusion: ContextFusionResult,
+    blocks: Sequence[ContextBlock],
     policy: AttentionPolicy,
     max_tokens: int,
 ) -> None:
     """Bloco 10: orçamento *attention-aware* pós-fusão (zonas elásticas, DATA vs MEMORY)."""
-    blocks = list(fusion.blocks)
+    blocks = list(blocks)
     params = elastic_free_tier_params(policy)
     packed = allocate(blocks, max_tokens, policy=policy)
     est = sum(estimate_tokens(b.text) for b in packed)
@@ -658,7 +693,9 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     digest = _apply_map_reduce_phase7(log, mysql_rows)
     memory_blocks = _apply_memory_pipeline_phase8(log, utterance)
     fusion_result = _apply_context_fusion_phase9(log, utterance, evidence, digest, memory_blocks)
-    _apply_budget_allocator_phase10(log, fusion_result, policy, _POST_FUSION_TOKEN_BUDGET)
+    sched_profile = scheduler_profile_from_attention(policy)
+    scheduled_blocks = _apply_scheduler_phase11(log, fusion_result.blocks, sched_profile)
+    _apply_budget_allocator_phase10(log, scheduled_blocks, policy, _POST_FUSION_TOKEN_BUDGET)
 
     log.step(
         "run_done",
