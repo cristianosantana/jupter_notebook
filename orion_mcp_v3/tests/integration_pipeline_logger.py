@@ -15,6 +15,7 @@ from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.context_block import ContextBlock
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 from orion_mcp_v3.runtime.conflict_resolution import ConflictResolutionResult
+from orion_mcp_v3.runtime.context_fusion import ContextFusionResult
 from orion_mcp_v3.runtime.drift_guard import DriftReport
 
 
@@ -135,6 +136,15 @@ def conflict_resolution_snapshot(r: ConflictResolutionResult) -> dict[str, Any]:
         "blocks": [context_block_snapshot(b) for b in r.blocks],
         "dropped_ids": list(r.dropped_ids),
         "notes": r.notes,
+    }
+
+
+def context_fusion_snapshot(r: ContextFusionResult) -> dict[str, Any]:
+    return {
+        "blocks": [context_block_snapshot(b) for b in r.blocks],
+        "dropped_ids": list(r.dropped_ids),
+        "notes": r.notes,
+        "layer_priority": list(r.layer_priority),
     }
 
 

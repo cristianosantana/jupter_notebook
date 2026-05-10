@@ -1,6 +1,7 @@
 """
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
-(EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard) e bloco 8 (memory pipeline → ContextBlocks).
+(EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard), bloco 8 (memory pipeline → ContextBlocks),
+bloco 9 (ContextFusion) e bloco 10 (BudgetAllocator: zonas elásticas + competição DATA vs MEMORY pós-fusão).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -43,9 +44,19 @@ from orion_mcp_v3.memory import (
 from orion_mcp_v3.connection_hub.pools import close_mysql_pool, create_mysql_pool
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
-from orion_mcp_v3.runtime import AttentionPolicy, ContextState, DriftGuard
+from orion_mcp_v3.runtime import (
+    AttentionPolicy,
+    ContextFusion,
+    ContextFusionResult,
+    ContextState,
+    DriftGuard,
+    allocate,
+    elastic_free_tier_params,
+    estimate_tokens,
+)
 from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.conflict_resolution import cap_system_blocks, resolve_duplicate_blocks
 from orion_mcp_v3.runtime.decay import apply_decay_with_clock
@@ -59,6 +70,7 @@ from integration_pipeline_logger import (
     cognitive_plan_snapshot,
     conflict_resolution_snapshot,
     context_block_snapshot,
+    context_fusion_snapshot,
     drift_report_snapshot,
     evidence_block_snapshot,
     rows_for_json,
@@ -110,7 +122,7 @@ def _pick_evidence_keys(rows: list[dict[str, Any]]) -> tuple[str | None, str | N
     return None, time_key
 
 
-def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> None:
+def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> EvidenceBlock | None:
     """Bloco 6: resultado SQL → ``EvidenceBlock`` (registado em JSONL)."""
     if not rows:
         logger.step(
@@ -118,7 +130,7 @@ def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, An
             input_data={},
             output_data={"reason": "sem linhas (URL MySQL ausente ou SELECT vazio)"},
         )
-        return
+        return None
     value_key, time_key = _pick_evidence_keys(rows)
     if not value_key:
         logger.step(
@@ -126,7 +138,7 @@ def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, An
             input_data={"row_keys_sample": sorted(rows[0].keys())},
             output_data={"reason": "nenhuma coluna numérica conhecida ou inferível nas linhas"},
         )
-        return
+        return None
     id_key: str | None = "id" if "id" in rows[0] else None
     block = EvidenceBuilder().build(rows, value_key=value_key, time_key=time_key, id_key=id_key)
     logger.step(
@@ -134,6 +146,7 @@ def _apply_evidence_builder(logger: JsonlPipelineLogger, rows: list[dict[str, An
         input_data={"value_key": value_key, "time_key": time_key, "row_count": len(rows)},
         output_data=evidence_block_snapshot(block),
     )
+    return block
 
 
 async def _mysql_real_execution(
@@ -275,7 +288,7 @@ def _apply_analytical_reduction(
     )
 
 
-def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> None:
+def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, Any]]) -> AnalyticalDigest | None:
     """
     Bloco 7 (ORDEM_IMPLEMENTAÇÃO): chunk summarization → merge semântico → digest;
     em seguida :class:`DriftGuard` vs. digest sintético “anterior” (volume baixo).
@@ -286,7 +299,7 @@ def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, A
             input_data={},
             output_data={"reason": "sem linhas do MySQL (URL ausente ou SELECT vazio)"},
         )
-        return
+        return None
 
     class _IntegrationChunkSummarizer:
         def summarize_chunk(self, chunk: Sequence[Mapping[str, Any]], chunk_index: int) -> str:
@@ -329,12 +342,13 @@ def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, A
         input_data={"prior_volume": synthetic_prior.volume, "current_volume": digest.volume},
         output_data=drift_report_snapshot(drift),
     )
+    return digest
 
 
 _MEMORY_SESSION_ID = "integration-orion-memory"
 
 
-def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> None:
+def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> list[ContextBlock]:
     """
     Bloco 8 (ORDEM_IMPLEMENTAÇÃO): EpisodicRetriever + SemanticRetriever + MemoryComposer.compose_blocks
     — saída formal :class:`~ContextBlock`, não texto de prompt cru.
@@ -385,6 +399,100 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
         output_data={
             "fitted_block_count": len(merged),
             "blocks": [context_block_snapshot(b) for b in merged],
+        },
+    )
+    return merged
+
+
+def _evidence_to_context_block(eb: EvidenceBlock) -> ContextBlock:
+    return ContextBlock(
+        text=eb.summary[:8000],
+        role=ContextRole.DATA,
+        source=ContextSource.BROKER,
+        block_id="fusion:evidence",
+        metadata={"fusion_kind": "evidence"},
+        relevance_score=min(0.95, max(0.0, eb.confidence)),
+    )
+
+
+def _digest_to_context_block(d: AnalyticalDigest) -> ContextBlock:
+    conf = d.confidence if d.confidence is not None else 0.6
+    return ContextBlock(
+        text=d.summary[:8000],
+        role=ContextRole.DATA,
+        source=ContextSource.BROKER,
+        block_id="fusion:map_reduce_digest",
+        metadata={"fusion_kind": "digest", "volume": d.volume},
+        relevance_score=float(conf),
+    )
+
+
+def _apply_context_fusion_phase9(
+    logger: JsonlPipelineLogger,
+    utterance: str,
+    evidence: EvidenceBlock | None,
+    digest: AnalyticalDigest | None,
+    memory_blocks: list[ContextBlock],
+) -> ContextFusionResult:
+    """Bloco 9: fusão multi-camada com prioridade explícita (utilizador → evidência → digest → memória)."""
+    user_cb = ContextBlock(
+        utterance,
+        ContextRole.USER,
+        ContextSource.USER_INPUT,
+        block_id="fusion:user_turn",
+        relevance_score=1.0,
+    )
+    layers: list[tuple[str, list[ContextBlock]]] = [("user", [user_cb])]
+    if evidence:
+        layers.append(("evidence", [_evidence_to_context_block(evidence)]))
+    if digest:
+        layers.append(("analytics_digest", [_digest_to_context_block(digest)]))
+    if memory_blocks:
+        layers.append(("memory", memory_blocks))
+
+    fusion = ContextFusion()
+    result = fusion.fuse(layers)
+    logger.step(
+        "context_fusion",
+        input_data={
+            "layer_order": list(result.layer_priority),
+            "layer_counts": [len(seq) for _, seq in layers],
+        },
+        output_data=context_fusion_snapshot(result),
+    )
+    return result
+
+
+_POST_FUSION_TOKEN_BUDGET = 4096
+
+
+def _apply_budget_allocator_phase10(
+    logger: JsonlPipelineLogger,
+    fusion: ContextFusionResult,
+    policy: AttentionPolicy,
+    max_tokens: int,
+) -> None:
+    """Bloco 10: orçamento *attention-aware* pós-fusão (zonas elásticas, DATA vs MEMORY)."""
+    blocks = list(fusion.blocks)
+    params = elastic_free_tier_params(policy)
+    packed = allocate(blocks, max_tokens, policy=policy)
+    est = sum(estimate_tokens(b.text) for b in packed)
+    logger.step(
+        "budget_allocator_post_fusion",
+        input_data={
+            "fused_block_count": len(blocks),
+            "max_tokens": max_tokens,
+            "attention_policy": policy.value,
+            "elastic_free_tier": {
+                "dialogue_fraction_of_free": params.dialogue_fraction_of_free,
+                "data_share_of_remainder": params.data_share_of_remainder,
+                "elasticity": params.elasticity,
+            },
+        },
+        output_data={
+            "packed_count": len(packed),
+            "packed_total_est_tokens": est,
+            "packed_preview": [context_block_snapshot(b) for b in packed[:16]],
         },
     )
 
@@ -545,10 +653,12 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     assert semantic_nl_free.analytics_strategy == AnalyticsStrategy.TREND
 
     mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
-    _apply_evidence_builder(log, mysql_rows)
+    evidence = _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
-    _apply_map_reduce_phase7(log, mysql_rows)
-    _apply_memory_pipeline_phase8(log, utterance)
+    digest = _apply_map_reduce_phase7(log, mysql_rows)
+    memory_blocks = _apply_memory_pipeline_phase8(log, utterance)
+    fusion_result = _apply_context_fusion_phase9(log, utterance, evidence, digest, memory_blocks)
+    _apply_budget_allocator_phase10(log, fusion_result, policy, _POST_FUSION_TOKEN_BUDGET)
 
     log.step(
         "run_done",

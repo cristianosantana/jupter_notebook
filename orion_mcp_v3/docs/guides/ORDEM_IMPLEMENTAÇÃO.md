@@ -530,7 +530,7 @@ e não prompt texto.
 
 ---
 
-# 9️⃣ NONO
+# 9️⃣ NONO - OK
 
 # NOVA CAMADA
 
@@ -568,7 +568,7 @@ Precisa existir:
 
 ---
 
-# 1️⃣0️⃣ DÉCIMO
+# 1️⃣0️⃣ DÉCIMO - OK
 
 # ROADMAP_EXECUTAVEL
 
