@@ -1,8 +1,8 @@
 """
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
 (EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard), bloco 8 (memory pipeline → ContextBlocks),
-bloco 9 (ContextFusion), bloco 10 (BudgetAllocator elástico) e bloco 11 (scheduler por score composto
-+ perfis analytical / conversational / hybrid, antes do allocator pós-fusão).
+bloco 12 (:class:`~CognitiveOrchestrator`) — fusão → scheduler → allocator elástico →
+:func:`~orion_mcp_v3.runtime.prompt_render.render_blocks_to_prompt` (substitui os passos 9–11 isolados).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -50,18 +50,14 @@ from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, Cont
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.runtime import (
     AttentionPolicy,
-    ContextFusion,
-    ContextFusionResult,
+    CognitiveOrchestrationResult,
+    CognitiveOrchestrator,
     ContextState,
     DriftGuard,
-    SchedulerProfile,
     allocate,
     elastic_free_tier_params,
     estimate_tokens,
-    schedule_blocks,
-    scheduler_profile_from_attention,
 )
-from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.conflict_resolution import cap_system_blocks, resolve_duplicate_blocks
 from orion_mcp_v3.runtime.decay import apply_decay_with_clock
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver, map_attention_profile_to_policy
@@ -408,114 +404,36 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
     return merged
 
 
-def _evidence_to_context_block(eb: EvidenceBlock) -> ContextBlock:
-    return ContextBlock(
-        text=eb.summary[:8000],
-        role=ContextRole.DATA,
-        source=ContextSource.BROKER,
-        block_id="fusion:evidence",
-        metadata={"fusion_kind": "evidence"},
-        relevance_score=min(0.95, max(0.0, eb.confidence)),
-    )
-
-
-def _digest_to_context_block(d: AnalyticalDigest) -> ContextBlock:
-    conf = d.confidence if d.confidence is not None else 0.6
-    return ContextBlock(
-        text=d.summary[:8000],
-        role=ContextRole.DATA,
-        source=ContextSource.BROKER,
-        block_id="fusion:map_reduce_digest",
-        metadata={"fusion_kind": "digest", "volume": d.volume},
-        relevance_score=float(conf),
-    )
-
-
-def _apply_context_fusion_phase9(
-    logger: JsonlPipelineLogger,
-    utterance: str,
-    evidence: EvidenceBlock | None,
-    digest: AnalyticalDigest | None,
-    memory_blocks: list[ContextBlock],
-) -> ContextFusionResult:
-    """Bloco 9: fusão multi-camada com prioridade explícita (utilizador → evidência → digest → memória)."""
-    user_cb = ContextBlock(
-        utterance,
-        ContextRole.USER,
-        ContextSource.USER_INPUT,
-        block_id="fusion:user_turn",
-        relevance_score=1.0,
-    )
-    layers: list[tuple[str, list[ContextBlock]]] = [("user", [user_cb])]
-    if evidence:
-        layers.append(("evidence", [_evidence_to_context_block(evidence)]))
-    if digest:
-        layers.append(("analytics_digest", [_digest_to_context_block(digest)]))
-    if memory_blocks:
-        layers.append(("memory", memory_blocks))
-
-    fusion = ContextFusion()
-    result = fusion.fuse(layers)
-    logger.step(
-        "context_fusion",
-        input_data={
-            "layer_order": list(result.layer_priority),
-            "layer_counts": [len(seq) for _, seq in layers],
-        },
-        output_data=context_fusion_snapshot(result),
-    )
-    return result
-
-
 _POST_FUSION_TOKEN_BUDGET = 4096
 
 
-def _apply_scheduler_phase11(
+def _apply_cognitive_orchestrator_phase12(
     logger: JsonlPipelineLogger,
-    blocks: Sequence[ContextBlock],
-    sched_profile: SchedulerProfile,
-    *,
-    now: float | None = None,
-) -> list[ContextBlock]:
-    """Bloco 11: ordenação por score composto (relevância × recência × confiança × perfil)."""
-    scheduled = schedule_blocks(blocks, sched_profile, now=now)
-    logger.step(
-        "scheduler",
-        input_data={
-            "profile": sched_profile.value,
-            "incoming_count": len(blocks),
-        },
-        output_data={
-            "ordered_count": len(scheduled),
-            "order_block_ids": [b.block_id for b in scheduled[:24]],
-            "scores_preview": [
-                {
-                    "block_id": b.block_id,
-                    "scheduler_score": b.metadata.get("scheduler_score"),
-                    "relevance_after": b.relevance_score,
-                }
-                for b in scheduled[:16]
-            ],
-        },
-    )
-    return scheduled
-
-
-def _apply_budget_allocator_phase10(
-    logger: JsonlPipelineLogger,
-    blocks: Sequence[ContextBlock],
+    utterance: str,
+    cognitive: CognitivePlan,
+    evidence: EvidenceBlock | None,
+    digest: AnalyticalDigest | None,
+    memory_blocks: list[ContextBlock],
     policy: AttentionPolicy,
     max_tokens: int,
-) -> None:
-    """Bloco 10: orçamento *attention-aware* pós-fusão (zonas elásticas, DATA vs MEMORY)."""
-    blocks = list(blocks)
+) -> CognitiveOrchestrationResult:
+    """§12 :class:`~CognitiveOrchestrator` — fusão → scheduler → allocator → prompt."""
+    orch = CognitiveOrchestrator()
+    result = orch.finalize_prompt(
+        utterance,
+        policy=policy,
+        cognitive_plan=cognitive,
+        evidence=evidence,
+        digest=digest,
+        memory_blocks=memory_blocks,
+        max_tokens=max_tokens,
+    )
     params = elastic_free_tier_params(policy)
-    packed = allocate(blocks, max_tokens, policy=policy)
-    est = sum(estimate_tokens(b.text) for b in packed)
+    est = sum(estimate_tokens(b.text) for b in result.packed_blocks)
     logger.step(
-        "budget_allocator_post_fusion",
+        "cognitive_orchestrator",
         input_data={
-            "fused_block_count": len(blocks),
+            "utterance_preview": utterance[:120],
             "max_tokens": max_tokens,
             "attention_policy": policy.value,
             "elastic_free_tier": {
@@ -525,11 +443,21 @@ def _apply_budget_allocator_phase10(
             },
         },
         output_data={
-            "packed_count": len(packed),
+            "fusion": context_fusion_snapshot(result.fusion),
+            "scheduled_count": len(result.scheduled_blocks),
+            "order_block_ids": [b.block_id for b in result.scheduled_blocks[:24]],
+            "scheduler_scores_preview": [
+                {"block_id": b.block_id, "scheduler_score": b.metadata.get("scheduler_score")}
+                for b in result.scheduled_blocks[:12]
+            ],
+            "packed_count": len(result.packed_blocks),
             "packed_total_est_tokens": est,
-            "packed_preview": [context_block_snapshot(b) for b in packed[:16]],
+            "packed_preview": [context_block_snapshot(b) for b in result.packed_blocks[:16]],
+            "prompt_chars": len(result.prompt_text),
+            "prompt_preview": result.prompt_text[:2500],
         },
     )
+    return result
 
 
 def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
@@ -692,10 +620,17 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     _apply_analytical_reduction(log, mysql_rows)
     digest = _apply_map_reduce_phase7(log, mysql_rows)
     memory_blocks = _apply_memory_pipeline_phase8(log, utterance)
-    fusion_result = _apply_context_fusion_phase9(log, utterance, evidence, digest, memory_blocks)
-    sched_profile = scheduler_profile_from_attention(policy)
-    scheduled_blocks = _apply_scheduler_phase11(log, fusion_result.blocks, sched_profile)
-    _apply_budget_allocator_phase10(log, scheduled_blocks, policy, _POST_FUSION_TOKEN_BUDGET)
+    orch_result = _apply_cognitive_orchestrator_phase12(
+        log,
+        utterance,
+        cognitive,
+        evidence,
+        digest,
+        memory_blocks,
+        policy,
+        _POST_FUSION_TOKEN_BUDGET,
+    )
+    assert "[USER]" in orch_result.prompt_text or orch_result.prompt_text.strip() != ""
 
     log.step(
         "run_done",

@@ -649,7 +649,7 @@ Allocator precisa existir primeiro.
 
 ---
 
-# 1️⃣2️⃣ DÉCIMO SEGUNDO
+# 1️⃣2️⃣ DÉCIMO SEGUNDO - OK
 
 # FASE MAIS IMPORTANTE
 

@@ -20,6 +20,11 @@ from orion_mcp_v3.runtime.conflict_resolution import (
     cap_system_blocks,
     resolve_duplicate_blocks,
 )
+from orion_mcp_v3.runtime.cognitive_orchestrator import (
+    CognitiveOrchestrationResult,
+    CognitiveOrchestrator,
+    build_fusion_layers,
+)
 from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
 from orion_mcp_v3.runtime.scheduler import (
     SchedulerProfile,
@@ -51,7 +56,10 @@ __all__ = [
     "AttentionPolicy",
     "AttentionShares",
     "cap_system_blocks",
+    "CognitiveOrchestrationResult",
+    "CognitiveOrchestrator",
     "ConflictResolutionResult",
+    "build_fusion_layers",
     "ContextFusion",
     "ContextFusionResult",
     "IntentResolver",
