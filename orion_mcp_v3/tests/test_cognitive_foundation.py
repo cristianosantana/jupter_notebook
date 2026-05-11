@@ -32,6 +32,8 @@ def test_resolve_recall() -> None:
     assert p.intent_type == IntentType.RECALL
     assert p.needs_memory is True
     assert p.needs_analytics is False
+    assert p.attention_profile == AttentionProfile.MEMORY_FOCUSED
+    assert map_attention_profile_to_policy(p.attention_profile) == AttentionPolicy.MEMORY_FOCUSED
 
 
 def test_resolve_comparative_and_analytics() -> None:

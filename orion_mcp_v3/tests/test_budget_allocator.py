@@ -22,13 +22,13 @@ def test_reserve_system_then_essence_then_relevance_order() -> None:
     e = ContextBlock("ESS", ContextRole.USER, ContextSource.ESSENCE)
     hi = ContextBlock("HI", ContextRole.USER, ContextSource.USER_INPUT, relevance_score=0.95)
     lo = ContextBlock("LO", ContextRole.USER, ContextSource.USER_INPUT, relevance_score=0.05)
-    out = allocate([lo, hi, e, s], max_tokens=4096)
+    out = allocate([lo, hi, e, s], max_tokens=4096).fitted_blocks
     assert [x.text for x in out] == ["SYS", "ESS", "HI", "LO"]
 
 
 def test_truncates_excess() -> None:
     b = ContextBlock("y" * 400, ContextRole.USER, ContextSource.USER_INPUT, relevance_score=1.0)
-    out = allocate([b], max_tokens=10)
+    out = allocate([b], max_tokens=10).fitted_blocks
     assert len(out) == 1
     assert out[0].metadata.get("truncated") is True
     assert estimate_tokens(out[0].text) <= 10
@@ -37,14 +37,14 @@ def test_truncates_excess() -> None:
 def test_higher_relevance_wins_tight_budget() -> None:
     low = ContextBlock(_blob("a", 15), ContextRole.USER, ContextSource.BROKER, relevance_score=0.1)
     high = ContextBlock(_blob("b", 15), ContextRole.USER, ContextSource.BROKER, relevance_score=0.99)
-    out = allocate([low, high], max_tokens=20)
+    out = allocate([low, high], max_tokens=20).fitted_blocks
     assert out[0] is high
     total = sum(estimate_tokens(x.text) for x in out)
     assert total <= 20
 
 
 def test_allocate_empty() -> None:
-    assert allocate([], max_tokens=100) == []
+    assert allocate([], max_tokens=100).fitted_blocks == ()
 
 
 def test_elastic_path_orders_data_before_memory_zones() -> None:
@@ -63,7 +63,7 @@ def test_elastic_path_orders_data_before_memory_zones() -> None:
         block_id="bloco-mem",
         relevance_score=0.99,
     )
-    out = allocate([data, mem], max_tokens=500, policy=AttentionPolicy.ANALYTICAL)
+    out = allocate([data, mem], max_tokens=500, policy=AttentionPolicy.ANALYTICAL).fitted_blocks
     assert len(out) == 2
     assert out[0].block_id == "bloco-data"
     assert out[1].block_id == "bloco-mem"

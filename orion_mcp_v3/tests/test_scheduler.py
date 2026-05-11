@@ -14,6 +14,8 @@ from orion_mcp_v3.runtime import (
 def test_scheduler_profile_from_attention_maps_policies() -> None:
     assert scheduler_profile_from_attention(AttentionPolicy.ANALYTICAL) == SchedulerProfile.ANALYTICAL
     assert scheduler_profile_from_attention(AttentionPolicy.CONVERSATIONAL) == SchedulerProfile.CONVERSATIONAL
+    assert scheduler_profile_from_attention(AttentionPolicy.BALANCED) == SchedulerProfile.CONVERSATIONAL
+    assert scheduler_profile_from_attention(AttentionPolicy.MEMORY_FOCUSED) == SchedulerProfile.CONVERSATIONAL
     assert scheduler_profile_from_attention(AttentionPolicy.HYBRID) == SchedulerProfile.HYBRID
     assert scheduler_profile_from_attention(AttentionPolicy.PLANNING) == SchedulerProfile.HYBRID
 

@@ -608,7 +608,7 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     )
     assert isinstance(policy, AttentionPolicy)
 
-    packed = allocate(state.active_blocks, state.token_budget, policy=policy)
+    packed = allocate(state.active_blocks, state.token_budget, policy=policy).fitted_blocks
     log.step(
         "budget_allocate",
         input_data={

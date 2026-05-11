@@ -26,6 +26,8 @@ class SchedulerProfile(Enum):
 
 _POLICY_TO_SCHEDULER: dict[AttentionPolicy, SchedulerProfile] = {
     AttentionPolicy.ANALYTICAL: SchedulerProfile.ANALYTICAL,
+    AttentionPolicy.BALANCED: SchedulerProfile.CONVERSATIONAL,
+    AttentionPolicy.MEMORY_FOCUSED: SchedulerProfile.CONVERSATIONAL,
     AttentionPolicy.CONVERSATIONAL: SchedulerProfile.CONVERSATIONAL,
     AttentionPolicy.HYBRID: SchedulerProfile.HYBRID,
     AttentionPolicy.PLANNING: SchedulerProfile.HYBRID,

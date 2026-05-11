@@ -34,6 +34,8 @@ class AttentionProfile(Enum):
     """
 
     ANALYTICAL = "analytical"
+    BALANCED = "balanced"
+    MEMORY_FOCUSED = "memory_focused"
     CONVERSATIONAL = "conversational"
     PLANNING = "planning"
     HYBRID = "hybrid"

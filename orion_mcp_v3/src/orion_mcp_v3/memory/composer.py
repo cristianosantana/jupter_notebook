@@ -94,7 +94,7 @@ class MemoryComposer:
                 seen_ids.add(bid)
             collapsed.append(b)
 
-        fitted = allocate(collapsed, max_tokens, policy=policy)
+        fitted = allocate(collapsed, max_tokens, policy=policy).fitted_blocks
         return list(fitted)
 
     def compose(
