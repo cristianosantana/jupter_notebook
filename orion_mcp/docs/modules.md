@@ -1,0 +1,34 @@
+# Módulos Orion
+
+- `api/main.py`
+- `api/routes/chat.py`
+- `api/schemas.py`
+- `core/budget.py`
+- `core/config/settings.py`
+- `core/context/context_builder.py`
+- `core/decision/actions.py`
+- `core/decision/decision_engine.py`
+- `core/formatter/formatter.py`
+- `core/llm/embeddings.py`
+- `core/llm/provider.py`
+- `core/memory/long.py`
+- `core/memory/short.py`
+- `core/orchestrator/action_executor.py`
+- `core/orchestrator/orchestrator.py`
+- `core/orchestrator/state_manager.py`
+- `core/prompts/skill_model.py`
+- `core/state/models.py`
+- `core/state/transitions.py`
+- `core/strategy.py`
+- `core/tools/base.py`
+- `core/tools/registry.py`
+- `core/tools/stub_analytics.py`
+- `core/tools/summarize.py`
+- `infra/cache/tool_cache.py`
+- `infra/db/migrate.py`
+- `infra/db/pool.py`
+- `infra/db/state_repository.py`
+- `infra/observability/metrics.py`
+- `infra/observability/tracing.py`
+- `infra/queue/celery_app.py`
+- `mcp_adapter/server.py`

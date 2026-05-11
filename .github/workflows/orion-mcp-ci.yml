@@ -1,0 +1,30 @@
+name: orion-mcp-ci
+
+on:
+  push:
+    paths:
+      - "orion_mcp/**"
+      - ".github/workflows/orion-mcp-ci.yml"
+  pull_request:
+    paths:
+      - "orion_mcp/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orion_mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Docs
+        run: python scripts/generate_docs.py && python scripts/validate_docs_vs_code.py
+      - name: OpenAPI
+        run: python scripts/validate_openapi.py
+      - name: Pytest
+        run: pytest

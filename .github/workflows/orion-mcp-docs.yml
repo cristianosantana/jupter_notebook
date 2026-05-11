@@ -1,0 +1,22 @@
+name: orion-mcp-docs
+
+on:
+  push:
+    paths:
+      - "orion_mcp/docs/**"
+      - "orion_mcp/scripts/**"
+      - ".github/workflows/orion-mcp-docs.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orion_mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/generate_docs.py && python scripts/validate_docs_vs_code.py
