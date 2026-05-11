@@ -612,7 +612,7 @@ Evidence precisa virar:
 
 ---
 
-# FASE 3 — MEMÓRIA COGNITIVA
+# FASE 3 — MEMÓRIA COGNITIVA - OK
 
 STATUS:
 
