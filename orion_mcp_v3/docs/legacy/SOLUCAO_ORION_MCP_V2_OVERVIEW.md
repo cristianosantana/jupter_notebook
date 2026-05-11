@@ -395,7 +395,7 @@ Cada query:
 
 ```yaml
 name: "faturamento_analyzer"
-model: "gpt-4o-mini"
+model: "gpt-5-mini"
 temperature: 0.3
 context_budget: 4000
 
