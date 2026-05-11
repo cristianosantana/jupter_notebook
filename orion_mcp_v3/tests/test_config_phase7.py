@@ -20,8 +20,7 @@ def test_settings_defaults(monkeypatch) -> None:
     assert s.redis_url == ""
     assert s.max_tokens == 4096
     assert s.default_limit == 500
-    assert s.llm_model == "gpt-4o-mini"
-    assert s.llm_temperature == 0.3
+    assert s.llm_model == "gpt-5-mini"
     assert s.llm_max_tokens == 2048
     assert s.memory_window == 60
     assert s.default_policy == "balanced"

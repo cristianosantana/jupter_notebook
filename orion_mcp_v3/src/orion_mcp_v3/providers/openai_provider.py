@@ -31,7 +31,7 @@ class OpenAIProvider:
         self,
         *,
         api_key: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-5-mini",
         temperature: float = 0.3,
         max_tokens: int = 2048,
         base_url: str | None = None,

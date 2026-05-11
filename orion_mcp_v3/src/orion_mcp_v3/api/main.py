@@ -35,7 +35,6 @@ def _build_provider(settings: OrionSettings) -> LLMProvider:
             return OpenAIProvider(
                 api_key=settings.llm_api_key,
                 model=settings.llm_model,
-                temperature=settings.llm_temperature,
                 max_tokens=settings.llm_max_tokens,
                 base_url=settings.llm_base_url or None,
             )

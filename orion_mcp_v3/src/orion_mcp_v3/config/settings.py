@@ -52,7 +52,7 @@ class OrionSettings(BaseSettings):
     postgres_pool_max: int = Field(10, ge=1)
 
     # ── LLM ──────────────────────────────────────────────────────────
-    llm_model: str = Field("gpt-4o-mini", description="Modelo LLM default.")
+    llm_model: str = Field("gpt-5-mini", description="Modelo LLM default.")
     llm_api_key: str = Field("", description="API key do provider LLM.")
     llm_base_url: str = Field("", description="Base URL alternativa (ex.: Azure, proxy).")
     llm_temperature: float = Field(0.3, ge=0.0, le=2.0)
