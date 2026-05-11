@@ -119,9 +119,9 @@ class CognitiveOrchestrator:
             memory_blocks=memory_blocks,
             essence_blocks=essence_blocks,
         )
-        fusion = ContextFusion().fuse(layers)
+        fusion = ContextFusion().fuse(layers, policy=policy)
         profile = scheduler_profile or scheduler_profile_from_attention(policy)
-        scheduled = schedule_blocks(list(fusion.blocks), profile)
+        scheduled = schedule_blocks(list(fusion.blocks), profile, policy=policy)
         packed = allocate(scheduled, max_tokens, policy=policy).fitted_blocks
         prompt = render_blocks_to_prompt(packed)
         return CognitiveOrchestrationResult(

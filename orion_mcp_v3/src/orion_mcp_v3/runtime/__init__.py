@@ -33,10 +33,17 @@ from orion_mcp_v3.runtime.cognitive_orchestrator import (
     CognitiveOrchestrator,
     build_fusion_layers,
 )
-from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
+from orion_mcp_v3.runtime.context_fusion import (
+    ContextFusion,
+    ContextFusionResult,
+    FusionSource,
+    classify_fusion_source,
+)
 from orion_mcp_v3.runtime.scheduler import (
     SchedulerProfile,
+    SchedulerScoreBreakdown,
     composite_score,
+    compute_score_breakdown,
     schedule_blocks,
     scheduler_profile_from_attention,
 )
@@ -72,8 +79,10 @@ __all__ = [
     "ConflictResolutionResult",
     "ConflictStrategy",
     "build_fusion_layers",
+    "classify_fusion_source",
     "ContextFusion",
     "ContextFusionResult",
+    "FusionSource",
     "IntentResolver",
     "map_attention_profile_to_policy",
     "ContextState",
@@ -100,7 +109,9 @@ __all__ = [
     "RuntimeEvent",
     "RuntimeEventType",
     "SchedulerProfile",
+    "SchedulerScoreBreakdown",
     "composite_score",
+    "compute_score_breakdown",
     "schedule_blocks",
     "scheduler_profile_from_attention",
 ]
