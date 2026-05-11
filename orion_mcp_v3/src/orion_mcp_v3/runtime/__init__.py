@@ -53,6 +53,7 @@ from orion_mcp_v3.runtime.decay import (
     apply_decay_with_clock,
     resolve_age_seconds,
 )
+from orion_mcp_v3.runtime.narrator import CognitiveNarrator, NarrationResult
 from orion_mcp_v3.runtime.events import RuntimeEvent, RuntimeEventType
 from orion_mcp_v3.runtime.drift_guard import DriftGuard, DriftReport, DriftSignal
 from orion_mcp_v3.runtime.provenance import (
@@ -74,6 +75,7 @@ __all__ = [
     "AttentionShares",
     "CognitivePhase",
     "cap_system_blocks",
+    "CognitiveNarrator",
     "CognitiveOrchestrationResult",
     "CognitiveOrchestrator",
     "ConflictResolutionResult",
@@ -85,6 +87,7 @@ __all__ = [
     "FusionSource",
     "IntentResolver",
     "map_attention_profile_to_policy",
+    "NarrationResult",
     "ContextState",
     "policy_definition",
     "merge_coverage_infos",
