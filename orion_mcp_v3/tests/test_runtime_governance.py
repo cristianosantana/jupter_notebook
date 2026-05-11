@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
+from orion_mcp_v3.runtime import allocate, estimate_tokens
 from orion_mcp_v3.runtime.conflict_resolution import (
+    ConflictStrategy,
     cap_system_blocks,
+    resolve_cognitive_conflicts,
     resolve_duplicate_blocks,
+    resolve_repeated_user_turns,
+    resolve_semantic_duplicates,
 )
 from orion_mcp_v3.runtime.decay import (
     apply_decay,
@@ -96,3 +101,63 @@ def test_apply_decay_to_sequence() -> None:
     )
     assert abs(seq[0].relevance_score - 0.5) < 1e-9
     assert seq[1].relevance_score == 1.0
+
+
+def test_compute_attention_score_formula() -> None:
+    b = ContextBlock(
+        "x",
+        ContextRole.DATA,
+        ContextSource.BROKER,
+        relevance_score=0.5,
+        confidence=0.8,
+        source_priority=2.0,
+        information_density=0.5,
+        recency_score=1.0,
+        cognitive_weight=1.0,
+    )
+    assert abs(b.compute_attention_score() - 0.4) < 1e-9
+
+
+def test_allocate_returns_allocation_result() -> None:
+    b = ContextBlock("hi", ContextRole.USER, ContextSource.USER_INPUT)
+    r = allocate([b], max_tokens=100)
+    assert r.token_usage >= 1
+    assert len(r.fitted_blocks) == 1
+    assert r.allocation_trace
+
+
+def test_resolve_repeated_user_turns_keeps_best_turn_seq() -> None:
+    a = ContextBlock(
+        "dup",
+        ContextRole.USER,
+        ContextSource.USER_INPUT,
+        block_id="a",
+        metadata={"turn_seq": 1},
+        relevance_score=0.9,
+    )
+    b = ContextBlock(
+        "dup",
+        ContextRole.USER,
+        ContextSource.USER_INPUT,
+        block_id="b",
+        metadata={"turn_seq": 3},
+        relevance_score=0.1,
+    )
+    r = resolve_repeated_user_turns((a, b))
+    assert len(r.blocks) == 1
+    assert r.blocks[0].block_id == "b"
+
+
+def test_resolve_semantic_duplicates_strategy() -> None:
+    a = ContextBlock("Hello", ContextRole.USER, ContextSource.USER_INPUT, relevance_score=0.2)
+    b = ContextBlock("  hello  ", ContextRole.ASSISTANT, ContextSource.USER_INPUT, relevance_score=0.9)
+    r = resolve_semantic_duplicates((a, b), strategy=ConflictStrategy.KEEP_HIGHEST_RELEVANCE)
+    assert len(r.blocks) == 1
+    assert r.blocks[0] is b
+
+
+def test_resolve_cognitive_conflicts_pipeline() -> None:
+    dup = ContextBlock("x", ContextRole.USER, ContextSource.USER_INPUT, relevance_score=1.0)
+    dup2 = ContextBlock("x", ContextRole.USER, ContextSource.USER_INPUT, relevance_score=0.5)
+    r = resolve_cognitive_conflicts((dup, dup2))
+    assert len(r.blocks) == 1

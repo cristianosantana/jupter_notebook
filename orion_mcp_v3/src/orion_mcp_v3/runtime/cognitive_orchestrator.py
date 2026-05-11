@@ -122,12 +122,12 @@ class CognitiveOrchestrator:
         fusion = ContextFusion().fuse(layers)
         profile = scheduler_profile or scheduler_profile_from_attention(policy)
         scheduled = schedule_blocks(list(fusion.blocks), profile)
-        packed = allocate(scheduled, max_tokens, policy=policy)
+        packed = allocate(scheduled, max_tokens, policy=policy).fitted_blocks
         prompt = render_blocks_to_prompt(packed)
         return CognitiveOrchestrationResult(
             cognitive_plan=plan,
             fusion=fusion,
             scheduled_blocks=tuple(scheduled),
-            packed_blocks=tuple(packed),
+            packed_blocks=packed,
             prompt_text=prompt,
         )

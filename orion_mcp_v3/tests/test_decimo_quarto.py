@@ -90,7 +90,7 @@ class TestDecimoQuartoAttentionAllocation:
     def test_allocate_respects_token_budget(self) -> None:
         data = ContextBlock("d" * 400, ContextRole.DATA, ContextSource.BROKER, relevance_score=0.5)
         mem = ContextBlock("m" * 400, ContextRole.CONTEXT, ContextSource.MEMORY, relevance_score=0.5)
-        out = allocate([data, mem], max_tokens=50, policy=AttentionPolicy.ANALYTICAL)
+        out = allocate([data, mem], max_tokens=50, policy=AttentionPolicy.ANALYTICAL).fitted_blocks
         assert sum(estimate_tokens(b.text) for b in out) <= 50
 
 

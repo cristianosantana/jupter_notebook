@@ -23,7 +23,9 @@ def map_attention_profile_to_policy(profile: AttentionProfile) -> AttentionPolic
 
 _ATTENTION_TO_POLICY: dict[AttentionProfile, AttentionPolicy] = {
     AttentionProfile.ANALYTICAL: AttentionPolicy.ANALYTICAL,
-    AttentionProfile.CONVERSATIONAL: AttentionPolicy.CONVERSATIONAL,
+    AttentionProfile.BALANCED: AttentionPolicy.BALANCED,
+    AttentionProfile.MEMORY_FOCUSED: AttentionPolicy.MEMORY_FOCUSED,
+    AttentionProfile.CONVERSATIONAL: AttentionPolicy.BALANCED,
     AttentionProfile.PLANNING: AttentionPolicy.PLANNING,
     AttentionProfile.HYBRID: AttentionPolicy.HYBRID,
     AttentionProfile.MONITORING: AttentionPolicy.MONITORING,
@@ -148,6 +150,8 @@ class IntentResolver:
             return AttentionProfile.EXECUTION
         if intent == IntentType.ANALYTICAL:
             return AttentionProfile.ANALYTICAL
+        if intent == IntentType.RECALL:
+            return AttentionProfile.MEMORY_FOCUSED
         if intent in (IntentType.HYBRID, IntentType.COMPARATIVE):
             return AttentionProfile.HYBRID
         return AttentionProfile.CONVERSATIONAL

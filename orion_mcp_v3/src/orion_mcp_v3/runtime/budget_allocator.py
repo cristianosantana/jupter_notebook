@@ -1,52 +1,89 @@
 """
-Orçação determinística sobre :class:`~orion_mcp_v3.contracts.context_block.ContextBlock`.
+Orçação por atenção sobre :class:`~orion_mcp_v3.contracts.context_block.ContextBlock`.
 
-Fase 1.3: reserva system, depois essence, ordena relevância, corta excedente.
-
-§10 (ORDEM_IMPLEMENTAÇÃO): na fracção livre, zonas elásticas + competição suave DATA vs MEMORY
-(:func:`elastic_free_tier_params`) quando existem blocos nessas zonas; caso contrário mantém-se o
-comportamento anterior (ordenar ``other`` só por relevância).
+Fase 1: caps por origem, score de atenção ponderado, resultado estruturado
+(:class:`AllocationResult`) e rastreio determinístico.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from typing import Iterable, Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
-from orion_mcp_v3.runtime.attention_policy import AttentionPolicy, elastic_free_tier_params, policy_shares
-
-_CHARS_PER_TOKEN_ESTIMATE: int = 4
+from orion_mcp_v3.runtime.attention_policy import (
+    AttentionPolicy,
+    AttentionPolicyDefinition,
+    elastic_free_tier_params,
+    policy_definition,
+    policy_shares,
+)
+from orion_mcp_v3.runtime.token_estimator import estimate_tokens as estimate_tokens_text
 
 
 def estimate_tokens(text: str) -> int:
-    """Heurística alinhada a prompts LLM típicos (≈ caracteres / 4)."""
-    if not text:
-        return 0
-    return max(1, len(text) // _CHARS_PER_TOKEN_ESTIMATE)
+    """Compatível com chamadas antigas — delega para :mod:`token_estimator`."""
+    return estimate_tokens_text(text)
 
 
-def _is_system_block(block: ContextBlock) -> bool:
-    return block.role == ContextRole.SYSTEM or block.source == ContextSource.SYSTEM
+def _source_bucket(block: ContextBlock) -> str:
+    if block.role == ContextRole.SYSTEM or block.source == ContextSource.SYSTEM:
+        return "system"
+    if block.source == ContextSource.ESSENCE:
+        return "essence"
+    if block.role in (ContextRole.USER, ContextRole.ASSISTANT) or block.source == ContextSource.USER_INPUT:
+        return "user_dialogue"
+    if block.source == ContextSource.MEMORY or block.role == ContextRole.CONTEXT:
+        return "memory"
+    if block.role in (ContextRole.DATA, ContextRole.TOOL) or block.source == ContextSource.BROKER:
+        return "data"
+    return "other"
 
 
-def _is_essence_block(block: ContextBlock) -> bool:
-    return block.source == ContextSource.ESSENCE
+def _weighted_attention_score(block: ContextBlock, policy_def: AttentionPolicyDefinition) -> float:
+    base = block.compute_attention_score()
+    b = _source_bucket(block)
+    w = float(policy_def.source_weights.get(b, 1.0))
+    return base * w
 
 
-def _partition(blocks: Sequence[ContextBlock]) -> tuple[list[ContextBlock], list[ContextBlock], list[ContextBlock]]:
-    system: list[ContextBlock] = []
-    essence: list[ContextBlock] = []
-    other: list[ContextBlock] = []
+def _apply_source_caps(
+    blocks: Sequence[ContextBlock],
+    policy_def: AttentionPolicyDefinition,
+    trace: list[str],
+) -> tuple[list[ContextBlock], list[ContextBlock]]:
+    """Por *bucket*, mantém os melhores blocos até ao teto ``max_blocks_per_source``."""
+    by_bucket: dict[str, list[ContextBlock]] = defaultdict(list)
     for b in blocks:
-        if _is_system_block(b):
-            system.append(b)
-        elif _is_essence_block(b):
-            essence.append(b)
-        else:
-            other.append(b)
-    other.sort(key=lambda x: (-x.relevance_score, x.block_id or ""))
-    return system, essence, other
+        by_bucket[_source_bucket(b)].append(b)
+
+    kept_ids: set[int] = set()
+    dropped: list[ContextBlock] = []
+
+    for bucket, candidates in by_bucket.items():
+        limit = int(policy_def.max_blocks_per_source.get(bucket, 9999))
+        ranked = sorted(candidates, key=lambda x: (-_weighted_attention_score(x, policy_def), x.block_id or ""))
+        for w in ranked[:limit]:
+            kept_ids.add(id(w))
+        dropped.extend(ranked[limit:])
+
+    if dropped:
+        trace.append(f"source_caps:dropped={len(dropped)}")
+
+    survivors = [b for b in blocks if id(b) in kept_ids]
+    return survivors, dropped
+
+
+@dataclass(frozen=True, slots=True)
+class AllocationResult:
+    """Resultado do *attention allocator* (Fase 1.2)."""
+
+    fitted_blocks: tuple[ContextBlock, ...]
+    dropped_blocks: tuple[ContextBlock, ...]
+    token_usage: int
+    allocation_trace: tuple[str, ...]
 
 
 def _merge_meta(base: Mapping[str, object], extra: Mapping[str, object]) -> dict[str, object]:
@@ -58,19 +95,45 @@ def _merge_meta(base: Mapping[str, object], extra: Mapping[str, object]) -> dict
 def _truncate_block(block: ContextBlock, max_tokens: int) -> ContextBlock:
     if max_tokens <= 0:
         return dataclasses.replace(block, text="", metadata=_merge_meta(block.metadata, {"truncated": True}))
-    max_chars = max_tokens * _CHARS_PER_TOKEN_ESTIMATE
+    max_chars = max_tokens * 4
     if len(block.text) <= max_chars:
         return block
     text = block.text[:max_chars]
     return dataclasses.replace(block, text=text, metadata=_merge_meta(block.metadata, {"truncated": True}))
 
 
+def _is_system_block(block: ContextBlock) -> bool:
+    return block.role == ContextRole.SYSTEM or block.source == ContextSource.SYSTEM
+
+
+def _is_essence_block(block: ContextBlock) -> bool:
+    return block.source == ContextSource.ESSENCE
+
+
+def _partition(
+    blocks: Sequence[ContextBlock],
+    policy_def: AttentionPolicyDefinition,
+) -> tuple[list[ContextBlock], list[ContextBlock], list[ContextBlock]]:
+    system: list[ContextBlock] = []
+    essence: list[ContextBlock] = []
+    other: list[ContextBlock] = []
+    for b in blocks:
+        if _is_system_block(b):
+            system.append(b)
+        elif _is_essence_block(b):
+            essence.append(b)
+        else:
+            other.append(b)
+    keyf = lambda x: (-_weighted_attention_score(x, policy_def), x.block_id or "")
+    other.sort(key=keyf)
+    return system, essence, other
+
+
 def _pack_tier(blocks: Iterable[ContextBlock], tier_budget_tokens: int) -> tuple[list[ContextBlock], int]:
-    """Inclui blocos sequencialmente; trunca se necessário o último bloco concedido."""
     out: list[ContextBlock] = []
     remaining = tier_budget_tokens
     for block in blocks:
-        need = estimate_tokens(block.text)
+        need = block.estimate_token_cost()
         if remaining <= 0:
             break
         if need <= remaining:
@@ -87,14 +150,13 @@ def _pack_tier(blocks: Iterable[ContextBlock], tier_budget_tokens: int) -> tuple
 def _pack_tier_with_remainder(
     blocks: Sequence[ContextBlock], tier_budget_tokens: int
 ) -> tuple[list[ContextBlock], list[ContextBlock], int]:
-    """Como :func:`_pack_tier`, mas devolve blocos não incluídos (para spill entre zonas)."""
     out: list[ContextBlock] = []
     rem = tier_budget_tokens
     idx = 0
     n = len(blocks)
     while idx < n and rem > 0:
         block = blocks[idx]
-        need = estimate_tokens(block.text)
+        need = block.estimate_token_cost()
         if need <= rem:
             out.append(block)
             rem -= need
@@ -109,8 +171,10 @@ def _pack_tier_with_remainder(
     return out, unpacked, used
 
 
-def _split_free_zones(blocks: Sequence[ContextBlock]) -> tuple[list[ContextBlock], list[ContextBlock], list[ContextBlock]]:
-    """Separa diálogo (turno), zona DATA/analytics e zona MEMORY/contexto."""
+def _split_free_zones(
+    blocks: Sequence[ContextBlock],
+    policy_def: AttentionPolicyDefinition,
+) -> tuple[list[ContextBlock], list[ContextBlock], list[ContextBlock]]:
     dialogue: list[ContextBlock] = []
     data_zone: list[ContextBlock] = []
     memory_zone: list[ContextBlock] = []
@@ -123,8 +187,9 @@ def _split_free_zones(blocks: Sequence[ContextBlock]) -> tuple[list[ContextBlock
             data_zone.append(b)
         else:
             data_zone.append(b)
+    keyf = lambda x: (-_weighted_attention_score(x, policy_def), x.block_id or "")
     for lst in (dialogue, data_zone, memory_zone):
-        lst.sort(key=lambda x: (-x.relevance_score, x.block_id or ""))
+        lst.sort(key=keyf)
     return dialogue, data_zone, memory_zone
 
 
@@ -132,13 +197,14 @@ def _allocate_free_elastic(
     other_blocks: list[ContextBlock],
     free_budget_tokens: int,
     policy: AttentionPolicy,
+    policy_def: AttentionPolicyDefinition,
 ) -> list[ContextBlock]:
     """Orçamenta a fracção ``other`` com diálogo + DATA/MEMORY + spill elástico."""
     if free_budget_tokens <= 0 or not other_blocks:
         return []
 
     p = elastic_free_tier_params(policy)
-    dialogue, data_z, memory_z = _split_free_zones(other_blocks)
+    dialogue, data_z, memory_z = _split_free_zones(other_blocks, policy_def)
 
     diag_cap = int(free_budget_tokens * p.dialogue_fraction_of_free)
     packed_dial, unpacked_dial, used_dial = _pack_tier_with_remainder(dialogue, diag_cap)
@@ -176,38 +242,87 @@ def _allocate_free_elastic(
     return [*packed_dial, *merged_data, *merged_mem]
 
 
+def _block_in_fitted(block: ContextBlock, fitted: Sequence[ContextBlock]) -> bool:
+    for f in fitted:
+        if block is f:
+            return True
+        if block.block_id is not None and block.block_id == f.block_id:
+            return True
+    return False
+
+
+def _compute_dropped(original: Sequence[ContextBlock], fitted: Sequence[ContextBlock]) -> tuple[ContextBlock, ...]:
+    out: list[ContextBlock] = []
+    seen: set[int] = set()
+    for b in original:
+        if not _block_in_fitted(b, fitted):
+            i = id(b)
+            if i not in seen:
+                seen.add(i)
+                out.append(b)
+    return tuple(out)
+
+
 def allocate(
     blocks: Sequence[ContextBlock],
     max_tokens: int,
     *,
     policy: AttentionPolicy | None = None,
-) -> list[ContextBlock]:
+) -> AllocationResult:
     """
-    Orçamentos por fração ``system / essence / free`` vindas da política.
+    *Attention allocator*: reserva system/essence, zona livre com competição DATA↔MEMORY,
+    ordenação por score de atenção ponderado pela política, caps por origem.
+    """
+    trace: list[str] = []
+    pol = policy or AttentionPolicy.BALANCED
+    policy_def = policy_definition(pol)
 
-    Dentro das fracções ``system`` e ``essence`` mantém-se a ordem original;
-    na fracção livre ordena por ``relevance_score`` decrescente.
-    """
+    blocks_list = list(blocks)
+
     if max_tokens <= 0:
-        return []
+        trace.append("abort:max_tokens<=0")
+        return AllocationResult((), tuple(blocks_list), 0, tuple(trace))
 
-    pol = policy or AttentionPolicy.CONVERSATIONAL
+    capped, cap_dropped = _apply_source_caps(blocks_list, policy_def, trace)
+    trace.append(f"after_caps:blocks={len(capped)}")
+
     shares = policy_shares(pol)
     sys_cap = int(max_tokens * shares.system)
     ess_cap = int(max_tokens * shares.essence)
     free_cap = max(0, max_tokens - sys_cap - ess_cap)
 
-    system_blocks, essence_blocks, other_blocks = _partition(blocks)
+    system_blocks, essence_blocks, other_blocks = _partition(capped, policy_def)
 
     tier_system, used_sys = _pack_tier(system_blocks, sys_cap)
     tier_essence, used_ess = _pack_tier(essence_blocks, ess_cap)
 
     leftover = max(0, free_cap + (sys_cap - used_sys) + (ess_cap - used_ess))
 
-    _dialogue, data_z, memory_z = _split_free_zones(other_blocks)
+    _, data_z, memory_z = _split_free_zones(other_blocks, policy_def)
     if data_z or memory_z:
-        tier_free = _allocate_free_elastic(other_blocks, leftover, pol)
+        tier_free = _allocate_free_elastic(other_blocks, leftover, pol, policy_def)
     else:
         tier_free, _ = _pack_tier(other_blocks, leftover)
 
-    return [*tier_system, *tier_essence, *tier_free]
+    fitted = [*tier_system, *tier_essence, *tier_free]
+    from_cap_not_fitted = _compute_dropped(capped, fitted)
+    dropped = tuple(cap_dropped) + from_cap_not_fitted
+    # dedupe mantendo ordem (cap primeiro)
+    deduped: list[ContextBlock] = []
+    seen: set[int] = set()
+    for b in dropped:
+        i = id(b)
+        if i in seen:
+            continue
+        seen.add(i)
+        deduped.append(b)
+
+    token_usage = sum(b.estimate_token_cost() for b in fitted)
+    trace.append(f"fitted={len(fitted)}:tokens={token_usage}")
+
+    return AllocationResult(
+        fitted_blocks=tuple(fitted),
+        dropped_blocks=tuple(deduped),
+        token_usage=token_usage,
+        allocation_trace=tuple(trace),
+    )

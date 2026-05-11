@@ -86,4 +86,4 @@ class AnalyticalContextBuilder:
                 )
             )
 
-        return allocate(blocks, token_budget, policy=self._policy)
+        return list(allocate(blocks, token_budget, policy=self._policy).fitted_blocks)

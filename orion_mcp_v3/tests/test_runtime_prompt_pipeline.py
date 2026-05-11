@@ -37,8 +37,8 @@ def test_context_blocks_to_allocate_to_prompt_prints_full_pipeline() -> None:
         ),
     ]
 
-    fitted = allocate(blocks, max_tokens=2048)
-    prompt = render_blocks_to_prompt(fitted)
+    fitted = allocate(blocks, max_tokens=2048).fitted_blocks
+    prompt = render_blocks_to_prompt(list(fitted))
 
     _print_prompt_banner("PROMPT FINAL (ContextBlocks → allocate → render)", prompt)
 
@@ -56,8 +56,8 @@ def test_tight_budget_prompt_prints_truncation() -> None:
         ContextBlock(long_user, ContextRole.USER, ContextSource.USER_INPUT, relevance_score=1.0),
     ]
 
-    fitted = allocate(blocks, max_tokens=15)
-    prompt = render_blocks_to_prompt(fitted)
+    fitted = allocate(blocks, max_tokens=15).fitted_blocks
+    prompt = render_blocks_to_prompt(list(fitted))
 
     _print_prompt_banner("PROMPT FINAL (orçamento apertado — possível truncagem)", prompt)
 
