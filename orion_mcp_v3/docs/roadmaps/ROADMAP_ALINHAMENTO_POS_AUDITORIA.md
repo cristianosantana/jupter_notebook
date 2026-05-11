@@ -427,7 +427,7 @@ pergunta do usuário aparecendo múltiplas vezes
 
 ---
 
-# FASE 2 — BROKER COGNITIVO COMPLETO
+# FASE 2 — BROKER COGNITIVO COMPLETO - OK
 
 STATUS:
 
