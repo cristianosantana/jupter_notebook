@@ -2,7 +2,9 @@
 Integração até `docs/guides/ORDEM_IMPLEMENTAÇÃO.md`: bloco 4 (planner cognitivo), bloco 6
 (EvidenceBuilder), bloco 5 (reducers), bloco 7 (map-reduce + DriftGuard), bloco 8 (memory pipeline → ContextBlocks),
 bloco 12 (:class:`~CognitiveOrchestrator`) — fusão → scheduler → allocator elástico →
-:func:`~orion_mcp_v3.runtime.prompt_render.render_blocks_to_prompt` (substitui os passos 9–11 isolados).
+:func:`~orion_mcp_v3.runtime.prompt_render.render_blocks_to_prompt` (substitui os passos 9–11 isolados);
+bloco 13 (:func:`~orion_mcp_v3.broker.semantic_query_compiler.compile_semantic_query_plan`) — merge de *hints*,
+validação superficial e compilação SQL com :class:`~SqlAllowlist` (sem executar a BD).
 
 O planner deve receber :class:`~CognitivePlan`, não só texto cru.
 
@@ -32,9 +34,10 @@ from orion_mcp_v3.broker import (
     sample_recent_structured,
     semantic_merge_sections,
 )
+from orion_mcp_v3.broker import SqlAllowlist, SqlCompilationError, compile_semantic_query_plan
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.planner import build_query_plan
-from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
+from orion_mcp_v3.broker.sql_compiler import compile_select
 from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
 from orion_mcp_v3.memory import (
     EpisodicRetriever,
@@ -85,6 +88,54 @@ def _project_logs_dir() -> Path:
 def _mysql_url() -> str | None:
     u = (os.environ.get("ORION_MYSQL_URL") or os.environ.get("MYSQL_URL") or "").strip()
     return u or None
+
+
+def _integration_sql_allowlist() -> SqlAllowlist:
+    """Mesma allowlist do SELECT MySQL e do compilador §13."""
+    return SqlAllowlist(
+        tables=frozenset({"clientes", "os", "os_servicos", "funcionarios", "concessionarias"}),
+        columns_by_table={
+            "clientes": frozenset({"id", "nome", "paga", "created_at"}),
+            "os": frozenset({"id", "cliente_id", "concessionaria_id", "created_at", "paga"}),
+            "os_servicos": frozenset({"id", "os_id", "servico_id", "valor_venda_real", "created_at"}),
+            "funcionarios": frozenset({"id", "nome", "created_at"}),
+            "concessionarias": frozenset({"id", "nome", "created_at"}),
+        },
+    )
+
+
+def _apply_semantic_query_compiler_phase13(
+    logger: JsonlPipelineLogger,
+    plan: SemanticQueryPlan,
+    *,
+    variant: str,
+) -> None:
+    """§13: DSL SemanticQueryPlan → merge → validação → SQL parametrizado (allowlist)."""
+    allowlist = _integration_sql_allowlist()
+    try:
+        result = compile_semantic_query_plan(plan, allowlist, default_limit=1000)
+        logger.step(
+            f"semantic_query_compiler_{variant}",
+            input_data={
+                "variant": variant,
+                "semantic_query_plan": semantic_query_plan_snapshot(plan),
+            },
+            output_data={
+                "merged_hints_keys": sorted(result.merged_plan.hints.keys()),
+                "sql": result.compiled.sql,
+                "param_count": len(result.compiled.params),
+                "params_preview": list(result.compiled.params)[:24],
+            },
+        )
+    except SqlCompilationError as exc:
+        logger.step(
+            f"semantic_query_compiler_{variant}_error",
+            input_data={
+                "variant": variant,
+                "semantic_query_plan": semantic_query_plan_snapshot(plan),
+            },
+            output_data={"error": str(exc)},
+        )
 
 
 _NUMERIC_VALUE_PRIORITY: tuple[str, ...] = (
@@ -176,16 +227,7 @@ async def _mysql_real_execution(
         )
         return []
 
-    allowlist = SqlAllowlist(
-        tables=frozenset({"clientes", "os", "os_servicos", "funcionarios", "concessionarias"}),
-        columns_by_table={
-            "clientes": frozenset({"id", "nome", "paga", "created_at"}),
-            "os": frozenset({"id", "cliente_id", "concessionaria_id", "created_at", "paga"}),
-            "os_servicos": frozenset({"id", "os_id", "servico_id", "valor_venda_real", "created_at"}),
-            "funcionarios": frozenset({"id", "nome", "created_at"}),
-            "concessionarias": frozenset({"id", "nome", "created_at"}),
-        },
-    )
+    allowlist = _integration_sql_allowlist()
 
     pool = await create_mysql_pool(url)
     if pool is None:
@@ -606,6 +648,8 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     assert cog_meta.get("intent_type") == "analytical"
     assert semantic.hints.get("analytics_strategy") == AnalyticsStrategy.TREND.value
 
+    _apply_semantic_query_compiler_phase13(log, semantic, variant="com_texto")
+
     semantic_nl_free = build_query_plan(cognitive, query_text=None)
     log.step(
         "build_query_plan_sem_texto_nl",
@@ -614,6 +658,8 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     )
     assert isinstance(semantic_nl_free, SemanticQueryPlan)
     assert semantic_nl_free.analytics_strategy == AnalyticsStrategy.TREND
+
+    _apply_semantic_query_compiler_phase13(log, semantic_nl_free, variant="sem_texto_nl")
 
     mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
     evidence = _apply_evidence_builder(log, mysql_rows)

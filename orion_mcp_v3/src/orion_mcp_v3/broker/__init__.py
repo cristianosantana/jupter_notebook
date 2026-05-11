@@ -33,6 +33,12 @@ from orion_mcp_v3.broker.samplers import (
     sample_recent_structured,
     sample_stratified_keys,
 )
+from orion_mcp_v3.broker.semantic_query_compiler import (
+    SemanticQueryCompilationResult,
+    compile_semantic_query_plan,
+    merge_executable_hints,
+    validate_semantic_hints_surface,
+)
 from orion_mcp_v3.broker.sql_compiler import (
     CompiledSql,
     SqlAllowlist,
@@ -48,8 +54,12 @@ __all__ = [
     "DataPipeline",
     "estimate_chunk_tokens",
     "CompiledSql",
+    "compile_semantic_query_plan",
+    "merge_executable_hints",
+    "SemanticQueryCompilationResult",
     "SqlAllowlist",
     "SqlCompilationError",
+    "validate_semantic_hints_surface",
     "compile_select",
     "distill_with_semantic_merge",
     "EvidenceBuilder",
