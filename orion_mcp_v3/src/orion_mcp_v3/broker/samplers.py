@@ -7,6 +7,9 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
+from dataclasses import dataclass
+
+from orion_mcp_v3.broker.aggregators import top_n
 from orion_mcp_v3.contracts.cognitive_artifact import (
     CognitiveArtifact,
     artifact_provenance_anchor,
@@ -224,3 +227,113 @@ def sample_stratified_keys(
         coverage=cov,
         provenance=prov,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SampleBatchResult:
+    """Resultado de amostragem (Fase 2.2) com cobertura e linhas omitidas."""
+
+    rows: tuple[dict[str, Any], ...]
+    sample_strategy: str
+    coverage: CoverageInfo
+    omitted_rows: int
+
+
+class RecentSampler:
+    """Amostra temporal recente (últimas ``k`` linhas por ``time_key``)."""
+
+    def __init__(self, *, time_key: str, k: int) -> None:
+        self._time_key = time_key
+        self._k = k
+
+    def sample(self, rows: Sequence[Mapping[str, Any]]) -> SampleBatchResult:
+        picked = recent_sampler(rows, time_key=self._time_key, k=self._k)
+        omitted = max(0, len(rows) - len(picked))
+        cov = CoverageInfo(
+            labels={"picked": len(picked), "pool_rows": len(rows)},
+            notes="sampler.recent",
+        )
+        return SampleBatchResult(
+            rows=tuple(picked),
+            sample_strategy="recent",
+            coverage=cov,
+            omitted_rows=omitted,
+        )
+
+
+class OutlierSampler:
+    """Amostra por maior |z-score| sobre ``value_key``."""
+
+    def __init__(self, *, value_key: str, k: int, method: str = "zscore") -> None:
+        self._value_key = value_key
+        self._k = k
+        self._method = method
+
+    def sample(self, rows: Sequence[Mapping[str, Any]]) -> SampleBatchResult:
+        picked = outlier_sampler(rows, value_key=self._value_key, k=self._k, method=self._method)
+        omitted = max(0, len(rows) - len(picked))
+        cov = CoverageInfo(
+            labels={"picked": len(picked), "pool_rows": len(rows)},
+            notes="sampler.outlier",
+        )
+        return SampleBatchResult(
+            rows=tuple(picked),
+            sample_strategy=f"outlier:{self._method}",
+            coverage=cov,
+            omitted_rows=omitted,
+        )
+
+
+class StratifiedSampler:
+    """Até ``per_stratum`` linhas completas por valor de ``strata_key`` (ordem de entrada)."""
+
+    def __init__(self, *, strata_key: str, per_stratum: int) -> None:
+        self._strata_key = strata_key
+        self._per_stratum = per_stratum
+
+    def sample(self, rows: Sequence[Mapping[str, Any]]) -> SampleBatchResult:
+        counts: dict[Any, int] = {}
+        picked: list[dict[str, Any]] = []
+        for row in rows:
+            if self._strata_key not in row:
+                continue
+            sk = row[self._strata_key]
+            n = counts.get(sk, 0)
+            if n < self._per_stratum:
+                picked.append(dict(row))
+                counts[sk] = n + 1
+        omitted = max(0, len(rows) - len(picked))
+        cov = CoverageInfo(
+            labels={"strata_distinct": len(counts), "picked": len(picked), "pool_rows": len(rows)},
+            notes="sampler.stratified",
+        )
+        return SampleBatchResult(
+            rows=tuple(picked),
+            sample_strategy="stratified",
+            coverage=cov,
+            omitted_rows=omitted,
+        )
+
+
+class TopKSampler:
+    """Top-K por métrica (opcionalmente agregada por ``group_key``)."""
+
+    def __init__(self, *, value_key: str, k: int, group_key: str | None = None) -> None:
+        self._value_key = value_key
+        self._k = k
+        self._group_key = group_key
+
+    def sample(self, rows: Sequence[Mapping[str, Any]]) -> SampleBatchResult:
+        ranked = top_n(rows, value_key=self._value_key, n=self._k, group_key=self._group_key)
+        picked = [dict(r) for r in ranked]
+        omitted = max(0, len(rows) - len(picked))
+        cov = CoverageInfo(
+            labels={"picked": len(picked), "pool_rows": len(rows), "grouped": self._group_key is not None},
+            notes="sampler.top_k",
+        )
+        return SampleBatchResult(
+            rows=tuple(picked),
+            sample_strategy="top_k",
+            coverage=cov,
+            omitted_rows=omitted,
+        )

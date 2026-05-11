@@ -1,7 +1,6 @@
 """
-EvidenceBuilder: resultado SQL → :class:`~EvidenceBlock` com trends, baseline, variation, anomalies.
-
-Camada §6 ORDEM_IMPLEMENTAÇÃO — raciocínio analítico explícito antes do digest.
+EvidenceBuilder: resultado SQL → :class:`~EvidenceBlock` com trends, baseline, variation,
+anomalies, comparisons e pontuações de confiança/cobertura (Fase 2.4).
 """
 
 from __future__ import annotations
@@ -46,7 +45,9 @@ class EvidenceBuilder:
     """
     Constrói :class:`EvidenceBlock` a partir de linhas tabulares (ex.: saída MySQL).
 
-    Requer ``value_key`` numérico. ``time_key`` opcional habilita tendência temporal (grain mensal).
+    ``insights`` inclui ``trends``, ``baseline``, ``variation``, ``anomalies``, ``comparisons``;
+    ``metrics`` inclui ``confidence_scoring`` e ``coverage_scoring``. ``time_key`` opcional
+    habilita tendência temporal (grain mensal).
     """
 
     def __init__(
@@ -109,21 +110,16 @@ class EvidenceBuilder:
             periods_snapshot = time_series(rows, time_key=time_key, value_key=value_key, grain=grain)
             trends = self._compute_trends(periods_snapshot)
 
-        anomalies = self._compute_anomalies(rows, value_key, id_key)
+        comparisons = self._compute_comparisons(periods_snapshot)
 
-        metrics: dict[str, Any] = {
-            "value_key": value_key,
-            "time_key": time_key,
-            "grain": grain if time_key else None,
-            "numeric_samples": n,
-            "input_rows": row_total,
-        }
+        anomalies = self._compute_anomalies(rows, value_key, id_key)
 
         insights: dict[str, Any] = {
             "trends": trends,
             "baseline": baseline,
             "variation": variation,
             "anomalies": anomalies,
+            "comparisons": comparisons,
         }
 
         summary = self._compose_summary_pt(insights, value_key)
@@ -147,7 +143,29 @@ class EvidenceBuilder:
         conf_base = heuristic_confidence_from_volume(n if n else row_total)
         conf_signal = 0.05 if trends.get("direction") in {"up", "down"} else 0.0
         conf_anom = min(0.05, 0.01 * float(anomalies.get("count", 0)))
-        confidence = min(0.95, conf_base + conf_signal + conf_anom)
+        conf_cmp = 0.04 if comparisons.get("status") == "ok" else 0.0
+        confidence = min(0.95, conf_base + conf_signal + conf_anom + conf_cmp)
+
+        coverage_scoring = min(
+            1.0,
+            (n / max(row_total, 1)) * 0.65 + min(1.0, len(periods_snapshot) / 12.0) * 0.35,
+        )
+
+        metrics: dict[str, Any] = {
+            "value_key": value_key,
+            "time_key": time_key,
+            "grain": grain if time_key else None,
+            "numeric_samples": n,
+            "input_rows": row_total,
+            "confidence_scoring": {
+                "volume_component": conf_base,
+                "trend_component": conf_signal,
+                "anomaly_component": conf_anom,
+                "comparison_component": conf_cmp,
+                "combined": confidence,
+            },
+            "coverage_scoring": coverage_scoring,
+        }
 
         refs = tuple(str(a.get("ref", "")) for a in anomalies.get("examples", []) if a.get("ref") is not None)
 
@@ -207,6 +225,23 @@ class EvidenceBuilder:
             "structural_shift_first_vs_second_half": structural_shift,
         }
 
+    def _compute_comparisons(self, periods: list[dict[str, Any]]) -> dict[str, Any]:
+        """Comparação extremo-a-extremo da série agregada (primeiro vs último período)."""
+        if len(periods) < 2:
+            return {"status": "insufficient_periods", "period_count": len(periods)}
+        first, last = periods[0], periods[-1]
+        a, b = float(first["total"]), float(last["total"])
+        delta_abs = b - a
+        delta_rel = (b - a) / abs(a) if a else None
+        return {
+            "status": "ok",
+            "first_period": dict(first),
+            "last_period": dict(last),
+            "delta_abs": delta_abs,
+            "delta_rel": delta_rel,
+            "span_periods": len(periods),
+        }
+
     def _compute_anomalies(
         self,
         rows: Sequence[Mapping[str, Any]],
@@ -248,6 +283,7 @@ class EvidenceBuilder:
         var = insights["variation"]
         tr = insights["trends"]
         an = insights["anomalies"]
+        cmp_ = insights.get("comparisons", {})
 
         parts: list[str] = []
         if base.get("count"):
@@ -270,6 +306,12 @@ class EvidenceBuilder:
         ac = int(an.get("count") or 0)
         if ac:
             parts.append(f"{ac} valor(es) com |z| ≥ {self._z_threshold} (possíveis anomalias).")
+
+        if cmp_.get("status") == "ok" and cmp_.get("delta_rel") is not None:
+            dr = float(cmp_["delta_rel"])
+            parts.append(
+                f"Comparação {cmp_.get('first_period', {}).get('period')!s} → {cmp_.get('last_period', {}).get('period')!s}: variação relativa {100.0 * dr:.1f}%."
+            )
 
         return " ".join(parts)
 

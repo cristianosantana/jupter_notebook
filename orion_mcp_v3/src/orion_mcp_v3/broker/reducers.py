@@ -9,6 +9,8 @@ from collections.abc import Callable
 from typing import Any, Mapping, Sequence
 
 from orion_mcp_v3.broker.chunking import chunk_rows
+from orion_mcp_v3.broker.aggregators import time_series, top_n
+from orion_mcp_v3.broker.samplers import outlier_sampler
 from orion_mcp_v3.contracts.cognitive_artifact import (
     CognitiveArtifact,
     artifact_provenance_anchor,
@@ -172,3 +174,161 @@ def insights_from_numeric_spread(
         coverage=cov,
         provenance=prov,
     )
+
+
+# --- Fase 2.3 — reducers cognitivos → :class:`AnalyticalDigest` com proveniência explícita ---
+
+
+class TrendReducer:
+    """Série temporal agregada → digest (destilação de tendência)."""
+
+    def __init__(self, *, aggregation_logic: str = "trend_reducer_v1") -> None:
+        self._aggregation_logic = aggregation_logic
+
+    def reduce(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        time_key: str,
+        value_key: str,
+        grain: str = "month",
+        sample_limit: int = 8,
+    ) -> AnalyticalDigest:
+        periods = time_series(rows, time_key=time_key, value_key=value_key, grain=grain)
+        lines = [f"{p['period']}: total={p['total']:.4g} (n={p['count']})" for p in periods]
+        summary = "Tendência agregada:\n" + "\n".join(lines) if lines else "Sem períodos numéricos agregados."
+        vol = sum(int(p.get("count", 0) or 0) for p in periods) or len(rows)
+        refs = tuple(f"period:{p['period']}" for p in periods)
+        cov = CoverageInfo(
+            labels={"period_count": len(periods), "rows_in": len(rows)},
+            notes="reducer.trend",
+        )
+        conf = heuristic_confidence_from_volume(vol)
+        sample_rows: list[Mapping[str, Any]] = [dict(p) for p in periods[:sample_limit]]
+        return AnalyticalDigest(
+            summary=summary,
+            volume=vol,
+            sample=tuple(sample_rows),
+            coverage=cov,
+            source_refs=refs,
+            aggregation_logic=self._aggregation_logic,
+            confidence=min(0.95, conf + 0.05 * min(len(periods), 5)),
+        )
+
+
+class RankingReducer:
+    """Ranking por métrica → digest."""
+
+    def __init__(self, *, aggregation_logic: str = "ranking_reducer_v1") -> None:
+        self._aggregation_logic = aggregation_logic
+
+    def reduce(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        value_key: str,
+        n: int,
+        group_key: str | None = None,
+        label_key: str | None = None,
+    ) -> AnalyticalDigest:
+        ranked = top_n(rows, value_key=value_key, n=n, group_key=group_key)
+        lines: list[str] = []
+        refs: list[str] = []
+        for i, r in enumerate(ranked, start=1):
+            lbl = r.get(label_key) if label_key and label_key in r else r.get(group_key or "ref", i)
+            score = r.get("total", r.get(value_key))
+            lines.append(f"#{i} {lbl!s} → {value_key}={score!s}")
+            refs.append(f"rank:{i}:{lbl!s}")
+        summary = "Ranking:\n" + "\n".join(lines) if lines else "Ranking vazio."
+        cov = CoverageInfo(labels={"ranked": len(ranked), "rows_in": len(rows)}, notes="reducer.ranking")
+        conf = heuristic_confidence_from_volume(len(rows))
+        return AnalyticalDigest(
+            summary=summary,
+            volume=len(rows),
+            sample=tuple(dict(x) for x in ranked),
+            coverage=cov,
+            source_refs=tuple(refs),
+            aggregation_logic=self._aggregation_logic,
+            confidence=min(0.95, conf),
+        )
+
+
+class AnomalyReducer:
+    """Destila linhas mais extremas (z-score) como digest de anomalias."""
+
+    def __init__(self, *, aggregation_logic: str = "anomaly_reducer_v1") -> None:
+        self._aggregation_logic = aggregation_logic
+
+    def reduce(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        value_key: str,
+        k: int = 12,
+    ) -> AnalyticalDigest:
+        picked = outlier_sampler(rows, value_key=value_key, k=k, method="zscore")
+        lines = [f"ref={row.get('id', '?')}: {value_key}={row.get(value_key)!s}" for row in picked[: k]]
+        summary = "Candidatos a anomalia (|z| elevado):\n" + "\n".join(lines) if lines else "Sem outliers destacados."
+        refs = tuple(f"row:{row.get('id', i)}" for i, row in enumerate(picked))
+        cov = CoverageInfo(
+            labels={"outliers_picked": len(picked), "rows_in": len(rows)},
+            notes="reducer.anomaly",
+        )
+        conf = heuristic_confidence_from_volume(len(picked) if picked else max(1, len(rows) // 3))
+        return AnalyticalDigest(
+            summary=summary,
+            volume=len(rows),
+            sample=tuple(dict(r) for r in picked),
+            coverage=cov,
+            source_refs=refs,
+            aggregation_logic=self._aggregation_logic,
+            confidence=min(0.95, 0.4 + 0.04 * len(picked)),
+        )
+
+
+class ComparisonReducer:
+    """Compara extremos temporais (primeiro vs último período) ou totais globais."""
+
+    def __init__(self, *, aggregation_logic: str = "comparison_reducer_v1") -> None:
+        self._aggregation_logic = aggregation_logic
+
+    def reduce(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        time_key: str,
+        value_key: str,
+        grain: str = "month",
+    ) -> AnalyticalDigest:
+        periods = time_series(rows, time_key=time_key, value_key=value_key, grain=grain)
+        if len(periods) >= 2:
+            first, last = periods[0], periods[-1]
+            a, b = float(first["total"]), float(last["total"])
+            delta = (b - a) / abs(a) if a else None
+            if delta is not None:
+                summary = (
+                    f"Comparação: {first['period']} total={a:.4g} vs {last['period']} total={b:.4g}. "
+                    f"Variação relativa: {delta:.2%}."
+                )
+            else:
+                summary = (
+                    f"Comparação: {first['period']} total={a:.4g} vs {last['period']} total={b:.4g}."
+                )
+            refs = (f"compare:{first['period']}", f"compare:{last['period']}")
+        elif periods:
+            summary = f"Apenas um período agregado ({periods[0]['period']}); comparação limitada."
+            refs = (f"compare:{periods[0]['period']}",)
+        else:
+            summary = "Sem dados temporais para comparação."
+            refs = ()
+        cov = CoverageInfo(labels={"periods": len(periods), "rows_in": len(rows)}, notes="reducer.comparison")
+        conf = heuristic_confidence_from_volume(len(rows))
+        return AnalyticalDigest(
+            summary=summary,
+            volume=len(rows),
+            sample=tuple(dict(p) for p in periods[:6]),
+            coverage=cov,
+            source_refs=refs,
+            aggregation_logic=self._aggregation_logic,
+            confidence=min(0.95, conf),
+        )
