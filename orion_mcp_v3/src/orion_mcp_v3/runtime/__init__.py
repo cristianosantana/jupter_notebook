@@ -54,6 +54,7 @@ from orion_mcp_v3.runtime.decay import (
     resolve_age_seconds,
 )
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator, NarrationResult
+from orion_mcp_v3.runtime.session_manager import Session, SessionManager
 from orion_mcp_v3.runtime.events import RuntimeEvent, RuntimeEventType
 from orion_mcp_v3.runtime.drift_guard import DriftGuard, DriftReport, DriftSignal
 from orion_mcp_v3.runtime.provenance import (
@@ -111,6 +112,8 @@ __all__ = [
     "ProvenanceAnchor",
     "RuntimeEvent",
     "RuntimeEventType",
+    "Session",
+    "SessionManager",
     "SchedulerProfile",
     "SchedulerScoreBreakdown",
     "composite_score",

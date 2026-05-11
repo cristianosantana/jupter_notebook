@@ -800,7 +800,7 @@ DATA vs MEMORY competem por budget.
 
 ---
 
-# FASE 5 — NARRADOR LLM
+# FASE 5 — NARRADOR LLM - OK
 
 STATUS:
 
@@ -881,7 +881,7 @@ CognitiveOrchestrationResult
 
 ---
 
-# FASE 6 — API DE PRODUTO
+# FASE 6 — API DE PRODUTO - OK
 
 STATUS:
 
