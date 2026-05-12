@@ -55,7 +55,6 @@ class OrionSettings(BaseSettings):
     llm_model: str = Field("gpt-5-mini", description="Modelo LLM default.")
     llm_api_key: str = Field("", description="API key do provider LLM.")
     llm_base_url: str = Field("", description="Base URL alternativa (ex.: Azure, proxy).")
-    llm_temperature: float = Field(0.3, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(2048, ge=64, le=128000)
 
     # ── Runtime cognitivo ────────────────────────────────────────────

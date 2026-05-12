@@ -25,6 +25,10 @@ class OpenAIProvider:
 
     Parâmetros opcionais (``temperature``, ``max_tokens``, ``model``) servem como
     defaults; podem ser sobrepostos em cada chamada via ``**kwargs``.
+    Para certos modelos (ex.: ``gpt-5*``, ``o1*``), a API usa
+    ``max_completion_tokens`` em vez de ``max_tokens``, e não aceita
+    ``temperature`` excepto o valor por defeito — nesses casos o parâmetro
+    ``temperature`` é omitido em :meth:`_merge_params`.
     """
 
     def __init__(
@@ -54,13 +58,35 @@ class OpenAIProvider:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
+    @staticmethod
+    def _is_constrained_chat_model(model: str) -> bool:
+        """Modelos com ``max_completion_tokens`` e temperatura só no default da API."""
+        m = model.strip().lower()
+        return (
+            m.startswith("gpt-5")
+            or m.startswith("o1")
+            or m.startswith("o3")
+            or m.startswith("o4")
+        )
+
     def _merge_params(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "model": kwargs.pop("model", self._model),
-            "temperature": kwargs.pop("temperature", self._temperature),
-            "max_tokens": kwargs.pop("max_tokens", self._max_tokens),
-            **kwargs,
-        }
+        model = kwargs.pop("model", self._model)
+        temperature = kwargs.pop("temperature", self._temperature)
+        max_tok = kwargs.pop("max_tokens", self._max_tokens)
+        max_compl = kwargs.pop("max_completion_tokens", None)
+
+        merged: dict[str, Any] = {"model": model, **kwargs}
+
+        if not self._is_constrained_chat_model(model):
+            merged["temperature"] = temperature
+
+        if max_compl is not None:
+            merged["max_completion_tokens"] = max_compl
+        elif self._is_constrained_chat_model(model):
+            merged["max_completion_tokens"] = max_tok
+        else:
+            merged["max_tokens"] = max_tok
+        return merged
 
     @staticmethod
     def _extract_meta(raw: Any, elapsed_ms: float) -> LLMResponseMeta:
