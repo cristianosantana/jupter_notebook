@@ -3,8 +3,12 @@ FastAPI application (Fase 6.1 + 7.1) — ponto de entrada da API de produto.
 
 Usa :func:`~orion_mcp_v3.config.settings.get_settings` para configuração central.
 
-Uso:
+Uso (na raiz do repo, com o venv ativo):
+    pip install -e .
     uvicorn orion_mcp_v3.api.main:app --reload
+
+Sem instalar o pacote (PYTHONPATH via uvicorn):
+    uvicorn --app-dir src orion_mcp_v3.api.main:app --reload
 """
 
 from __future__ import annotations
