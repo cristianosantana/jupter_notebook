@@ -7,11 +7,13 @@ Suporta SSE streaming quando ``request.stream=True``.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from orion_mcp_v3.api.models import (
@@ -21,15 +23,28 @@ from orion_mcp_v3.api.models import (
     ErrorResponse,
     UsageInfo,
 )
+from orion_mcp_v3.broker.executor import AnalyticsExecutor
+from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
 from orion_mcp_v3.memory.semantic_retriever import SemanticRetriever
 from orion_mcp_v3.protocols.llm import LLMProvider, NullLLMProvider
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrator
 from orion_mcp_v3.runtime.context_state import CognitivePhase
+from orion_mcp_v3.config.settings import get_settings
+from orion_mcp_v3.runtime.analytics_pipeline_trace import (
+    log_pipeline_event,
+    snapshot_analytics_result,
+    snapshot_cognitive_plan,
+    snapshot_evidence_block,
+    snapshot_orchestration,
+    snapshot_semantic_plan,
+)
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver, map_attention_profile_to_policy
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator
 from orion_mcp_v3.runtime.session_manager import SessionManager
+
+_LOG = logging.getLogger("orion.api.chat")
 
 
 def _resolve_policy(name: str) -> AttentionPolicy:
@@ -44,6 +59,9 @@ def create_chat_router(
     session_manager: SessionManager | None = None,
     llm_provider: LLMProvider | None = None,
     narrator: CognitiveNarrator | None = None,
+    analytics_executor: AnalyticsExecutor | None = None,
+    analytics_allowlist: SqlAllowlist | None = None,
+    analytics_state: dict | None = None,
 ) -> APIRouter:
     """Factory que retorna o router de chat com dependências injectadas."""
     router = APIRouter(prefix="/api/v1", tags=["chat"])
@@ -52,6 +70,11 @@ def create_chat_router(
     narr = narrator or CognitiveNarrator(provider)
     orchestrator = CognitiveOrchestrator()
     resolver = IntentResolver()
+    _fixed_executor = analytics_executor
+    _fixed_allowlist = analytics_allowlist
+    # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
+    # por um novo {}, quebrando o partilhamento com o lifespan (executor nunca visto).
+    _state: dict = analytics_state if analytics_state is not None else {}
 
     @router.post(
         "/chat",
@@ -66,8 +89,39 @@ def create_chat_router(
         sm.record_user_message(session, req.message)
         sm.update_phase(session, CognitivePhase.RETRIEVING)
 
+        trace_pipe = get_settings().analytics_pipeline_trace
+        cid = session.conversation_id
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="intent_resolve",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "message_chars": len(req.message or ""),
+                    "message_preview": (req.message or "")[:240],
+                    "policy_request": req.policy,
+                    "max_tokens": req.max_tokens,
+                },
+            )
+
         cognitive_plan = resolver.resolve(req.message)
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
+
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="intent_resolve",
+                fase="post",
+                conversation_id=cid,
+                dados={"cognitive_plan": snapshot_cognitive_plan(cognitive_plan), "resolved_policy": resolved_policy.value},
+            )
+
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="memory_retrieve",
+                fase="pre",
+                conversation_id=cid,
+                dados={"memory_window": sm.memory_window, "intent_type": cognitive_plan.intent_type.value},
+            )
 
         epi = EpisodicRetriever(sm.repository)
         memory_blocks = epi.retrieve(
@@ -78,22 +132,113 @@ def create_chat_router(
             entities=cognitive_plan.entities,
         )
 
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="memory_retrieve",
+                fase="post",
+                conversation_id=cid,
+                dados={"memory_block_count": len(memory_blocks)},
+            )
+
+        evidence = None
+        exec_ = _fixed_executor or _state.get("executor")
+        al = _fixed_allowlist or _state.get("allowlist")
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="analytics_guard",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "needs_analytics": cognitive_plan.needs_analytics,
+                    "executor_present": exec_ is not None,
+                    "executor_type": type(exec_).__name__ if exec_ is not None else None,
+                    "allowlist_present": al is not None,
+                },
+            )
+
+        if cognitive_plan.needs_analytics and exec_ is not None and al is not None:
+            _LOG.info("analytics pipeline triggered (executor=%s)", type(exec_).__name__)
+            if trace_pipe:
+                log_pipeline_event(
+                    etapa="analytics_guard",
+                    fase="post",
+                    conversation_id=cid,
+                    dados={"executado": True},
+                )
+            evidence = await _run_analytics(
+                exec_, al, cognitive_plan, req.message, trace_enabled=trace_pipe, conversation_id=cid,
+            )
+        elif trace_pipe:
+            parts: list[str] = []
+            if not cognitive_plan.needs_analytics:
+                parts.append("needs_analytics=false")
+            if exec_ is None:
+                parts.append("executor_ausente")
+            if al is None:
+                parts.append("allowlist_ausente")
+            log_pipeline_event(
+                etapa="analytics_guard",
+                fase="post",
+                conversation_id=cid,
+                dados={"executado": False, "motivo": ",".join(parts)},
+            )
+
         sm.update_phase(session, CognitivePhase.FUSING)
+
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="cognitive_orchestrate",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "evidence_before_pack": snapshot_evidence_block(evidence),
+                    "memory_block_count": len(memory_blocks),
+                },
+            )
 
         orch_result = orchestrator.finalize_prompt(
             req.message,
             policy=resolved_policy,
             cognitive_plan=cognitive_plan,
+            evidence=evidence,
             memory_blocks=memory_blocks,
             max_tokens=req.max_tokens,
         )
 
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="cognitive_orchestrate",
+                fase="post",
+                conversation_id=cid,
+                dados=snapshot_orchestration(orch_result),
+            )
+
         sm.update_phase(session, CognitivePhase.NARRATING)
 
         if req.stream:
-            return _sse_response(narr, orch_result, session, sm, t0, cognitive_plan)
+            return _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, trace_pipe=trace_pipe)
+
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="narrate",
+                fase="pre",
+                conversation_id=cid,
+                dados={"orch_prompt_chars": len(orch_result.prompt_text or "")},
+            )
 
         narration = await narr.narrate(orch_result)
+
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="narrate",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    "reply_chars": len(narration.narration or ""),
+                    "safeguards": list(narration.safeguards_applied),
+                    "coverage_note_chars": len(narration.coverage_note or ""),
+                },
+            )
         elapsed = (time.monotonic() - t0) * 1000.0
 
         sm.record_assistant_message(session, narration.narration)
@@ -116,10 +261,19 @@ def create_chat_router(
         )
         return ChatResponse(reply=narration.narration, meta=meta)
 
-    def _sse_response(narr, orch_result, session, sm, t0, cognitive_plan):
+    def _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, *, trace_pipe: bool = False):
+        cid = session.conversation_id
+
         async def event_generator():
             full_text: list[str] = []
             try:
+                if trace_pipe:
+                    log_pipeline_event(
+                        etapa="narrate_stream",
+                        fase="pre",
+                        conversation_id=cid,
+                        dados={"orch_prompt_chars": len(orch_result.prompt_text or "")},
+                    )
                 async for chunk in narr.narrate_stream(orch_result):
                     full_text.append(chunk.delta)
                     payload = json.dumps({"delta": chunk.delta, "finish_reason": chunk.finish_reason})
@@ -128,6 +282,13 @@ def create_chat_router(
                 text = "".join(full_text)
                 sm.record_assistant_message(session, text)
                 sm.update_phase(session, CognitivePhase.IDLE)
+                if trace_pipe:
+                    log_pipeline_event(
+                        etapa="narrate_stream",
+                        fase="post",
+                        conversation_id=cid,
+                        dados={"reply_chars": len(text), "stream": True},
+                    )
                 elapsed = (time.monotonic() - t0) * 1000.0
                 done = json.dumps({
                     "done": True,
@@ -142,5 +303,155 @@ def create_chat_router(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    async def _run_analytics(
+        exec_: AnalyticsExecutor,
+        al: SqlAllowlist,
+        cognitive_plan: Any,
+        message: str,
+        *,
+        trace_enabled: bool = False,
+        conversation_id: str | None = None,
+    ) -> Any:
+        from orion_mcp_v3.broker import (
+            ANALYTICS_TEMPLATES,
+            AnalyticsResult,
+            EvidenceAggregator,
+            QueryExpander,
+        )
+        from orion_mcp_v3.broker.evidence_series_resolve import resolve_evidence_series_specs
+
+        if trace_enabled:
+            log_pipeline_event(
+                etapa="analytics_expand",
+                fase="pre",
+                conversation_id=conversation_id,
+                dados={"cognitive_plan": snapshot_cognitive_plan(cognitive_plan), "query_chars": len(message or "")},
+            )
+
+        expander = QueryExpander(registry=ANALYTICS_TEMPLATES)
+        plans = expander.expand(cognitive_plan, al, query_text=message)
+        if trace_enabled:
+            log_pipeline_event(
+                etapa="analytics_expand",
+                fase="post",
+                conversation_id=conversation_id,
+                dados={
+                    "plan_count": len(plans),
+                    "plans": [snapshot_semantic_plan(p) for p in plans],
+                },
+            )
+        if not plans:
+            return None
+
+        async def _exec_one(plan: Any) -> AnalyticsResult:
+            tpl = plan.hints.get("_template")
+            if tpl is not None:
+                params = plan.hints.get("template_params", {})
+                return await exec_.execute_template(tpl, params)
+            return await exec_.execute_plan(plan)
+
+        if trace_enabled:
+            for i, p in enumerate(plans):
+                log_pipeline_event(
+                    etapa=f"analytics_execute[{i}]",
+                    fase="pre",
+                    conversation_id=conversation_id,
+                    dados=snapshot_semantic_plan(p),
+                )
+
+        results = await asyncio.gather(*[_exec_one(p) for p in plans], return_exceptions=True)
+
+        if trace_enabled:
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    log_pipeline_event(
+                        etapa=f"analytics_execute[{i}]",
+                        fase="post",
+                        conversation_id=conversation_id,
+                        dados={"erro": type(r).__name__, "mensagem": str(r)[:300]},
+                    )
+                else:
+                    log_pipeline_event(
+                        etapa=f"analytics_execute[{i}]",
+                        fase="post",
+                        conversation_id=conversation_id,
+                        dados=snapshot_analytics_result(r),
+                    )
+
+        results = [r for r in results if r is not None and not isinstance(r, Exception)]
+        if not results:
+            if trace_enabled:
+                log_pipeline_event(
+                    etapa="analytics_merge",
+                    fase="pre",
+                    conversation_id=conversation_id,
+                    dados={"abortado": True, "motivo": "sem_resultados_validos"},
+                )
+            return None
+
+        merge_pre = {
+            "series_specs": [
+                {
+                    "value_key": s.value_key,
+                    "time_key": s.time_key,
+                    "grain": s.grain,
+                    "template_slug": s.template_slug,
+                    "intent_slug": s.intent_slug,
+                }
+                for s in resolve_evidence_series_specs(
+                    results,
+                    templates=ANALYTICS_TEMPLATES,
+                    default_value_key="total_faturamento",
+                    default_time_key=None,
+                    default_grain="month",
+                )
+            ],
+            "result_count": len(results),
+            "por_resultado": [
+                {
+                    "i": i,
+                    "template_slug": (r.plan.hints or {}).get("template_slug"),
+                    "intent_slug": r.plan.intent_slug,
+                    "row_count": r.row_count,
+                    "chaves_primeira_linha": list(r.rows[0].keys())[:20] if r.rows else [],
+                }
+                for i, r in enumerate(results)
+            ],
+        }
+        if trace_enabled:
+            log_pipeline_event(
+                etapa="analytics_merge",
+                fase="pre",
+                conversation_id=conversation_id,
+                dados=merge_pre,
+            )
+
+        try:
+            merged = EvidenceAggregator().merge(
+                results,
+                value_key="total_faturamento",
+                time_key=None,
+                grain="month",
+                templates=ANALYTICS_TEMPLATES,
+            )
+            if trace_enabled:
+                log_pipeline_event(
+                    etapa="analytics_merge",
+                    fase="post",
+                    conversation_id=conversation_id,
+                    dados=snapshot_evidence_block(merged),
+                )
+            return merged
+        except Exception:
+            _LOG.exception("analytics aggregation failed")
+            if trace_enabled:
+                log_pipeline_event(
+                    etapa="analytics_merge",
+                    fase="post",
+                    conversation_id=conversation_id,
+                    dados={"erro": "aggregation_exception"},
+                )
+            return None
 
     return router

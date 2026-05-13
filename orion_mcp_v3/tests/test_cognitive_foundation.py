@@ -17,6 +17,15 @@ def test_map_attention_profile_covers_all_profiles() -> None:
         assert abs(shares.system + shares.essence + shares.free - 1.0) < 0.01
 
 
+def test_resolve_analytics_for_forma_pagamento_without_faturamento_keyword() -> None:
+    """Perguntas só com 'forma de pagamento' devem activar broker (templates de caixas)."""
+    p = IntentResolver().resolve(
+        "Qual forma de pagamento domina entre janeiro e abril de 2026?",
+    )
+    assert p.needs_analytics is True
+    assert p.intent_type == IntentType.ANALYTICAL
+
+
 def test_resolve_analytical_temporal() -> None:
     r = IntentResolver()
     p = r.resolve("mostre o faturamento dos últimos 3 meses")

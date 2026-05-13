@@ -11,6 +11,11 @@ from orion_mcp_v3.broker.aggregators import (
     top_n,
 )
 from orion_mcp_v3.broker.chunking import chunk_rows, estimate_chunk_tokens, rows_blob
+from orion_mcp_v3.broker.evidence_aggregator import EvidenceAggregator
+from orion_mcp_v3.broker.evidence_series_resolve import (
+    infer_value_key_from_compiled_plan,
+    resolve_evidence_series_specs,
+)
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder, evidence_block_to_digest
 from orion_mcp_v3.broker.data_pipeline import DataPipeline
 from orion_mcp_v3.broker.map_reduce import (
@@ -19,6 +24,12 @@ from orion_mcp_v3.broker.map_reduce import (
     semantic_merge_sections,
 )
 from orion_mcp_v3.broker.executor import AnalyticsExecutor, AnalyticsResult
+from orion_mcp_v3.broker.query_expander import QueryExpander, dedupe_plans
+from orion_mcp_v3.broker.query_templates import (
+    ANALYTICS_TEMPLATES,
+    QueryTemplate,
+    QueryTemplateRegistry,
+)
 from orion_mcp_v3.broker.planner import (
     build_query_plan,
     build_semantic_retrieval_plan,
@@ -63,8 +74,16 @@ from orion_mcp_v3.broker.sql_compiler import (
 )
 
 __all__ = [
+    "ANALYTICS_TEMPLATES",
     "AnalyticsExecutor",
     "AnalyticsResult",
+    "EvidenceAggregator",
+    "infer_value_key_from_compiled_plan",
+    "resolve_evidence_series_specs",
+    "QueryExpander",
+    "QueryTemplate",
+    "QueryTemplateRegistry",
+    "dedupe_plans",
     "chunk_rows",
     "ChunkReducer",
     "AnomalyReducer",

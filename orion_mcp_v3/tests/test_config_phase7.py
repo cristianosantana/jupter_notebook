@@ -65,12 +65,12 @@ def test_settings_cors_wildcard() -> None:
 def test_settings_overrides() -> None:
     s = get_settings_uncached(
         max_tokens=8192,
-        llm_model="gpt-4o",
+        llm_model="gpt-5-mini",
         memory_window=100,
         default_policy="analytical",
     )
     assert s.max_tokens == 8192
-    assert s.llm_model == "gpt-4o"
+    assert s.llm_model == "gpt-5-mini"
     assert s.memory_window == 100
     assert s.default_policy == "analytical"
 
@@ -95,7 +95,20 @@ def test_settings_log_and_trace() -> None:
     assert s.trace_enabled is True
 
 
-def test_settings_from_env(monkeypatch) -> None:
+def test_settings_analytics_pipeline_trace_default(monkeypatch) -> None:
+    monkeypatch.delenv("ORION_ANALYTICS_PIPELINE_TRACE", raising=False)
+    monkeypatch.delenv("ORION_ANALYTICS_PIPELINE_LOG_DIR", raising=False)
+    s = get_settings_uncached()
+    assert s.analytics_pipeline_trace is False
+    assert s.analytics_pipeline_log_dir == ""
+
+
+def test_settings_analytics_pipeline_trace_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("ORION_ANALYTICS_PIPELINE_TRACE", "true")
+    s = get_settings_uncached()
+    assert s.analytics_pipeline_trace is True
+
+
     monkeypatch.setenv("ORION_MYSQL_URL", "mysql://test:pass@db:3306/orion")
     monkeypatch.setenv("ORION_MAX_TOKENS", "16000")
     monkeypatch.setenv("ORION_LLM_MODEL", "claude-4")

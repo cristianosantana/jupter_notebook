@@ -9,8 +9,12 @@ _ANALYTICS_TABLES: frozenset[str] = frozenset(
         "clientes",
         "os",
         "os_servicos",
+        "os_tipos",
         "funcionarios",
         "concessionarias",
+        "caixas",
+        "caixa_tipos",
+        "departamentos",
     }
 )
 
@@ -19,8 +23,7 @@ _ANALYTICS_COLUMNS: dict[str, frozenset[str]] = {
         {
             "id",
             "nome",
-            "created_at",
-            "paga",
+            "created_at"
         }
     ),
     "os": frozenset(
@@ -28,6 +31,9 @@ _ANALYTICS_COLUMNS: dict[str, frozenset[str]] = {
             "id",
             "cliente_id",
             "concessionaria_id",
+            "os_tipo_id",
+            "vendedor_id",
+            "departamento_id",
             "created_at",
             "paga",
         }
@@ -53,6 +59,34 @@ _ANALYTICS_COLUMNS: dict[str, frozenset[str]] = {
             "id",
             "nome",
             "created_at",
+        }
+    ),
+    "os_tipos": frozenset(
+        {
+            "id",
+            "ativo",
+        }
+    ),
+    "caixas": frozenset(
+        {
+            "id",
+            "os_id",
+            "valor",
+            "data_vencimento",
+            "deleted_at",
+            "caixa_tipo_id",
+        }
+    ),
+    "caixa_tipos": frozenset(
+        {
+            "id",
+            "nome",
+        }
+    ),
+    "departamentos": frozenset(
+        {
+            "id",
+            "nome",
         }
     ),
 }

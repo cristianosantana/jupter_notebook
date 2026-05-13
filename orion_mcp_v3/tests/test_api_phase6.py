@@ -166,3 +166,71 @@ def test_chat_response_model_structure() -> None:
     assert req.message == "teste"
     assert req.stream is False
     assert req.policy == "balanced"
+
+
+# ── 6.1+ Analytics pipeline na rota de chat ──────────────────────────
+
+
+def _make_client_with_analytics(
+    provider=None,
+    mock_rows: list | None = None,
+) -> TestClient:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from orion_mcp_v3.broker.executor import AnalyticsExecutor
+    from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
+
+    rows = mock_rows or [
+        {"forma_pagamento": "pix", "qtd_recebimentos": 150, "total_recebido": 85000.0, "ticket_medio": 566.67, "percentual_total": 45.5},
+        {"forma_pagamento": "cartao credito", "qtd_recebimentos": 100, "total_recebido": 62000.0, "ticket_medio": 620.0, "percentual_total": 33.2},
+    ]
+    mysql = MagicMock()
+    mysql.select = AsyncMock(return_value=rows)
+    executor = AnalyticsExecutor(mysql, ANALYTICS_ALLOWLIST, default_limit=1000)
+
+    app = create_app(
+        llm_provider=provider or EchoLLMProvider(),
+        analytics_executor=executor,
+        analytics_allowlist=ANALYTICS_ALLOWLIST,
+    )
+    return TestClient(app)
+
+
+def test_chat_analytical_with_evidence() -> None:
+    client = _make_client_with_analytics()
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "Qual forma de pagamento domina o faturamento entre janeiro e abril de 2026?"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    meta = body["meta"]
+    safeguards = meta.get("safeguards", [])
+    assert "no_evidence" not in safeguards, (
+        f"Resposta não deveria ter 'no_evidence' nos safeguards: {safeguards}"
+    )
+    assert "no_coverage_data" not in safeguards, (
+        f"Com evidência no prompt, não deveria haver 'no_coverage_data': {safeguards}"
+    )
+    assert "evidence_cited" in safeguards
+    assert "coverage_note_injected" in safeguards
+
+
+def test_chat_analytical_without_executor() -> None:
+    client = _make_client(NullLLMProvider())
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "Qual forma de pagamento domina o faturamento?"},
+    )
+    assert r.status_code == 200
+
+
+def test_chat_forma_pagamento_sem_palavra_faturamento_com_executor_injectado() -> None:
+    """Regressão: intenção analítica sem keyword 'faturamento' + broker activo."""
+    client = _make_client_with_analytics()
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "Qual forma de pagamento domina entre janeiro e abril de 2026?"},
+    )
+    assert r.status_code == 200
+    assert "no_evidence" not in r.json()["meta"].get("safeguards", [])

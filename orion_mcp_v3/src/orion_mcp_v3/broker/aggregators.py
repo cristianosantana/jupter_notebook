@@ -49,6 +49,16 @@ def _bucket_month(dt: datetime) -> str:
     return f"{dt.year:04d}-{dt.month:02d}"
 
 
+def _bucket_day(dt: datetime) -> str:
+    return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
+
+
+_GRAIN_BUCKETERS: dict[str, Any] = {
+    "month": _bucket_month,
+    "day": _bucket_day,
+}
+
+
 def time_series(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -56,12 +66,9 @@ def time_series(
     value_key: str,
     grain: str = "month",
 ) -> list[dict[str, Any]]:
-    """
-    Soma ``value_key`` por bucket temporal.
-
-    ``grain`` suportado: apenas ``month`` (string ``YYYY-MM``).
-    """
-    if grain != "month":
+    """Soma ``value_key`` por bucket temporal. Suporta grains ``month`` e ``day``."""
+    bucketer = _GRAIN_BUCKETERS.get(grain)
+    if bucketer is None:
         raise ValueError(f"grain não suportado: {grain!r}")
 
     sums: dict[str, float] = defaultdict(float)
@@ -72,7 +79,7 @@ def time_series(
         dt = _parse_time(row[time_key])
         if dt is None:
             continue
-        bucket = _bucket_month(dt)
+        bucket = bucketer(dt)
         v = row[value_key]
         try:
             sums[bucket] += float(v)
