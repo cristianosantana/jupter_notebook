@@ -79,6 +79,17 @@ class OrionSettings(BaseSettings):
     log_level: str = Field("INFO", description="Nível de log (DEBUG, INFO, WARNING, ERROR).")
     log_format: str = Field("json", description="Formato de log (json ou text).")
     trace_enabled: bool = Field(False, description="Habilitar tracing distribuído.")
+    analytics_pipeline_trace: bool = Field(
+        False,
+        description="JSON por linha em orion.analytics.pipeline: pré/pós de intent, memória, analytics, fusão, narração.",
+    )
+    analytics_pipeline_log_dir: str = Field(
+        "",
+        description=(
+            "Directório para ficheiros analytics_pipeline_<UTC>.jsonl (uma linha = um JSON). "
+            "Usado apenas se analytics_pipeline_trace=true. Caminho relativo = relativamente ao cwd."
+        ),
+    )
 
     # ── Helpers ──────────────────────────────────────────────────────
 

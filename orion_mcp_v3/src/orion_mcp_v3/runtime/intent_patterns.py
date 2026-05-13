@@ -32,6 +32,10 @@ TEMPORAL_PATTERNS: tuple[re.Pattern[str], ...] = (
 # --- Analytics / negócio ---
 ANALYTICAL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bticket\s*médio\b|\bavg\s*ticket\b", re.IGNORECASE),
+    re.compile(
+        r"\bforma(s)?\s+de\s+pagamento\b|\bmeio(s)?\s+de\s+pagamento\b|\btipo\s+de\s+pagamento\b|\bpayment\s+methods?\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bfaturamento\b|\brevenue\b|\breceita\b", re.IGNORECASE),
     re.compile(r"\btop\s+\d*\s*clientes?\b|\bmaiores?\s+clientes?\b", re.IGNORECASE),
     re.compile(r"\bvendas?\b|\bsales\b", re.IGNORECASE),

@@ -13,16 +13,38 @@ Sem instalar o pacote (PYTHONPATH via uvicorn):
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from orion_mcp_v3.api.models import HealthResponse
 from orion_mcp_v3.api.routes.chat import create_chat_router
+from orion_mcp_v3.broker.executor import AnalyticsExecutor
+from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
+from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
 from orion_mcp_v3.config.settings import OrionSettings, get_settings
 from orion_mcp_v3.protocols.llm import LLMProvider, NullLLMProvider
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
+from orion_mcp_v3.runtime.analytics_pipeline_trace import (
+    configure_pipeline_file_logging,
+    shutdown_pipeline_file_logging,
+)
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator
 from orion_mcp_v3.runtime.session_manager import SessionManager
+
+_LOG = logging.getLogger("orion.api.main")
+
+
+def _configure_logging(s: OrionSettings) -> None:
+    level = getattr(logging, s.log_level.upper(), logging.INFO)
+    if s.log_format == "json":
+        fmt = '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}'
+    else:
+        fmt = "%(asctime)s %(levelname)-8s %(name)s %(message)s"
+    logging.basicConfig(level=level, format=fmt, force=True)
 
 
 def _resolve_policy(name: str) -> AttentionPolicy:
@@ -47,20 +69,75 @@ def _build_provider(settings: OrionSettings) -> LLMProvider:
     return NullLLMProvider()
 
 
+def _build_lifespan(
+    s: OrionSettings,
+    state: dict[str, Any],
+):
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if s.mysql_enabled and state.get("executor") is None:
+            try:
+                from orion_mcp_v3.connection_hub.pools import create_mysql_pool, close_mysql_pool
+                from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
+
+                pool = await create_mysql_pool(
+                    s.mysql_url,
+                    minsize=s.mysql_pool_min,
+                    maxsize=s.mysql_pool_max,
+                )
+                if pool is not None:
+                    client = MysqlDatastoreClient(pool)
+                    executor = AnalyticsExecutor(
+                        client,
+                        ANALYTICS_ALLOWLIST,
+                        default_limit=s.default_limit,
+                    )
+                    state["pool"] = pool
+                    state["executor"] = executor
+                    state["allowlist"] = ANALYTICS_ALLOWLIST
+                    _LOG.info("MySQL analytics executor initialised (pool=%s)", s.mysql_url.split("@")[-1])
+            except Exception:
+                _LOG.exception("Failed to create MySQL pool — analytics disabled")
+
+        yield
+
+        shutdown_pipeline_file_logging()
+
+        pool = state.get("pool")
+        if pool is not None:
+            from orion_mcp_v3.connection_hub.pools import close_mysql_pool
+            await close_mysql_pool(pool)
+            _LOG.info("MySQL pool closed")
+
+    return lifespan
+
+
 def create_app(
     *,
     llm_provider: LLMProvider | None = None,
     session_manager: SessionManager | None = None,
     settings: OrionSettings | None = None,
+    analytics_executor: AnalyticsExecutor | None = None,
+    analytics_allowlist: SqlAllowlist | None = None,
 ) -> FastAPI:
     """Factory da aplicação FastAPI com dependências injectáveis."""
     s = settings or get_settings()
+    _configure_logging(s)
+    jsonl_path = configure_pipeline_file_logging(s)
+    if jsonl_path is not None:
+        _LOG.info("Analytics pipeline JSONL: %s", jsonl_path)
+
+    state: dict[str, Any] = {}
+    if analytics_executor is not None:
+        state["executor"] = analytics_executor
+        state["allowlist"] = analytics_allowlist or ANALYTICS_ALLOWLIST
 
     app = FastAPI(
         title="Orion Cognitive Copilot",
-        version="0.7.0",
+        version="0.8.0",
         description="Runtime cognitivo orientado a contexto — API de produto.",
         debug=s.api_debug,
+        lifespan=_build_lifespan(s, state),
     )
 
     if s.api_cors_origins:
@@ -85,6 +162,9 @@ def create_app(
         session_manager=sm,
         llm_provider=provider,
         narrator=narrator,
+        analytics_executor=state.get("executor"),
+        analytics_allowlist=state.get("allowlist"),
+        analytics_state=state,
     )
     app.include_router(chat_router)
 

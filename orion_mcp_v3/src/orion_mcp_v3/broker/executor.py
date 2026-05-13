@@ -4,15 +4,17 @@ Orquestrador: texto → Planner → compilador SQL seguro → execução MySQL (
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from orion_mcp_v3.broker.planner import build_query_plan
+from orion_mcp_v3.broker.query_templates import QueryTemplate
 from orion_mcp_v3.broker.semantic_query_compiler import merge_executable_hints
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, compile_select
 from orion_mcp_v3.connection_hub.mysql_backend import MysqlDatastoreClient
-from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
+from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,43 @@ class AnalyticsExecutor:
             sql_hints,
             default_limit=self.default_limit,
             default_sql_table=self._default_sql_table,
+        )
+
+    async def execute_plan(
+        self,
+        plan: SemanticQueryPlan,
+        *,
+        sql_hints: Mapping[str, Any] | None = None,
+    ) -> AnalyticsResult:
+        """Executa um :class:`SemanticQueryPlan` já construído (sem ``IntentResolver``)."""
+        plan = self.prepare_execution_plan(plan, sql_hints)
+        compiled = compile_select(plan, self._allowlist, default_limit=self.default_limit)
+        rows = await self._mysql.select(compiled.sql, params=compiled.params)
+        return AnalyticsResult(
+            plan=plan,
+            sql=compiled.sql,
+            rows=rows,
+            row_count=len(rows),
+        )
+
+    async def execute_template(
+        self,
+        template: QueryTemplate,
+        params: dict[str, Any],
+    ) -> AnalyticsResult:
+        """Executa um QueryTemplate parametrizado directamente (sem compilador)."""
+        param_values = tuple(params[k] for k in template.parameters)
+        rows = await self._mysql.select(template.sql, params=param_values)
+        plan = SemanticQueryPlan(
+            intent_slug=f"template.{template.slug}",
+            strategy=RetrievalStrategy.BROKER_FANOUT,
+            hints={"template_slug": template.slug, "template_params": params},
+        )
+        return AnalyticsResult(
+            plan=plan,
+            sql=template.sql,
+            rows=rows,
+            row_count=len(rows),
         )
 
     async def execute(
