@@ -91,11 +91,15 @@ def test_registry_no_match_conversational() -> None:
 
 
 def test_resolve_params_with_defaults() -> None:
+    from datetime import date, timedelta
+
     tpl = ANALYTICS_TEMPLATES.get("faturamento_diario")
     assert tpl is not None
     cp = _analytical_plan()
     params = ANALYTICS_TEMPLATES.resolve_params(tpl, cp)
-    assert params == {"date_from": "1900-01-01", "date_to": "2099-12-31"}
+    expected_from = (date.today() - timedelta(days=30)).isoformat()
+    expected_to = (date.today() + timedelta(days=1)).isoformat()
+    assert params == {"date_from": expected_from, "date_to": expected_to}
 
 
 def test_resolve_params_with_overrides() -> None:
@@ -187,7 +191,7 @@ def test_template_sql_contains_placeholders() -> None:
         tpl = ANALYTICS_TEMPLATES.get(slug)
         assert tpl is not None
         assert "%s" in tpl.sql, f"Template {slug} sem placeholders %s"
-        assert tpl.sql.count("%s") == len(tpl.parameters) == 2
+        assert tpl.sql.count("%s") == len(tpl.parameters)
 
 
 # ---------------------------------------------------------------------------

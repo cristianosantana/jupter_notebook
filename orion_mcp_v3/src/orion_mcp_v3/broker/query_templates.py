@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 
+from orion_mcp_v3.broker.queries import get_all_modules
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
+
+DEFAULT_LOOKBACK_DAYS = 30
+
+
+def _default_date_from() -> str:
+    return (date.today() - timedelta(days=DEFAULT_LOOKBACK_DAYS)).isoformat()
+
+
+def _default_date_to() -> str:
+    return (date.today() + timedelta(days=1)).isoformat()
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +94,9 @@ class QueryTemplateRegistry:
         cognitive_plan: CognitivePlan,
         overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {**template.default_params}
+        params: dict[str, Any] = {}
+        for k, v in template.default_params.items():
+            params[k] = v() if callable(v) else v
 
         if cognitive_plan.time_scope:
             scope = cognitive_plan.time_scope
@@ -144,253 +158,32 @@ class QueryTemplateRegistry:
 
 
 # ---------------------------------------------------------------------------
-# SQL Templates
+# Registry builder — importa SQL dos módulos em broker/queries/
 # ---------------------------------------------------------------------------
 
-_SQL_FATURAMENTO_DIARIO = """\
-SELECT
-    DATE(cx.data_vencimento) AS data_recebimento,
-    COUNT(*) AS total_recebimentos,
-    SUM(cx.valor) AS valor_total_recebido,
-    AVG(cx.valor) AS ticket_medio,
-    SUM(CASE
-        WHEN ct.nome LIKE '%%cartao%%' THEN cx.valor
-        ELSE 0
-    END) AS total_cartao,
-    SUM(CASE
-        WHEN ct.nome LIKE '%%pix%%' THEN cx.valor
-        ELSE 0
-    END) AS total_pix
-FROM
-    caixas cx
-        INNER JOIN
-    os os ON os.id = cx.os_id
-        INNER JOIN
-    os_tipos ost ON ost.id = os.os_tipo_id
-        INNER JOIN
-    caixa_tipos ct ON ct.id = cx.caixa_tipo_id
-WHERE
-    cx.deleted_at IS NULL AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY DATE(cx.data_vencimento)
-ORDER BY data_recebimento DESC"""
-
-_SQL_CONCESSIONARIA = """\
-SELECT
-    LOWER(co.nome) AS concessionaria,
-    COUNT(DISTINCT cx.os_id) AS total_os,
-    COUNT(*) AS total_recebimentos,
-    SUM(cx.valor) AS faturamento,
-    AVG(cx.valor) AS ticket_medio
-FROM
-    caixas cx
-        INNER JOIN
-    os os ON os.id = cx.os_id
-        INNER JOIN
-    concessionarias co ON co.id = os.concessionaria_id
-        INNER JOIN
-    os_tipos ost ON ost.id = os.os_tipo_id
-WHERE
-    cx.deleted_at IS NULL AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY co.nome
-ORDER BY faturamento DESC"""
-
-_SQL_VENDEDOR = """\
-SELECT
-    LOWER(fu.nome) AS vendedor,
-    COUNT(DISTINCT cx.os_id) AS total_vendas,
-    SUM(cx.valor) AS valor_total,
-    AVG(cx.valor) AS ticket_medio,
-    MAX(cx.valor) AS maior_venda
-FROM
-    caixas cx
-        INNER JOIN
-    os os ON os.id = cx.os_id
-        INNER JOIN
-    funcionarios fu ON fu.id = os.vendedor_id
-        INNER JOIN
-    os_tipos ost ON ost.id = os.os_tipo_id
-WHERE
-    cx.deleted_at IS NULL AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY fu.nome
-ORDER BY valor_total DESC"""
-
-_SQL_FORMA_PAGAMENTO = """\
-SELECT
-    LOWER(ct.nome) AS forma_pagamento,
-    COUNT(*) AS qtd_recebimentos,
-    SUM(cx.valor) AS total_recebido,
-    AVG(cx.valor) AS ticket_medio,
-    ROUND((SUM(cx.valor) / (SELECT
-                    SUM(valor)
-                FROM
-                    caixas
-                WHERE
-                    deleted_at IS NULL)) * 100,
-            2) AS percentual_total
-FROM
-    caixas cx
-        INNER JOIN
-    caixa_tipos ct ON ct.id = cx.caixa_tipo_id
-        INNER JOIN
-    os os ON os.id = cx.os_id
-        INNER JOIN
-    os_tipos ost ON ost.id = os.os_tipo_id
-WHERE
-    cx.deleted_at IS NULL AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY ct.nome
-ORDER BY total_recebido DESC"""
-
-_SQL_EXECUTIVA = """\
-SELECT
-    DATE(cx.data_vencimento) AS data_recebimento,
-    LOWER(co.nome) AS concessionaria,
-    LOWER(de.nome) AS departamento,
-    LOWER(fu.nome) AS vendedor,
-    LOWER(ct.nome) AS forma_pagamento,
-    COUNT(*) AS qtd_recebimentos,
-    COUNT(DISTINCT cx.os_id) AS qtd_os,
-    SUM(cx.valor) AS valor_total,
-    AVG(cx.valor) AS ticket_medio
-FROM
-    caixas cx
-        INNER JOIN
-    os os ON os.id = cx.os_id
-        INNER JOIN
-    departamentos de ON de.id = os.departamento_id
-        INNER JOIN
-    funcionarios fu ON fu.id = os.vendedor_id
-        INNER JOIN
-    concessionarias co ON co.id = os.concessionaria_id
-        INNER JOIN
-    caixa_tipos ct ON ct.id = cx.caixa_tipo_id
-        INNER JOIN
-    os_tipos ost ON ost.id = os.os_tipo_id
-WHERE
-    cx.deleted_at IS NULL AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY DATE(cx.data_vencimento), co.nome, de.nome, fu.nome, ct.nome
-ORDER BY data_recebimento DESC"""
-
-
-_DEFAULT_DATE_PARAMS: dict[str, Any] = {
-    "date_from": "1900-01-01",
-    "date_to": "2099-12-31",
-}
+def _default_params() -> dict[str, Any]:
+    return {"date_from": _default_date_from, "date_to": _default_date_to}
 
 
 def _build_registry() -> QueryTemplateRegistry:
     reg = QueryTemplateRegistry()
 
-    reg.register(QueryTemplate(
-        slug="faturamento_diario",
-        sql=_SQL_FATURAMENTO_DIARIO,
-        parameters=("date_from", "date_to"),
-        default_params={**_DEFAULT_DATE_PARAMS},
-        answers=(
-            "faturamento diário",
-            "receita por dia",
-            "recebimentos por data",
-            "quanto foi recebido por dia",
-            "evolução diária de receita",
-            "total cartão e pix por dia",
-            "ticket médio diário",
-            "revenue",
-            "daily revenue",
-            "ticket",
-        ),
-        value_key="valor_total_recebido",
-        time_key="data_recebimento",
-        grain="day",
-    ))
+    for slug, mod in get_all_modules().items():
+        params_tuple = ("date_from", "date_to")
+        if hasattr(mod, "PARAMETERS"):
+            params_tuple = mod.PARAMETERS
 
-    reg.register(QueryTemplate(
-        slug="performance_concessionaria",
-        sql=_SQL_CONCESSIONARIA,
-        parameters=("date_from", "date_to"),
-        default_params={**_DEFAULT_DATE_PARAMS},
-        answers=(
-            "faturamento por concessionária",
-            "performance de concessionária",
-            "receita por concessionária",
-            "ranking de concessionárias",
-            "comparação entre concessionárias",
-            "qual concessionária fatura mais",
-            "revenue",
-            "sales",
-        ),
-        value_key="faturamento",
-        time_key=None,
-        grain="total",
-        label_key="concessionaria",
-    ))
-
-    reg.register(QueryTemplate(
-        slug="performance_vendedor",
-        sql=_SQL_VENDEDOR,
-        parameters=("date_from", "date_to"),
-        default_params={**_DEFAULT_DATE_PARAMS},
-        answers=(
-            "faturamento por vendedor",
-            "performance de vendedor",
-            "ranking de vendedores",
-            "qual vendedor vendeu mais",
-            "ticket médio por vendedor",
-            "vendas por vendedor",
-            "revenue",
-            "sales",
-            "ticket",
-        ),
-        value_key="valor_total",
-        time_key=None,
-        grain="total",
-        label_key="vendedor",
-    ))
-
-    reg.register(QueryTemplate(
-        slug="formas_pagamento",
-        sql=_SQL_FORMA_PAGAMENTO,
-        parameters=("date_from", "date_to"),
-        default_params={**_DEFAULT_DATE_PARAMS},
-        answers=(
-            "formas de pagamento",
-            "forma de pagamento",
-            "distribuição por forma de pagamento",
-            "percentual por forma de pagamento",
-            "quanto foi pago em pix",
-            "quanto foi pago em cartão",
-            "receita por tipo de pagamento",
-            "revenue",
-            "sales",
-        ),
-        value_key="total_recebido",
-        time_key=None,
-        grain="total",
-        label_key="forma_pagamento",
-    ))
-
-    reg.register(QueryTemplate(
-        slug="visao_executiva",
-        sql=_SQL_EXECUTIVA,
-        parameters=("date_from", "date_to"),
-        default_params={**_DEFAULT_DATE_PARAMS},
-        answers=(
-            "visão executiva",
-            "relatório completo",
-            "power bi",
-            "dados completos de faturamento",
-            "faturamento por concessionária vendedor e data",
-            "dashboard executivo",
-            "revenue",
-            "sales",
-        ),
-        value_key="valor_total",
-        time_key="data_recebimento",
-        grain="day",
-    ))
+        reg.register(QueryTemplate(
+            slug=slug,
+            sql=mod.SQL,
+            parameters=params_tuple,
+            default_params=_default_params(),
+            answers=mod.ANSWERS,
+            value_key=mod.VALUE_KEY,
+            time_key=getattr(mod, "TIME_KEY", None),
+            grain=getattr(mod, "GRAIN", "day"),
+            label_key=getattr(mod, "LABEL_KEY", None),
+        ))
 
     return reg
 
