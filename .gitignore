@@ -5,6 +5,6 @@ __pycache__
 .cursor
 output
 .github
-.venv
+.venv*
 logs
 .pytest_cache
