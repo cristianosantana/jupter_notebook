@@ -128,7 +128,8 @@ def _build_lifespan(
                             )
                             state["chat_turn_embedding_store"] = ChatTurnEmbeddingStore(pg_pool, embed_svc)
                             _LOG.info(
-                                "chat_turn_embeddings indexer enabled (model=%s, dims=%s)",
+                                "Memory Augmentation enabled (mode=%s, model=%s, dims=%s)",
+                                s.effective_embedding_mode,
                                 s.embedding_model,
                                 s.embedding_dimensions,
                             )

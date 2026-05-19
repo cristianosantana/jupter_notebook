@@ -122,10 +122,12 @@ class SessionManager:
         return self._shared_slot.get(self._EMBEDDING_STORE_KEY)
 
     async def _index_turn_embedding(self, session_id: str, msg: ConversationMessage) -> None:
+        if not get_settings().embedding_should_index:
+            return
         store = self._embedding_store()
         if store is None:
             settings = get_settings()
-            if settings.embedding_active and not self._embedding_store_warned:
+            if settings.embedding_should_index and not self._embedding_store_warned:
                 self._embedding_store_warned = True
                 _LOG.warning(
                     "ORION_EMBEDDING_ENABLED=true mas chat_turn_embedding_store não está "

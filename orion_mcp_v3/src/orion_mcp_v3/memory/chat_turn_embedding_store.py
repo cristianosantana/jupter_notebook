@@ -52,6 +52,8 @@ class ChatTurnEmbeddingStore:
         self._pool = pool
         self._embed = embedding_service
         self._use_content_column: bool | None = None
+        # Evita re-embed da mesma query no mesmo turno (ex.: index user + search).
+        self._query_vector_cache: dict[str, tuple[str, list[float]]] = {}
 
     async def _insert_row(
         self,
@@ -119,6 +121,7 @@ class ChatTurnEmbeddingStore:
             return False
 
         vec_lit = OpenAIEmbeddingService.to_pgvector(vectors[0])
+        self._query_vector_cache[sid] = (chash, vectors[0])
 
         try:
             async with self._pool.acquire() as conn:
@@ -144,12 +147,28 @@ class ChatTurnEmbeddingStore:
             _LOG.debug("chat_turn_embeddings ignorado (duplicado) session=%s message_id=%s", sid, mid)
         return inserted
 
+    async def _vector_literal_for_query(self, session_id: str, query: str) -> str | None:
+        q = (query or "").strip()
+        if not q:
+            return None
+        sid = session_id.strip() or "default"
+        chash = _content_hash(q)
+        cached = self._query_vector_cache.get(sid)
+        if cached is not None and cached[0] == chash:
+            return OpenAIEmbeddingService.to_pgvector(cached[1])
+        vectors = await self._embed.embed([q])
+        if not vectors:
+            return None
+        self._query_vector_cache[sid] = (chash, vectors[0])
+        return OpenAIEmbeddingService.to_pgvector(vectors[0])
+
     async def search(
         self,
         session_id: str,
         query: str,
         *,
         top_k: int = 5,
+        query_vector_literal: str | None = None,
     ) -> list[tuple[str, str, str, float]]:
         """
         Busca por similaridade coseno na sessão.
@@ -157,15 +176,15 @@ class ChatTurnEmbeddingStore:
         Devolve lista de ``(message_id, role, content, similarity)``.
         """
         q = (query or "").strip()
-        if not q:
+        if not q and query_vector_literal is None:
             return []
 
         sid = session_id.strip() or "default"
-        vectors = await self._embed.embed([q])
-        if not vectors:
+        vec_lit = query_vector_literal
+        if vec_lit is None:
+            vec_lit = await self._vector_literal_for_query(sid, q)
+        if vec_lit is None:
             return []
-
-        vec_lit = OpenAIEmbeddingService.to_pgvector(vectors[0])
         limit = max(1, top_k)
 
         async with self._pool.acquire() as conn:
