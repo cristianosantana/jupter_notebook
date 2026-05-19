@@ -640,14 +640,16 @@ async def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> No
     )
     assert isinstance(semantic, SemanticQueryPlan)
     assert semantic.strategy == RetrievalStrategy.BROKER_FANOUT
-    assert semantic.analytics_strategy == AnalyticsStrategy.TREND
+    # Pergunta mista (top clientes + janela temporal) → ranking tem prioridade sobre trend.
+    assert semantic.analytics_strategy == AnalyticsStrategy.RANKING
     assert semantic.hints.get("lookback_months") == 3
     assert semantic.hints.get("top_n") == 5
+    assert semantic.hints.get("rank_dimension") == "client"
     assert semantic.hints.get("aggregation_kind") == "mixed"
     cog_meta = semantic.hints.get("cognitive")
     assert isinstance(cog_meta, dict)
     assert cog_meta.get("intent_type") == "analytical"
-    assert semantic.hints.get("analytics_strategy") == AnalyticsStrategy.TREND.value
+    assert semantic.hints.get("analytics_strategy") == AnalyticsStrategy.RANKING.value
 
     _apply_semantic_query_compiler_phase13(log, semantic, variant="com_texto")
 
