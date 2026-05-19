@@ -59,6 +59,11 @@ class OpenAIProvider:
         self._max_tokens = max_tokens
 
     @staticmethod
+    def _completion_budget_for_constrained_model(max_tokens: int) -> int:
+        """Evita respostas vazias quando modelos reasoning consomem todo o budget interno."""
+        return max(int(max_tokens), 8192)
+
+    @staticmethod
     def _is_constrained_chat_model(model: str) -> bool:
         """Modelos com ``max_completion_tokens`` e temperatura só no default da API."""
         m = model.strip().lower()
@@ -83,7 +88,7 @@ class OpenAIProvider:
         if max_compl is not None:
             merged["max_completion_tokens"] = max_compl
         elif self._is_constrained_chat_model(model):
-            merged["max_completion_tokens"] = max_tok
+            merged["max_completion_tokens"] = self._completion_budget_for_constrained_model(max_tok)
         else:
             merged["max_tokens"] = max_tok
         return merged
