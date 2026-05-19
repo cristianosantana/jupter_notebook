@@ -14,9 +14,9 @@ Uso::
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -69,10 +69,17 @@ class OrionSettings(BaseSettings):
         description="Máximo de mensagens por sessão em GET /api/v1/sessions (histórico listado).",
     )
 
-    # ── Embeddings (chat_turn_embeddings) ────────────────────────────
+    # ── Embeddings (chat_turn_embeddings — experimental) ─────────────
+    embedding_mode: Literal["off", "index_only", "retrieve"] = Field(
+        "off",
+        description=(
+            "off: sem embeddings; index_only: grava turnos sem busca vectorial; "
+            "retrieve: indexa e usa VectorRetriever em paralelo com retrieval lexical."
+        ),
+    )
     embedding_enabled: bool = Field(
         False,
-        description="Indexar turnos em chat_turn_embeddings e usar VectorRetriever na memória.",
+        description="Legado: se true e embedding_mode=off, trata como retrieve.",
     )
     embedding_model: str = Field(
         "text-embedding-3-small",
@@ -80,6 +87,16 @@ class OrionSettings(BaseSettings):
     )
     embedding_dimensions: int = Field(1536, ge=1, le=3072)
     embedding_top_k: int = Field(5, ge=1, le=50)
+
+    @field_validator("embedding_mode", mode="before")
+    @classmethod
+    def _normalize_embedding_mode(cls, v: object) -> str:
+        if v is None:
+            return "off"
+        s = str(v).strip().lower()
+        if s in ("off", "index_only", "retrieve"):
+            return s
+        return "off"
 
     # ── Timeouts (segundos) ──────────────────────────────────────────
     mysql_timeout: float = Field(30.0, ge=1.0)
@@ -128,9 +145,26 @@ class OrionSettings(BaseSettings):
         return bool(self.llm_api_key.strip())
 
     @property
+    def effective_embedding_mode(self) -> Literal["off", "index_only", "retrieve"]:
+        """Modo efectivo; ``embedding_enabled=true`` sem modo explícito → ``retrieve``."""
+        if self.embedding_mode != "off":
+            return self.embedding_mode
+        if self.embedding_enabled:
+            return "retrieve"
+        return "off"
+
+    @property
     def embedding_active(self) -> bool:
-        """Embeddings ligados e API key presente (mesma chave do LLM por omissão)."""
-        return self.embedding_enabled and bool(self.llm_api_key.strip())
+        """API key presente e modo não-off (indexação ou retrieval)."""
+        return self.effective_embedding_mode != "off" and bool(self.llm_api_key.strip())
+
+    @property
+    def embedding_should_index(self) -> bool:
+        return self.embedding_active and self.effective_embedding_mode in ("index_only", "retrieve")
+
+    @property
+    def embedding_should_retrieve(self) -> bool:
+        return self.embedding_active and self.effective_embedding_mode == "retrieve"
 
     @property
     def cors_origins_list(self) -> list[str]:

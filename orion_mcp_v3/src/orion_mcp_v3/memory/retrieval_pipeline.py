@@ -93,7 +93,7 @@ class MemoryRetrievalPipeline:
                 tagged = _tag_layer(b, MemoryLayer.SEMANTIC_MEMORY)
                 layers[MemoryLayer.SEMANTIC_MEMORY.value].append(tagged)
 
-        if semantic_query and semantic_retriever is not None and not layers[MemoryLayer.SEMANTIC_MEMORY.value]:
+        if semantic_query and semantic_retriever is not None:
             sem_blocks = await semantic_retriever.retrieve(
                 semantic_query.strip(),
                 session_id,

@@ -158,19 +158,23 @@ def create_chat_router(
                 dados={"memory_window": sm.memory_window, "intent_type": cognitive_plan.intent_type.value},
             )
 
+        settings = get_settings()
         memory_pipeline = MemoryRetrievalPipeline(sm.repository)
         epi = EpisodicRetriever(sm.repository)
         sem = SemanticRetriever(sm.repository)
         vec_ret: VectorRetriever | None = None
         embed_store = _state.get("chat_turn_embedding_store")
-        settings = get_settings()
-        if embed_store is not None and isinstance(embed_store, ChatTurnEmbeddingStore):
+        if (
+            settings.embedding_should_retrieve
+            and embed_store is not None
+            and isinstance(embed_store, ChatTurnEmbeddingStore)
+        ):
             vec_ret = VectorRetriever(embed_store)
         memory_blocks = await memory_pipeline.collect_blocks(
             session.conversation_id,
             recent_limit=sm.memory_window,
             semantic_query=req.message,
-            semantic_retriever=sem if vec_ret is None else None,
+            semantic_retriever=sem,
             vector_retriever=vec_ret,
             vector_top_k=settings.embedding_top_k,
             episodic_retriever=epi,
@@ -179,11 +183,18 @@ def create_chat_router(
         )
 
         if trace_pipe:
+            vector_n = sum(1 for b in memory_blocks if b.metadata.get("retrieval") == "vector")
+            lexical_n = sum(1 for b in memory_blocks if b.metadata.get("retrieval") == "semantic_lexical")
             log_pipeline_event(
                 etapa="memory_retrieve",
                 fase="post",
                 conversation_id=cid,
-                dados={"memory_block_count": len(memory_blocks)},
+                dados={
+                    "memory_block_count": len(memory_blocks),
+                    "memory_layer_vector": vector_n,
+                    "memory_layer_lexical": lexical_n,
+                    "embedding_mode": settings.effective_embedding_mode,
+                },
             )
 
         evidence = None
@@ -389,6 +400,17 @@ def create_chat_router(
             )
         if not plans:
             return None
+
+        if trace_enabled:
+            log_pipeline_event(
+                etapa="semantic_plan",
+                fase="post",
+                conversation_id=conversation_id,
+                dados={
+                    "plan_count": len(plans),
+                    "plans": [snapshot_semantic_plan(p) for p in plans],
+                },
+            )
 
         async def _exec_one(plan: Any) -> AnalyticsResult:
             tpl = plan.hints.get("_template")
