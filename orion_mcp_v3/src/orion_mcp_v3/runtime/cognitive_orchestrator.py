@@ -15,6 +15,7 @@ from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.runtime.analytical_system_prompt import build_analytical_system_block
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
@@ -71,12 +72,34 @@ def _digest_to_context_block(d: AnalyticalDigest) -> ContextBlock:
 def build_fusion_layers(
     utterance: str,
     *,
+    cognitive_plan: CognitivePlan | None = None,
     evidence: EvidenceBlock | None = None,
     digest: AnalyticalDigest | None = None,
     memory_blocks: Sequence[ContextBlock] | None = None,
     essence_blocks: Sequence[ContextBlock] | None = None,
+    period_label: str | None = None,
 ) -> list[tuple[str, list[ContextBlock]]]:
-    """Monta camadas para :meth:`ContextFusion.fuse` (utilizador → essência opcional → evidência → digest → memória)."""
+    """Monta camadas para :meth:`ContextFusion.fuse`.
+
+    Ordem: system → user → essência opcional → evidência → digest → memória.
+    O bloco SYSTEM é injetado somente quando ``cognitive_plan`` é fornecido, preservando
+    compatibilidade para chamadas diretas de ``build_fusion_layers`` sem plano.
+    """
+    layers: list[tuple[str, list[ContextBlock]]] = []
+    if cognitive_plan is not None:
+        layers.append(
+            (
+                "system",
+                [
+                    build_analytical_system_block(
+                        cognitive_plan,
+                        evidence=evidence,
+                        period_label=period_label,
+                    )
+                ],
+            )
+        )
+
     user_cb = ContextBlock(
         utterance,
         ContextRole.USER,
@@ -84,7 +107,7 @@ def build_fusion_layers(
         block_id="fusion:user_turn",
         relevance_score=1.0,
     )
-    layers: list[tuple[str, list[ContextBlock]]] = [("user", [user_cb])]
+    layers.append(("user", [user_cb]))
     mem = list(memory_blocks) if memory_blocks else []
     ess = list(essence_blocks) if essence_blocks else []
     if ess:
@@ -121,14 +144,17 @@ class CognitiveOrchestrator:
         essence_blocks: Sequence[ContextBlock] | None = None,
         max_tokens: int = 4096,
         scheduler_profile: SchedulerProfile | None = None,
+        period_label: str | None = None,
     ) -> CognitiveOrchestrationResult:
         plan = cognitive_plan if cognitive_plan is not None else self._resolver.resolve(utterance)
         layers = build_fusion_layers(
             utterance,
+            cognitive_plan=plan,
             evidence=evidence,
             digest=digest,
             memory_blocks=memory_blocks,
             essence_blocks=essence_blocks,
+            period_label=period_label,
         )
         fusion = ContextFusion().fuse(layers, policy=policy)
         profile = scheduler_profile or scheduler_profile_from_attention(policy)

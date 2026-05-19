@@ -24,4 +24,4 @@ def test_finalize_prompt_produces_non_empty_prompt() -> None:
     )
     assert "[USER]" in r.prompt_text
     assert len(r.packed_blocks) >= 1
-    assert r.fusion.layer_priority == ("user", "memory")
+    assert r.fusion.layer_priority == ("system", "user", "memory")

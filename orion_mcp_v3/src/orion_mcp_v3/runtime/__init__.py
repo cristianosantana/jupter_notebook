@@ -13,6 +13,7 @@ from orion_mcp_v3.runtime.intent_resolver import (
     IntentResolver,
     map_attention_profile_to_policy,
 )
+from orion_mcp_v3.runtime.analytical_system_prompt import build_analytical_system_block
 from orion_mcp_v3.runtime.budget_allocator import AllocationResult, allocate, estimate_tokens
 from orion_mcp_v3.runtime.prompt_render import render_blocks_to_prompt
 from orion_mcp_v3.runtime.context_builder import AnalyticalContextBuilder
@@ -82,6 +83,7 @@ __all__ = [
     "ConflictResolutionResult",
     "ConflictStrategy",
     "build_fusion_layers",
+    "build_analytical_system_block",
     "classify_fusion_source",
     "ContextFusion",
     "ContextFusionResult",
