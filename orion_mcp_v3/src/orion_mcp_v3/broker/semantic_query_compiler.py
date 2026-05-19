@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from orion_mcp_v3.broker.sql_compiler import CompiledSql, SqlAllowlist, SqlCompilationError, compile_select
-from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
+from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, SemanticQueryPlan
 
 # Colunas mínimas por tabela quando o plano não traz ``sql_columns`` (alinhado ao executor).
 _DEFAULT_SQL_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -123,6 +123,10 @@ def validate_semantic_hints_surface(
         jt = j.get("join_table")
         if jt and jt not in allowlist.tables:
             raise SqlCompilationError(f"JOIN para tabela não permitida: {jt!r}")
+
+    if hints.get("aggregation_kind") == "ranking" or hints.get("analytics_strategy") == AnalyticsStrategy.RANKING.value:
+        if not hints.get("rank_dimension"):
+            raise SqlCompilationError("ranking requer hint rank_dimension")
 
 
 @dataclass(frozen=True, slots=True)

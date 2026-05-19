@@ -69,6 +69,8 @@ def infer_analytics_strategy(
     if kind == "temporal":
         return AnalyticsStrategy.TEMPORAL
     if kind == "mixed":
+        if h.get("rank_dimension"):
+            return AnalyticsStrategy.RANKING
         return AnalyticsStrategy.TREND
 
     if cognitive.needs_comparison:

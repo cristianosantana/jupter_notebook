@@ -35,24 +35,35 @@ class CognitiveOrchestrationResult:
 
 
 def _evidence_to_context_block(eb: EvidenceBlock) -> ContextBlock:
+    md: dict[str, object] = {
+        "fusion_kind": "evidence",
+        "evidence_confidence": eb.confidence,
+        "coverage_labels": list(eb.coverage.labels),
+        "provenance_count": len(eb.provenance),
+    }
+    if eb.provenance:
+        md["provenance_sources"] = [a.source for a in eb.provenance[:8]]
     return ContextBlock(
         text=eb.summary[:8000],
         role=ContextRole.DATA,
         source=ContextSource.BROKER,
         block_id="fusion:evidence",
-        metadata={"fusion_kind": "evidence"},
+        metadata=md,
         relevance_score=min(0.95, max(0.0, eb.confidence)),
     )
 
 
 def _digest_to_context_block(d: AnalyticalDigest) -> ContextBlock:
     conf = d.confidence if d.confidence is not None else 0.6
+    md: dict[str, object] = {"fusion_kind": "digest", "volume": d.volume}
+    if d.coverage is not None:
+        md["coverage_labels"] = list(d.coverage.labels)
     return ContextBlock(
         text=d.summary[:8000],
         role=ContextRole.DATA,
         source=ContextSource.BROKER,
         block_id="fusion:map_reduce_digest",
-        metadata={"fusion_kind": "digest", "volume": d.volume},
+        metadata=md,
         relevance_score=float(conf),
     )
 
