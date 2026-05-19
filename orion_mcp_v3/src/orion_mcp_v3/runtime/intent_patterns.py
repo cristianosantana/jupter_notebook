@@ -22,10 +22,16 @@ COMPARATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
 TEMPORAL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bpor\s+mês\b|\bmensal\b|\bcada\s+mês\b", re.IGNORECASE),
     re.compile(
-        r"\b(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b.*\b20\d{2}\b",
+        r"\b(jan(?:eiro)?|fev(?:ereiro)?|mar(?:ço|co)?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?)\.?\b.*\b(?:20)?\d{2}\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-](?:20)?\d{2}\b", re.IGNORECASE),
+    re.compile(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", re.IGNORECASE),
+    re.compile(r"\bq[1-4]\s*(?:de\s*)?(?:20)?\d{2}\b", re.IGNORECASE),
+    re.compile(r"\b[1-4](?:º|o)?\s+trimestre\s+(?:de\s+)?(?:20)?\d{2}\b", re.IGNORECASE),
     re.compile(r"últimos?\s+\d+\s*(meses?|months?)", re.IGNORECASE),
+    re.compile(r"últimos?\s+\d+\s*(dias?|days?)", re.IGNORECASE),
+    re.compile(r"\b(m[eê]s|ano)\s+(atual|corrente)\b", re.IGNORECASE),
     re.compile(r"\búltimos?\s+meses?\b", re.IGNORECASE),
     re.compile(r"\bhoje\b", re.IGNORECASE),
     re.compile(r"\bontem\b", re.IGNORECASE),
