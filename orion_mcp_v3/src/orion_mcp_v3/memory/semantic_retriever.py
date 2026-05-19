@@ -159,7 +159,7 @@ class SemanticRetriever:
     def __init__(self, repository: ConversationStateRepository) -> None:
         self._repo = repository
 
-    def retrieve(
+    async def retrieve(
         self,
         query: str,
         session_id: str,
@@ -170,7 +170,7 @@ class SemanticRetriever:
         entities: Sequence[str] = (),
         time_window: timedelta | None = None,
     ) -> list[ContextBlock]:
-        pool = self._repo.get_recent(session_id, limit=pool_limit)
+        pool = await self._repo.get_recent(session_id, limit=pool_limit)
         if not pool or not query.strip():
             return []
 

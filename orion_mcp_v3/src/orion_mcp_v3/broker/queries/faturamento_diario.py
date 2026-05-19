@@ -53,10 +53,11 @@ FROM caixas cx
     INNER JOIN caixa_tipos ct ON ct.id = cx.caixa_tipo_id
 WHERE
     cx.deleted_at IS NULL
+    AND cx.cancelado = 0
     AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY DATE(cx.data_vencimento)
-ORDER BY data_recebimento DESC"""
+    AND cx.created_at >= %s AND cx.created_at < %s
+GROUP BY DATE(cx.created_at)
+ORDER BY created_at DESC"""
 
 ANSWERS = (
     "faturamento diário",

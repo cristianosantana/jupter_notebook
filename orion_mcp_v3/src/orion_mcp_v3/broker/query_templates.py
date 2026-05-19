@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -144,6 +145,34 @@ class QueryTemplateRegistry:
             for answer in template.answers:
                 if answer.lower() in qt_lower:
                     score += 4
+            # Perguntas por concessionária: ``faturamento_diário`` agrega por dia global (sem dimensão
+            # loja); preferir séries mensais (``visao_executiva``) ou ranking no período.
+            if "concessionária" in qt_lower or "concessionaria" in qt_lower:
+                if template.slug == "visao_executiva":
+                    score += 10
+                elif template.slug == "performance_concessionaria":
+                    score += 8
+                elif template.slug == "faturamento_diario":
+                    score -= 8
+
+            # Perguntas sobre dimensão vendedor (sem pedir concessionária) → ranking por vendedor.
+            has_vendedor_dim = re.search(r"\b(vendedor|vendedores)\b", qt_lower) is not None
+            has_concessionaria_dim = (
+                "concessionária" in qt_lower or "concessionaria" in qt_lower
+            )
+            # Série temporal por loja (mês) vs. totais no período — com contexto temporal explícito,
+            # preferir granularidade mensal ``visao_executiva``.
+            if (
+                has_concessionaria_dim
+                and cp.needs_temporal_context
+                and template.slug == "visao_executiva"
+            ):
+                score += 22
+            if has_vendedor_dim and not has_concessionaria_dim:
+                if template.slug == "performance_vendedor":
+                    score += 14
+                elif template.slug in ("visao_executiva", "faturamento_diario"):
+                    score -= 6
 
         if cp.needs_temporal_context and template.time_key:
             score += 2

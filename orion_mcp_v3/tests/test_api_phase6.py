@@ -30,36 +30,36 @@ def test_session_manager_get_same_id() -> None:
     assert s1 is s2
 
 
-def test_session_manager_record_user_message() -> None:
+async def test_session_manager_record_user_message() -> None:
     sm = SessionManager()
     s = sm.get_or_create("s1")
-    msg = sm.record_user_message(s, "olá")
+    msg = await sm.record_user_message(s, "olá")
     assert msg.content == "olá"
     assert msg.role == "user"
     assert s.turn_count == 1
     assert s.state.cognitive_phase == CognitivePhase.RETRIEVING
 
 
-def test_session_manager_record_assistant_message() -> None:
+async def test_session_manager_record_assistant_message() -> None:
     sm = SessionManager()
     s = sm.get_or_create("s1")
-    sm.record_user_message(s, "olá")
-    sm.record_assistant_message(s, "oi!")
+    await sm.record_user_message(s, "olá")
+    await sm.record_assistant_message(s, "oi!")
     assert s.state.cognitive_phase == CognitivePhase.IDLE
-    msgs = sm.get_recent_messages(s)
+    msgs = await sm.get_recent_messages(s)
     assert len(msgs) == 2
 
 
-def test_session_manager_memory_window() -> None:
+async def test_session_manager_memory_window() -> None:
     sm = SessionManager(memory_window=2)
     s = sm.get_or_create("s1")
     for i in range(5):
-        sm.record_user_message(s, f"msg {i}")
-    recent = sm.get_recent_messages(s)
+        await sm.record_user_message(s, f"msg {i}")
+    recent = await sm.get_recent_messages(s)
     assert len(recent) == 2
 
 
-def test_session_manager_list_sessions() -> None:
+async def test_session_manager_list_sessions() -> None:
     sm = SessionManager()
     sm.get_or_create("a")
     sm.get_or_create("b")
@@ -88,6 +88,43 @@ def test_health_endpoint() -> None:
     body = r.json()
     assert body["status"] == "ok"
     assert "version" in body
+
+
+def test_chat_options_endpoint() -> None:
+    client = _make_client()
+    r = client.get("/api/v1/chat/options")
+    assert r.status_code == 200
+    j = r.json()
+    assert "policies" in j and "analytical" in j["policies"]
+    assert j["max_tokens_min"] == 64
+    assert j["max_tokens_max"] == 32000
+    assert isinstance(j["max_tokens_presets"], list)
+
+
+def test_sessions_list_endpoint() -> None:
+    client = _make_client(NullLLMProvider())
+    assert client.get("/api/v1/sessions").json()["sessions"] == []
+    client.post("/api/v1/chat", json={"message": "olá lista", "conversation_id": "sess-api-list"})
+    rows = client.get("/api/v1/sessions").json()["sessions"]
+    assert any(s["conversation_id"] == "sess-api-list" for s in rows)
+    row = next(s for s in rows if s["conversation_id"] == "sess-api-list")
+    assert "messages" in row
+    assert isinstance(row["messages"], list)
+    assert len(row["messages"]) >= 2
+    assert row["messages"][0]["role"] == "user"
+    assert row["messages"][0]["content"] == "olá lista"
+    assert "message_id" in row["messages"][0]
+    assert "created_at" in row["messages"][0]
+
+
+def test_chat_first_message_with_null_conversation_id() -> None:
+    client = _make_client(NullLLMProvider(fixed_response="ok"))
+    r = client.post("/api/v1/chat", json={"message": "primeira", "conversation_id": None})
+    assert r.status_code == 200
+    cid = r.json()["meta"]["conversation_id"]
+    assert cid
+    r2 = client.post("/api/v1/chat", json={"message": "segunda", "conversation_id": cid})
+    assert r2.json()["meta"]["conversation_id"] == cid
 
 
 def test_chat_endpoint_basic() -> None:

@@ -20,6 +20,11 @@ COMPARATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 # --- Temporal ---
 TEMPORAL_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bpor\s+mês\b|\bmensal\b|\bcada\s+mês\b", re.IGNORECASE),
+    re.compile(
+        r"\b(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b.*\b20\d{2}\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"últimos?\s+\d+\s*(meses?|months?)", re.IGNORECASE),
     re.compile(r"\búltimos?\s+meses?\b", re.IGNORECASE),
     re.compile(r"\bhoje\b", re.IGNORECASE),
@@ -36,9 +41,13 @@ ANALYTICAL_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"\bforma(s)?\s+de\s+pagamento\b|\bmeio(s)?\s+de\s+pagamento\b|\btipo\s+de\s+pagamento\b|\bpayment\s+methods?\b",
         re.IGNORECASE,
     ),
-    re.compile(r"\bfaturamento\b|\brevenue\b|\breceita\b", re.IGNORECASE),
+    re.compile(
+        r"\bfaturamento\b|\bfaturou\b|\bfaturam\b|\bfaturamos\b|\bfaturado\b|\bfaturação\b|\brevenue\b|\breceita\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\btop\s+\d*\s*clientes?\b|\bmaiores?\s+clientes?\b", re.IGNORECASE),
     re.compile(r"\bvendas?\b|\bsales\b", re.IGNORECASE),
+    re.compile(r"\bvolume\s+de\s+vendas\b", re.IGNORECASE),
     re.compile(r"\bagrega|\bagregar\b|\bsum\b|\btotal\b", re.IGNORECASE),
     re.compile(r"\branking\b|\btrend\b|\btendência\b", re.IGNORECASE),
 )

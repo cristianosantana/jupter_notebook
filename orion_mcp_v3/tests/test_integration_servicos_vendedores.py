@@ -469,18 +469,18 @@ def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, A
 _MEMORY_SESSION_ID = "integration-servicos-vendedores"
 
 
-def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> list[ContextBlock]:
+async def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> list[ContextBlock]:
     """Bloco 8: EpisodicRetriever + SemanticRetriever + MemoryComposer."""
     repo = InMemoryConversationStateRepository()
-    repo.append_message(_MEMORY_SESSION_ID, "user", "Quero ver o desempenho dos vendedores.")
-    repo.append_message(_MEMORY_SESSION_ID, "assistant", "Posso cruzar vendedores com serviços por valor de venda.")
-    repo.append_message(_MEMORY_SESSION_ID, "user", utterance)
+    await repo.append_message(_MEMORY_SESSION_ID, "user", "Quero ver o desempenho dos vendedores.")
+    await repo.append_message(_MEMORY_SESSION_ID, "assistant", "Posso cruzar vendedores com serviços por valor de venda.")
+    await repo.append_message(_MEMORY_SESSION_ID, "user", utterance)
 
     episodic = EpisodicRetriever(repo)
     semantic = SemanticRetriever(repo)
     composer = MemoryComposer(repo)
 
-    ep_blocks = episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
+    ep_blocks = await episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
     logger.step(
         "memory_episodic_retrieve",
         input_data={"session_id": _MEMORY_SESSION_ID, "limit": 10},
@@ -490,7 +490,7 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
         },
     )
 
-    sem_blocks = semantic.retrieve(utterance, _MEMORY_SESSION_ID, pool_limit=20, top_k=4)
+    sem_blocks = await semantic.retrieve(utterance, _MEMORY_SESSION_ID, pool_limit=20, top_k=4)
     logger.step(
         "memory_semantic_retrieve",
         input_data={"session_id": _MEMORY_SESSION_ID, "query_preview": utterance[:96]},
@@ -500,7 +500,7 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
         },
     )
 
-    merged = composer.compose_blocks(
+    merged = await composer.compose_blocks(
         _MEMORY_SESSION_ID,
         max_tokens=4096,
         recent_limit=10,
@@ -586,7 +586,7 @@ def _apply_cognitive_orchestrator_phase12(
 # Teste principal
 # ---------------------------------------------------------------------------
 
-def test_integration_servicos_mais_vendidos_por_vendedores() -> None:
+async def test_integration_servicos_mais_vendidos_por_vendedores() -> None:
     """Pipeline completo: serviços mais vendidos pelos melhores vendedores (valor_venda_real)."""
     utterance = (
         "Ranking de serviços com mais vendas pelos melhores vendedores "
@@ -771,13 +771,13 @@ def test_integration_servicos_mais_vendidos_por_vendedores() -> None:
     _apply_semantic_query_compiler_phase13(log, semantic_with_vendedores, variant="com_hints_vendedores")
 
     # --- MySQL real (opcional) ---
-    mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
+    mysql_rows = await _mysql_real_execution(log, semantic)
     evidence = _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
     digest = _apply_map_reduce_phase7(log, mysql_rows)
 
     # --- Memória ---
-    memory_blocks = _apply_memory_pipeline_phase8(log, utterance)
+    memory_blocks = await _apply_memory_pipeline_phase8(log, utterance)
 
     # --- §12 CognitiveOrchestrator ---
     orch_result = _apply_cognitive_orchestrator_phase12(

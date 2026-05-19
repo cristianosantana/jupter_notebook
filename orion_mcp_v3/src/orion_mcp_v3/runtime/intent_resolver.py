@@ -6,6 +6,8 @@ Usa :mod:`intent_patterns` e devolve :class:`~orion_mcp_v3.contracts.cognitive_p
 
 from __future__ import annotations
 
+import re
+
 from orion_mcp_v3.contracts.cognitive_plan import (
     AttentionProfile,
     CognitivePlan,
@@ -58,7 +60,11 @@ class IntentResolver:
         needs_memory = rec
         needs_baseline = cmp_ and ana
         needs_trend_analysis = ana and tmp
-        needs_entity_resolution = ana and ("cliente" in blob.lower() or "customer" in blob.lower())
+        needs_entity_resolution = ana and (
+            "cliente" in blob.lower()
+            or "customer" in blob.lower()
+            or re.search(r"\b(vendedor|vendedores)\b", blob.lower()) is not None
+        )
 
         intent_type = self._infer_intent_type(
             ana=ana,
@@ -80,6 +86,7 @@ class IntentResolver:
         )
 
         metrics = self._extract_metric_hints(blob)
+        entities = self._extract_entity_hints(blob)
 
         return CognitivePlan(
             intent_type=intent_type,
@@ -91,7 +98,7 @@ class IntentResolver:
             needs_trend_analysis=needs_trend_analysis,
             needs_entity_resolution=needs_entity_resolution,
             confidence=confidence,
-            entities=(),
+            entities=entities,
             metrics=metrics,
             time_scope=self._time_scope_hint(blob) if tmp else None,
             retrieval_strategy=retrieval_strategy,
@@ -196,10 +203,33 @@ class IntentResolver:
         lower = blob.lower()
         for label, needle in (
             ("revenue", "faturamento"),
+            ("revenue", "faturou"),
+            ("revenue", "faturam"),
+            ("revenue", "faturado"),
+            ("revenue", "faturação"),
             ("revenue", "revenue"),
             ("ticket", "ticket"),
-            ("sales", "os"),
         ):
             if needle in lower and label not in out:
                 out.append(label)
+        # Volume / vendedor: «sales» expande para sinónimos usados no match de templates.
+        if (
+            re.search(r"\bvendas?\b", lower) is not None
+            or re.search(r"\b(vendedor|vendedores)\b", lower) is not None
+            or "volume de vendas" in lower
+        ):
+            if "sales" not in out:
+                out.append("sales")
+        return tuple(out)
+
+    @staticmethod
+    def _extract_entity_hints(blob: str) -> tuple[str, ...]:
+        lower = blob.lower()
+        out: list[str] = []
+        if "concessionária" in lower or "concessionaria" in lower:
+            out.append("concessionária")
+        if re.search(r"\b(vendedor|vendedores)\b", lower) is not None:
+            out.append("vendedor")
+        if "pagamento" in lower:
+            out.append("pagamento")
         return tuple(out)

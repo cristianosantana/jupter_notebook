@@ -17,16 +17,18 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from orion_mcp_v3.api.models import (
+    ChatOptionsResponse,
     ChatRequest,
     ChatResponse,
     ChatResponseMeta,
     ErrorResponse,
+    SessionListItem,
+    SessionListResponse,
     UsageInfo,
 )
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
-from orion_mcp_v3.memory.semantic_retriever import SemanticRetriever
 from orion_mcp_v3.protocols.llm import LLMProvider, NullLLMProvider
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrator
@@ -76,6 +78,32 @@ def create_chat_router(
     # por um novo {}, quebrando o partilhamento com o lifespan (executor nunca visto).
     _state: dict = analytics_state if analytics_state is not None else {}
 
+    @router.get("/sessions", response_model=SessionListResponse)
+    async def sessions_list() -> SessionListResponse:
+        rows = await sm.list_session_summaries()
+        return SessionListResponse(sessions=[SessionListItem(**r) for r in rows])
+
+    @router.get("/chat/options", response_model=ChatOptionsResponse)
+    async def chat_options() -> ChatOptionsResponse:
+        """Políticas (:class:`~AttentionPolicy`) e limites alinhados a :class:`~ChatRequest`."""
+        settings = get_settings()
+        tmin, tmax = 64, 32000
+        raw_presets = (2048, 4096, 8192, 16384, 20000, 32000)
+        presets = sorted({p for p in raw_presets if tmin <= p <= tmax})
+        def_mx = min(max(int(settings.max_tokens), tmin), tmax)
+        policies = [p.value for p in AttentionPolicy]
+        dp = (settings.default_policy or "balanced").strip().lower()
+        if dp not in policies:
+            dp = AttentionPolicy.BALANCED.value
+        return ChatOptionsResponse(
+            policies=policies,
+            max_tokens_min=tmin,
+            max_tokens_max=tmax,
+            max_tokens_presets=presets,
+            default_max_tokens=def_mx,
+            default_policy=dp,
+        )
+
     @router.post(
         "/chat",
         response_model=ChatResponse,
@@ -83,10 +111,13 @@ def create_chat_router(
     )
     async def chat(req: ChatRequest) -> ChatResponse | StreamingResponse:
         t0 = time.monotonic()
-        session = sm.get_or_create(req.conversation_id)
+        conv_id = req.conversation_id
+        if conv_id is not None and isinstance(conv_id, str) and not conv_id.strip():
+            conv_id = None
+        session = sm.get_or_create(conv_id)
         policy = _resolve_policy(req.policy)
 
-        sm.record_user_message(session, req.message)
+        await sm.record_user_message(session, req.message)
         sm.update_phase(session, CognitivePhase.RETRIEVING)
 
         trace_pipe = get_settings().analytics_pipeline_trace
@@ -124,7 +155,7 @@ def create_chat_router(
             )
 
         epi = EpisodicRetriever(sm.repository)
-        memory_blocks = epi.retrieve(
+        memory_blocks = await epi.retrieve(
             session.conversation_id,
             limit=sm.memory_window,
             query=req.message,
@@ -241,7 +272,7 @@ def create_chat_router(
             )
         elapsed = (time.monotonic() - t0) * 1000.0
 
-        sm.record_assistant_message(session, narration.narration)
+        await sm.record_assistant_message(session, narration.narration)
         sm.update_phase(session, CognitivePhase.IDLE)
 
         usage = narration.llm_response.meta.usage
@@ -280,7 +311,7 @@ def create_chat_router(
                     yield f"data: {payload}\n\n"
             finally:
                 text = "".join(full_text)
-                sm.record_assistant_message(session, text)
+                await sm.record_assistant_message(session, text)
                 sm.update_phase(session, CognitivePhase.IDLE)
                 if trace_pipe:
                     log_pipeline_event(

@@ -390,21 +390,21 @@ def _apply_map_reduce_phase7(logger: JsonlPipelineLogger, rows: list[dict[str, A
 _MEMORY_SESSION_ID = "integration-orion-memory"
 
 
-def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> list[ContextBlock]:
+async def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -> list[ContextBlock]:
     """
     Bloco 8 (ORDEM_IMPLEMENTAÇÃO): EpisodicRetriever + SemanticRetriever + MemoryComposer.compose_blocks
     — saída formal :class:`~ContextBlock`, não texto de prompt cru.
     """
     repo = InMemoryConversationStateRepository()
-    repo.append_message(_MEMORY_SESSION_ID, "user", "Preciso comparar períodos no relatório.")
-    repo.append_message(_MEMORY_SESSION_ID, "assistant", "Posso usar analytics e ranking por cliente.")
-    repo.append_message(_MEMORY_SESSION_ID, "user", utterance)
+    await repo.append_message(_MEMORY_SESSION_ID, "user", "Preciso comparar períodos no relatório.")
+    await repo.append_message(_MEMORY_SESSION_ID, "assistant", "Posso usar analytics e ranking por cliente.")
+    await repo.append_message(_MEMORY_SESSION_ID, "user", utterance)
 
     episodic = EpisodicRetriever(repo)
     semantic = SemanticRetriever(repo)
     composer = MemoryComposer(repo)
 
-    ep_blocks = episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
+    ep_blocks = await episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
     logger.step(
         "memory_episodic_retrieve",
         input_data={"session_id": _MEMORY_SESSION_ID, "limit": 10},
@@ -414,7 +414,7 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
         },
     )
 
-    sem_blocks = semantic.retrieve(utterance, _MEMORY_SESSION_ID, pool_limit=20, top_k=4)
+    sem_blocks = await semantic.retrieve(utterance, _MEMORY_SESSION_ID, pool_limit=20, top_k=4)
     logger.step(
         "memory_semantic_retrieve",
         input_data={"session_id": _MEMORY_SESSION_ID, "query_preview": utterance[:96]},
@@ -424,7 +424,7 @@ def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: str) -
         },
     )
 
-    merged = composer.compose_blocks(
+    merged = await composer.compose_blocks(
         _MEMORY_SESSION_ID,
         max_tokens=4096,
         recent_limit=10,
@@ -502,7 +502,7 @@ def _apply_cognitive_orchestrator_phase12(
     return result
 
 
-def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
+async def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
     utterance = "mostre o top 5 clientes por faturamento nos últimos 3 meses"
 
     log_path = _project_logs_dir() / f"integration_pipeline_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.jsonl"
@@ -661,11 +661,11 @@ def test_integration_pipeline_until_planner_accepts_cognitive_plan() -> None:
 
     _apply_semantic_query_compiler_phase13(log, semantic_nl_free, variant="sem_texto_nl")
 
-    mysql_rows = asyncio.run(_mysql_real_execution(log, semantic))
+    mysql_rows = await _mysql_real_execution(log, semantic)
     evidence = _apply_evidence_builder(log, mysql_rows)
     _apply_analytical_reduction(log, mysql_rows)
     digest = _apply_map_reduce_phase7(log, mysql_rows)
-    memory_blocks = _apply_memory_pipeline_phase8(log, utterance)
+    memory_blocks = await _apply_memory_pipeline_phase8(log, utterance)
     orch_result = _apply_cognitive_orchestrator_phase12(
         log,
         utterance,

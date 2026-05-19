@@ -99,9 +99,36 @@ def _build_lifespan(
             except Exception:
                 _LOG.exception("Failed to create MySQL pool — analytics disabled")
 
+        if s.postgres_enabled and state.get("conversation_repository") is None:
+            try:
+                from orion_mcp_v3.connection_hub.pools import create_postgres_pool
+                from orion_mcp_v3.memory.repositories.postgres_conversation_state import (
+                    PostgresConversationStateRepository,
+                )
+
+                pg_pool = await create_postgres_pool(
+                    s.postgres_url,
+                    min_size=s.postgres_pool_min,
+                    max_size=s.postgres_pool_max,
+                )
+                if pg_pool is not None:
+                    state["postgres_pool"] = pg_pool
+                    state["conversation_repository"] = PostgresConversationStateRepository(pg_pool)
+                    _LOG.info("PostgreSQL conversation store enabled (%s)", s.postgres_url.split("@")[-1])
+            except Exception:
+                _LOG.exception("Failed to create PostgreSQL pool — conversation persistence in-memory only")
+
         yield
 
         shutdown_pipeline_file_logging()
+
+        state.pop("conversation_repository", None)
+        pg_pool = state.pop("postgres_pool", None)
+        if pg_pool is not None:
+            from orion_mcp_v3.connection_hub.pools import close_postgres_pool
+
+            await close_postgres_pool(pg_pool)
+            _LOG.info("PostgreSQL pool closed")
 
         pool = state.get("pool")
         if pool is not None:
@@ -151,11 +178,16 @@ def create_app(
 
     provider = llm_provider or _build_provider(s)
     default_policy = _resolve_policy(s.default_policy)
-    sm = session_manager or SessionManager(
-        default_token_budget=s.max_tokens,
-        default_policy=default_policy,
-        memory_window=s.memory_window,
-    )
+    if session_manager is None:
+        sm = SessionManager(
+            default_token_budget=s.max_tokens,
+            default_policy=default_policy,
+            memory_window=s.memory_window,
+            session_list_max_messages=s.session_list_max_messages,
+            shared_conversation_repository_slot=state,
+        )
+    else:
+        sm = session_manager
     narrator = CognitiveNarrator(provider)
 
     chat_router = create_chat_router(

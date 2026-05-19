@@ -45,6 +45,8 @@ GROUP BY fu.nome
 ORDER BY valor_total DESC"""
 
 ANSWERS = (
+    "volume de vendas",
+    "maior volume de vendas",
     "faturamento por vendedor",
     "performance de vendedor",
     "ranking de vendedores",

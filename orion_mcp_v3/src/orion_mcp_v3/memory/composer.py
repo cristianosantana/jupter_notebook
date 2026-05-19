@@ -123,7 +123,7 @@ class MemoryComposer:
         self._compress = enable_compression
         self._compress_ratio = compression_ratio
 
-    def build_layers(
+    async def build_layers(
         self,
         session_id: str,
         *,
@@ -163,7 +163,7 @@ class MemoryComposer:
 
         # SEMANTIC_MEMORY — hits semânticos
         if semantic_query and semantic_retriever is not None:
-            sem_blocks = semantic_retriever.retrieve(
+            sem_blocks = await semantic_retriever.retrieve(
                 semantic_query.strip(),
                 session_id,
                 intent_type=intent_type,
@@ -178,7 +178,7 @@ class MemoryComposer:
 
         # EPISODIC_MEMORY — turnos recentes
         if episodic_retriever is not None:
-            epi_blocks = episodic_retriever.retrieve(
+            epi_blocks = await episodic_retriever.retrieve(
                 session_id,
                 limit=recent_limit,
                 query=semantic_query,
@@ -190,7 +190,7 @@ class MemoryComposer:
                     _tag_layer(b, MemoryLayer.EPISODIC_MEMORY)
                 )
         else:
-            recent = self._repo.get_recent(session_id, limit=recent_limit)
+            recent = await self._repo.get_recent(session_id, limit=recent_limit)
             for b in messages_to_context_blocks(recent):
                 layers[MemoryLayer.EPISODIC_MEMORY.value].append(
                     _tag_layer(b, MemoryLayer.EPISODIC_MEMORY)
@@ -225,7 +225,7 @@ class MemoryComposer:
             compressed_count=compressed_count,
         )
 
-    def compose_blocks(
+    async def compose_blocks(
         self,
         session_id: str,
         *,
@@ -239,7 +239,7 @@ class MemoryComposer:
         intent_type: str | None = None,
         entities: Sequence[str] = (),
     ) -> list[ContextBlock]:
-        layered = self.build_layers(
+        layered = await self.build_layers(
             session_id,
             recent_limit=recent_limit,
             prefix_blocks=prefix_blocks,
@@ -252,7 +252,7 @@ class MemoryComposer:
         fitted = allocate(list(layered.all_blocks), max_tokens, policy=policy).fitted_blocks
         return list(fitted)
 
-    def compose(
+    async def compose(
         self,
         session_id: str,
         *,
@@ -266,7 +266,7 @@ class MemoryComposer:
         intent_type: str | None = None,
         entities: Sequence[str] = (),
     ) -> str:
-        fitted = self.compose_blocks(
+        fitted = await self.compose_blocks(
             session_id,
             max_tokens=max_tokens,
             recent_limit=recent_limit,

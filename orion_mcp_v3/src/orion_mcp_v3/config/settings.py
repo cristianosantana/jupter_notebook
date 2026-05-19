@@ -62,6 +62,12 @@ class OrionSettings(BaseSettings):
     default_limit: int = Field(500, ge=1, description="LIMIT default em queries SQL.")
     default_policy: str = Field("balanced", description="AttentionPolicy default.")
     memory_window: int = Field(60, ge=1, description="Mensagens recentes na memory window.")
+    session_list_max_messages: int = Field(
+        50_000,
+        ge=1,
+        le=1_000_000,
+        description="Máximo de mensagens por sessão em GET /api/v1/sessions (histórico listado).",
+    )
 
     # ── Timeouts (segundos) ──────────────────────────────────────────
     mysql_timeout: float = Field(30.0, ge=1.0)

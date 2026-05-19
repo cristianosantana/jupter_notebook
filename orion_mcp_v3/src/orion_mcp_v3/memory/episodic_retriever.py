@@ -159,7 +159,7 @@ class EpisodicRetriever:
     def __init__(self, repository: ConversationStateRepository) -> None:
         self._repo = repository
 
-    def retrieve(
+    async def retrieve(
         self,
         session_id: str,
         *,
@@ -170,7 +170,7 @@ class EpisodicRetriever:
         pool_limit: int | None = None,
     ) -> list[ContextBlock]:
         pool_sz = pool_limit or max(limit * 3, 120)
-        msgs = self._repo.get_recent(session_id, limit=pool_sz)
+        msgs = await self._repo.get_recent(session_id, limit=pool_sz)
         if not msgs:
             return []
 
