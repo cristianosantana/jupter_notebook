@@ -7,6 +7,7 @@ anti-alucinação, chama o :class:`~LLMProvider` e devolve :class:`NarrationResu
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -20,6 +21,8 @@ from orion_mcp_v3.protocols.llm import (
     NullLLMProvider,
 )
 from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrationResult
+
+_LOG = logging.getLogger(__name__)
 
 
 # ── Salvaguardas anti-alucinação ─────────────────────────────────────
@@ -66,7 +69,7 @@ def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
                 )
             )
         if fk == "evidence":
-            lines.append(_EVIDENCE_TEMPLATE.format(summary=b.text[:600]))
+            lines.append(_EVIDENCE_TEMPLATE.format(summary=b.text))
     return "\n".join(lines) if lines else ""
 
 
@@ -141,6 +144,11 @@ class CognitiveNarrator:
         )
 
         llm_resp = await self._provider.chat(messages, **llm_kwargs)
+        _LOG.info(
+            "narrator: provider=%s reply_chars=%d",
+            type(self._provider).__name__,
+            len(llm_resp.text or ""),
+        )
 
         safeguards = [
             "anti_hallucination_preamble",
@@ -169,5 +177,14 @@ class CognitiveNarrator:
             system_preamble=self._preamble,
             extra_instructions=self._extra,
         )
-        async for chunk in self._provider.stream(messages, **llm_kwargs):
-            yield chunk
+        reply_chars = 0
+        try:
+            async for chunk in self._provider.stream(messages, **llm_kwargs):
+                reply_chars += len(chunk.delta or "")
+                yield chunk
+        finally:
+            _LOG.info(
+                "narrator_stream: provider=%s reply_chars=%d",
+                type(self._provider).__name__,
+                reply_chars,
+            )

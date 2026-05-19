@@ -61,3 +61,34 @@ pip install -e ".[dev]"
 ```bash
 pytest tests/ -v
 ```
+
+
+### O Analista
+
+"Use as skills:@.cursor/skills/assistente-desenvolvimento  e Atue como um Arquiteto de Software Principal e Analista de Sistemas Sênior. Sua missão é analisar o projeto fornecido com o objetivo de propor melhorias estruturais, de processo e de performance.
+
+Gere um documento técnico e detalhado estruturado estritamente nos seguintes tópicos:
+
+1. Arquitetura e Estrutura do Projeto
+Descrição da organização dos componentes/módulos e o papel de cada um.
+
+Acoplamento e dependências entre as partes (identifique se há dependências circulares ou nós complexos).
+
+2. Mapeamento Ponta a Ponta do Processo (Caminhos e Fluxos)
+Explique o ciclo de vida do processo do início ao fim, passo a passo.
+
+Mapeie todos os caminhos possíveis, incluindo o fluxo principal (happy path), caminhos alternativos, fluxos de exceção e tratamentos de erro.
+
+3. Diagnóstico de Problemas e Gargalos
+Pontos cegos no código ou na lógica de negócios.
+
+Gargalos de performance, concorrência, memória ou processamento.
+
+Dívidas técnicas evidentes.
+
+4. Plano de Ação e Melhorias
+Sugestões práticas de refatoração ou redesenho de fluxo para tornar o projeto mais resiliente, escalável e fácil de manter.
+
+5. Utilize diagramas de sequência em texto (estilo Mermaid) para ilustrar o fluxo dos dados e a interação entre os componentes.
+
+Adote um tom analítico, técnico, direto e extremamente detalhado."

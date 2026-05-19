@@ -57,7 +57,7 @@ WHERE
     AND ost.ativo = 1
     AND cx.created_at >= %s AND cx.created_at < %s
 GROUP BY DATE(cx.created_at)
-ORDER BY created_at DESC"""
+ORDER BY cx.created_at DESC"""
 
 ANSWERS = (
     "faturamento diário",

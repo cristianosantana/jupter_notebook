@@ -113,6 +113,30 @@ def test_resolve_params_with_overrides() -> None:
     assert params["date_to"] == "2026-07-01"
 
 
+def test_resolve_params_uses_explicit_month_range_from_intent_resolver() -> None:
+    from orion_mcp_v3.runtime.intent_resolver import IntentResolver
+
+    tpl = ANALYTICS_TEMPLATES.get("formas_pagamento")
+    assert tpl is not None
+    cp = IntentResolver().resolve(
+        "Qual forma de pagamento domina entre janeiro e abril de 2026?",
+    )
+    params = ANALYTICS_TEMPLATES.resolve_params(tpl, cp)
+    assert params["date_from"] == "2026-01-01"
+    assert params["date_to"] == "2026-04-30"
+
+
+def test_resolve_params_uses_explicit_numeric_range_from_intent_resolver() -> None:
+    from orion_mcp_v3.runtime.intent_resolver import IntentResolver
+
+    tpl = ANALYTICS_TEMPLATES.get("faturamento_diario")
+    assert tpl is not None
+    cp = IntentResolver().resolve("Mostre o faturamento de 01/01/2026 a 30/04/2026")
+    params = ANALYTICS_TEMPLATES.resolve_params(tpl, cp)
+    assert params["date_from"] == "2026-01-01"
+    assert params["date_to"] == "2026-04-30"
+
+
 # ---------------------------------------------------------------------------
 # execute_template
 # ---------------------------------------------------------------------------

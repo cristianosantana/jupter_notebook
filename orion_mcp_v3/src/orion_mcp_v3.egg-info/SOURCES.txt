@@ -70,6 +70,7 @@ src/orion_mcp_v3/protocols/summarizer.py
 src/orion_mcp_v3/providers/__init__.py
 src/orion_mcp_v3/providers/openai_provider.py
 src/orion_mcp_v3/runtime/__init__.py
+src/orion_mcp_v3/runtime/analytical_system_prompt.py
 src/orion_mcp_v3/runtime/analytics_pipeline_trace.py
 src/orion_mcp_v3/runtime/attention_policy.py
 src/orion_mcp_v3/runtime/budget_allocator.py
@@ -90,6 +91,7 @@ src/orion_mcp_v3/runtime/scheduler.py
 src/orion_mcp_v3/runtime/session_manager.py
 src/orion_mcp_v3/runtime/token_estimator.py
 tests/test_analytical_context_builder.py
+tests/test_analytical_system_prompt.py
 tests/test_analytics_executor.py
 tests/test_analytics_pipeline_trace.py
 tests/test_api_phase6.py
