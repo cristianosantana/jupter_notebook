@@ -64,10 +64,10 @@ def _split_sql_statements(sql_text: str) -> list[str]:
 
 def _dsn() -> str:
     load_dotenv(_project_root() / ".env")
-    url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
+    url = os.environ.get("ORION_POSTGRES_URL") or os.environ.get("ORION_DATABASE_URL")
     if not url or not url.strip():
         print(
-            "Defina POSTGRES_URL ou DATABASE_URL no ambiente ou em orion_mcp_v3/.env",
+            "Defina ORION_POSTGRES_URL ou ORION_DATABASE_URL no ambiente ou em orion_mcp_v3/.env",
             file=sys.stderr,
         )
         sys.exit(1)

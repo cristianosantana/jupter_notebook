@@ -29,6 +29,10 @@ from orion_mcp_v3.api.models import (
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
+from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
+from orion_mcp_v3.memory.retrieval_pipeline import MemoryRetrievalPipeline
+from orion_mcp_v3.memory.semantic_retriever import SemanticRetriever
+from orion_mcp_v3.memory.vector_retriever import VectorRetriever
 from orion_mcp_v3.protocols.llm import LLMProvider, NullLLMProvider
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrator
@@ -154,11 +158,22 @@ def create_chat_router(
                 dados={"memory_window": sm.memory_window, "intent_type": cognitive_plan.intent_type.value},
             )
 
+        memory_pipeline = MemoryRetrievalPipeline(sm.repository)
         epi = EpisodicRetriever(sm.repository)
-        memory_blocks = await epi.retrieve(
+        sem = SemanticRetriever(sm.repository)
+        vec_ret: VectorRetriever | None = None
+        embed_store = _state.get("chat_turn_embedding_store")
+        settings = get_settings()
+        if embed_store is not None and isinstance(embed_store, ChatTurnEmbeddingStore):
+            vec_ret = VectorRetriever(embed_store)
+        memory_blocks = await memory_pipeline.collect_blocks(
             session.conversation_id,
-            limit=sm.memory_window,
-            query=req.message,
+            recent_limit=sm.memory_window,
+            semantic_query=req.message,
+            semantic_retriever=sem if vec_ret is None else None,
+            vector_retriever=vec_ret,
+            vector_top_k=settings.embedding_top_k,
+            episodic_retriever=epi,
             intent_type=cognitive_plan.intent_type.value,
             entities=cognitive_plan.entities,
         )

@@ -8,6 +8,7 @@ Mantém ``conversation_id``, ``memory_window`` (mensagens recentes como blocos),
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,6 +21,8 @@ from orion_mcp_v3.memory.repositories.conversation_state import (
 )
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.context_state import CognitivePhase, ContextState
+
+_LOG = logging.getLogger(__name__)
 
 
 def _message_to_stored_dict(msg: ConversationMessage) -> dict[str, Any]:
@@ -54,6 +57,7 @@ class SessionManager:
     """
 
     _CONVERSATION_REPO_KEY = "conversation_repository"
+    _EMBEDDING_STORE_KEY = "chat_turn_embedding_store"
 
     def __init__(
         self,
@@ -73,6 +77,7 @@ class SessionManager:
         self._default_policy = default_policy
         self._memory_window = memory_window
         self._session_list_max_messages = session_list_max_messages
+        self._embedding_store_warned = False
 
     def _session_list_limit(self) -> int:
         if self._session_list_max_messages is not None:
@@ -111,17 +116,44 @@ class SessionManager:
         self._sessions[cid] = session
         return session
 
+    def _embedding_store(self) -> Any | None:
+        if self._shared_slot is None:
+            return None
+        return self._shared_slot.get(self._EMBEDDING_STORE_KEY)
+
+    async def _index_turn_embedding(self, session_id: str, msg: ConversationMessage) -> None:
+        store = self._embedding_store()
+        if store is None:
+            settings = get_settings()
+            if settings.embedding_active and not self._embedding_store_warned:
+                self._embedding_store_warned = True
+                _LOG.warning(
+                    "ORION_EMBEDDING_ENABLED=true mas chat_turn_embedding_store não está "
+                    "no lifespan (Postgres/pgvector/migrações ou falha no arranque)"
+                )
+            return
+        try:
+            await store.index_turn(session_id, msg)
+        except Exception:
+            _LOG.exception(
+                "Falha ao indexar embedding (session=%s message_id=%s)",
+                session_id,
+                msg.message_id,
+            )
+
     async def record_user_message(self, session: Session, content: str) -> ConversationMessage:
         """Grava mensagem do utilizador e incrementa turno."""
         msg = await self._active_repo().append_message(session.conversation_id, "user", content)
         session.turn_count += 1
         session.state.cognitive_phase = CognitivePhase.RETRIEVING
+        await self._index_turn_embedding(session.conversation_id, msg)
         return msg
 
     async def record_assistant_message(self, session: Session, content: str) -> ConversationMessage:
         """Grava resposta do assistente."""
         msg = await self._active_repo().append_message(session.conversation_id, "assistant", content)
         session.state.cognitive_phase = CognitivePhase.IDLE
+        await self._index_turn_embedding(session.conversation_id, msg)
         return msg
 
     async def get_recent_messages(self, session: Session) -> list[ConversationMessage]:

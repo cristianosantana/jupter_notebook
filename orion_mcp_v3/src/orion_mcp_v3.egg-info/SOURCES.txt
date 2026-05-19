@@ -49,6 +49,7 @@ src/orion_mcp_v3/contracts/context_block.py
 src/orion_mcp_v3/contracts/digest.py
 src/orion_mcp_v3/contracts/evidence_block.py
 src/orion_mcp_v3/contracts/evidence_series_spec.py
+src/orion_mcp_v3/contracts/provenance.py
 src/orion_mcp_v3/contracts/query_plan.py
 src/orion_mcp_v3/contracts/semantic_retrieval_plan.py
 src/orion_mcp_v3/infra/__init__.py
@@ -57,6 +58,7 @@ src/orion_mcp_v3/memory/__init__.py
 src/orion_mcp_v3/memory/blocks.py
 src/orion_mcp_v3/memory/composer.py
 src/orion_mcp_v3/memory/episodic_retriever.py
+src/orion_mcp_v3/memory/retrieval_pipeline.py
 src/orion_mcp_v3/memory/semantic_retriever.py
 src/orion_mcp_v3/memory/summary_cache.py
 src/orion_mcp_v3/memory/repositories/__init__.py

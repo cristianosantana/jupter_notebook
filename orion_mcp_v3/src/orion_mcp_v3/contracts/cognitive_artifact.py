@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from orion_mcp_v3.runtime.provenance import CoverageInfo, ProvenanceAnchor
+from orion_mcp_v3.contracts.provenance import CoverageInfo, ProvenanceAnchor
 
 
 def heuristic_confidence_from_volume(row_count: int, *, baseline: float = 12.0) -> float:

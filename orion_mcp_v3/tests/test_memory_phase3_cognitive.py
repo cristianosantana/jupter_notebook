@@ -13,6 +13,7 @@ from orion_mcp_v3.memory import (
     LayeredMemoryResult,
     MemoryComposer,
     MemoryLayer,
+    MemoryRetrievalPipeline,
     SemanticHit,
     SemanticRetriever,
 )
@@ -148,8 +149,7 @@ def test_memory_layer_enum_values() -> None:
 async def test_composer_build_layers_produces_all_layer_keys() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "teste")
-    c = MemoryComposer(repo)
-    result = await c.build_layers("s")
+    result = await MemoryRetrievalPipeline(repo).collect_layers("s")
     assert isinstance(result, LayeredMemoryResult)
     for layer in MemoryLayer:
         assert layer.value in result.layers
@@ -158,8 +158,7 @@ async def test_composer_build_layers_produces_all_layer_keys() -> None:
 async def test_composer_build_layers_tags_metadata() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "teste")
-    c = MemoryComposer(repo)
-    result = await c.build_layers("s")
+    result = await MemoryRetrievalPipeline(repo).collect_layers("s")
     for b in result.all_blocks:
         assert "memory_layer" in b.metadata
 
@@ -168,8 +167,7 @@ async def test_composer_essence_layer() -> None:
     repo = InMemoryConversationStateRepository()
     cache = InMemorySummaryCache()
     cache.set_summary("s", "Essência da conversa", ttl_seconds=3600)
-    c = MemoryComposer(repo, summary_cache=cache)
-    result = await c.build_layers("s")
+    result = await MemoryRetrievalPipeline(repo, summary_cache=cache).collect_layers("s")
     essence = result.layers[MemoryLayer.ESSENCE_MEMORY.value]
     assert len(essence) == 1
     assert "Essência" in essence[0].text
@@ -180,8 +178,9 @@ async def test_composer_semantic_layer_with_retriever() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "faturamento vendas total")
     sem = SemanticRetriever(repo)
-    c = MemoryComposer(repo)
-    result = await c.build_layers("s", semantic_query="faturamento", semantic_retriever=sem)
+    result = await MemoryRetrievalPipeline(repo).collect_layers(
+        "s", semantic_query="faturamento", semantic_retriever=sem
+    )
     sem_blocks = result.layers[MemoryLayer.SEMANTIC_MEMORY.value]
     assert len(sem_blocks) >= 1
     assert sem_blocks[0].metadata.get("memory_layer") == "semantic_memory"
@@ -191,8 +190,7 @@ async def test_composer_episodic_layer_with_retriever() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "hello world")
     epi = EpisodicRetriever(repo)
-    c = MemoryComposer(repo)
-    result = await c.build_layers("s", episodic_retriever=epi)
+    result = await MemoryRetrievalPipeline(repo).collect_layers("s", episodic_retriever=epi)
     epi_blocks = result.layers[MemoryLayer.EPISODIC_MEMORY.value]
     assert len(epi_blocks) >= 1
     assert epi_blocks[0].metadata.get("memory_layer") == "episodic_memory"
@@ -203,8 +201,7 @@ async def test_composer_dedupe_internal() -> None:
     await repo.append_message("s", "user", "duplicada")
     epi = EpisodicRetriever(repo)
     sem = SemanticRetriever(repo)
-    c = MemoryComposer(repo)
-    result = await c.build_layers(
+    result = await MemoryRetrievalPipeline(repo).collect_layers(
         "s",
         semantic_query="duplicada",
         semantic_retriever=sem,
@@ -219,8 +216,9 @@ async def test_composer_compression() -> None:
     repo = InMemoryConversationStateRepository()
     long_text = "palavra " * 200
     await repo.append_message("s", "user", long_text)
-    c = MemoryComposer(repo, enable_compression=True, compression_ratio=0.5)
-    result = await c.build_layers("s")
+    result = await MemoryRetrievalPipeline(
+        repo, enable_compression=True, compression_ratio=0.5
+    ).collect_layers("s")
     compressed = [b for b in result.all_blocks if b.metadata.get("compressed")]
     assert len(compressed) >= 1
     assert result.compressed_count >= 1
@@ -231,8 +229,7 @@ async def test_composer_no_compression_when_disabled() -> None:
     repo = InMemoryConversationStateRepository()
     long_text = "palavra " * 200
     await repo.append_message("s", "user", long_text)
-    c = MemoryComposer(repo, enable_compression=False)
-    result = await c.build_layers("s")
+    result = await MemoryRetrievalPipeline(repo, enable_compression=False).collect_layers("s")
     assert result.compressed_count == 0
 
 
@@ -240,8 +237,8 @@ async def test_composer_compose_blocks_backwards_compatible() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "preciso dados")
     await repo.append_message("s", "assistant", "aqui vai")
-    c = MemoryComposer(repo)
-    blocks = await c.compose_blocks("s", max_tokens=8000)
+    blocks = await MemoryRetrievalPipeline(repo).collect_blocks("s")
+    blocks = await MemoryComposer().compose_blocks(blocks, max_tokens=8000)
     assert blocks
     assert all(hasattr(b, "text") for b in blocks)
 
@@ -250,8 +247,8 @@ async def test_composer_compose_text_backwards_compatible() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "preciso dados")
     await repo.append_message("s", "assistant", "aqui vai")
-    c = MemoryComposer(repo)
-    out = await c.compose("s", max_tokens=8192)
+    raw = await MemoryRetrievalPipeline(repo).collect_blocks("s")
+    out = await MemoryComposer().compose(raw, max_tokens=8192)
     assert "USER]" in out
     assert "ASSISTANT]" in out
     assert "dados" in out
@@ -261,8 +258,8 @@ async def test_composer_summary_cache_prepends() -> None:
     repo = InMemoryConversationStateRepository()
     cache = InMemorySummaryCache()
     cache.set_summary("s", "Sumário prévio sobre o projeto.", ttl_seconds=3600)
-    c = MemoryComposer(repo, summary_cache=cache)
-    out = await c.compose("s", max_tokens=8192)
+    raw = await MemoryRetrievalPipeline(repo, summary_cache=cache).collect_blocks("s")
+    out = await MemoryComposer().compose(raw, max_tokens=8192)
     assert "Sumário prévio" in out
 
 
@@ -277,8 +274,8 @@ async def test_composer_full_pipeline_with_all_layers() -> None:
     epi = EpisodicRetriever(repo)
     sem = SemanticRetriever(repo)
 
-    c = MemoryComposer(repo, summary_cache=cache)
-    result = await c.build_layers(
+    pipe = MemoryRetrievalPipeline(repo, summary_cache=cache)
+    result = await pipe.collect_layers(
         "s",
         semantic_query="faturamento vendas",
         semantic_retriever=sem,
@@ -290,12 +287,12 @@ async def test_composer_full_pipeline_with_all_layers() -> None:
     assert result.layers[MemoryLayer.EPISODIC_MEMORY.value]
     assert len(result.all_blocks) >= 3
 
-    blocks = await c.compose_blocks(
+    raw = await pipe.collect_blocks(
         "s",
-        max_tokens=8000,
         semantic_query="faturamento vendas",
         semantic_retriever=sem,
         episodic_retriever=epi,
         intent_type="analytical",
     )
+    blocks = await MemoryComposer().compose_blocks(raw, max_tokens=8000)
     assert len(blocks) >= 1

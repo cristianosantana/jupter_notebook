@@ -69,6 +69,18 @@ class OrionSettings(BaseSettings):
         description="Máximo de mensagens por sessão em GET /api/v1/sessions (histórico listado).",
     )
 
+    # ── Embeddings (chat_turn_embeddings) ────────────────────────────
+    embedding_enabled: bool = Field(
+        False,
+        description="Indexar turnos em chat_turn_embeddings e usar VectorRetriever na memória.",
+    )
+    embedding_model: str = Field(
+        "text-embedding-3-small",
+        description="Modelo de embeddings (OpenAI).",
+    )
+    embedding_dimensions: int = Field(1536, ge=1, le=3072)
+    embedding_top_k: int = Field(5, ge=1, le=50)
+
     # ── Timeouts (segundos) ──────────────────────────────────────────
     mysql_timeout: float = Field(30.0, ge=1.0)
     postgres_timeout: float = Field(30.0, ge=1.0)
@@ -114,6 +126,11 @@ class OrionSettings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.llm_api_key.strip())
+
+    @property
+    def embedding_active(self) -> bool:
+        """Embeddings ligados e API key presente (mesma chave do LLM por omissão)."""
+        return self.embedding_enabled and bool(self.llm_api_key.strip())
 
     @property
     def cors_origins_list(self) -> list[str]:

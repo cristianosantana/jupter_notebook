@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from orion_mcp_v3.runtime.provenance import CoverageInfo
+from orion_mcp_v3.contracts.provenance import CoverageInfo
 
 
 @dataclass(frozen=True, slots=True)

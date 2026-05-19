@@ -43,6 +43,7 @@ from orion_mcp_v3.memory import (
     EpisodicRetriever,
     InMemoryConversationStateRepository,
     MemoryComposer,
+    MemoryRetrievalPipeline,
     SemanticRetriever,
 )
 from orion_mcp_v3.connection_hub.pools import close_mysql_pool, create_mysql_pool
@@ -402,7 +403,7 @@ async def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: 
 
     episodic = EpisodicRetriever(repo)
     semantic = SemanticRetriever(repo)
-    composer = MemoryComposer(repo)
+    pipe = MemoryRetrievalPipeline(repo)
 
     ep_blocks = await episodic.retrieve(_MEMORY_SESSION_ID, limit=10)
     logger.step(
@@ -424,14 +425,14 @@ async def _apply_memory_pipeline_phase8(logger: JsonlPipelineLogger, utterance: 
         },
     )
 
-    merged = await composer.compose_blocks(
+    raw = await pipe.collect_blocks(
         _MEMORY_SESSION_ID,
-        max_tokens=4096,
         recent_limit=10,
         semantic_query=utterance,
         semantic_retriever=semantic,
         episodic_retriever=episodic,
     )
+    merged = await MemoryComposer().compose_blocks(raw, max_tokens=4096)
     logger.step(
         "memory_compose_blocks",
         input_data={

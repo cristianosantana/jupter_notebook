@@ -9,6 +9,7 @@ from orion_mcp_v3.memory import (
     InMemoryConversationStateRepository,
     InMemorySummaryCache,
     MemoryComposer,
+    MemoryRetrievalPipeline,
     RedisSummaryCache,
     messages_to_context_blocks,
     message_to_context_block,
@@ -50,8 +51,8 @@ async def test_composer_concatenates_turns() -> None:
     repo = InMemoryConversationStateRepository()
     await repo.append_message("s", "user", "preciso dados")
     await repo.append_message("s", "assistant", "aquí vai")
-    c = MemoryComposer(repo)
-    out = await c.compose("s", max_tokens=8192)
+    blocks = await MemoryRetrievalPipeline(repo).collect_blocks("s")
+    out = await MemoryComposer().compose(blocks, max_tokens=8192)
     assert "USER]" in out
     assert "ASSISTANT]" in out
     assert "dados" in out
@@ -61,8 +62,8 @@ async def test_summary_cache_prepends_cached_text() -> None:
     repo = InMemoryConversationStateRepository()
     cache = InMemorySummaryCache()
     cache.set_summary("s", "Sumário prévio sobre o projeto.", ttl_seconds=3600)
-    c = MemoryComposer(repo, summary_cache=cache)
-    out = await c.compose("s", max_tokens=8192)
+    blocks = await MemoryRetrievalPipeline(repo, summary_cache=cache).collect_blocks("s")
+    out = await MemoryComposer().compose(blocks, max_tokens=8192)
     assert "Sumário prévio" in out
 
 

@@ -115,6 +115,27 @@ def _build_lifespan(
                     state["postgres_pool"] = pg_pool
                     state["conversation_repository"] = PostgresConversationStateRepository(pg_pool)
                     _LOG.info("PostgreSQL conversation store enabled (%s)", s.postgres_url.split("@")[-1])
+                    if s.embedding_active:
+                        try:
+                            from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
+                            from orion_mcp_v3.providers.openai_embedding import OpenAIEmbeddingService
+
+                            embed_svc = OpenAIEmbeddingService(
+                                api_key=s.llm_api_key,
+                                model=s.embedding_model,
+                                dimensions=s.embedding_dimensions,
+                                base_url=s.llm_base_url or None,
+                            )
+                            state["chat_turn_embedding_store"] = ChatTurnEmbeddingStore(pg_pool, embed_svc)
+                            _LOG.info(
+                                "chat_turn_embeddings indexer enabled (model=%s, dims=%s)",
+                                s.embedding_model,
+                                s.embedding_dimensions,
+                            )
+                        except Exception:
+                            _LOG.exception(
+                                "Embeddings desactivados — falha ao iniciar ChatTurnEmbeddingStore"
+                            )
             except Exception:
                 _LOG.exception("Failed to create PostgreSQL pool — conversation persistence in-memory only")
 
@@ -123,6 +144,7 @@ def _build_lifespan(
         shutdown_pipeline_file_logging()
 
         state.pop("conversation_repository", None)
+        state.pop("chat_turn_embedding_store", None)
         pg_pool = state.pop("postgres_pool", None)
         if pg_pool is not None:
             from orion_mcp_v3.connection_hub.pools import close_postgres_pool
