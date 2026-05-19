@@ -23,7 +23,8 @@ Este ficheiro **não duplica** o conteúdo dos outros roadmaps. Serve para:
 O caminho de maturidade **não** é só “memória + SQL”. O alvo é um **sistema cognitivo orientado por evidência**:
 
 ```text
-dados → evidência → cognição → contexto LLM
+Core:     dados → evidência → cognição → contexto LLM
+Optional: Memory Augmentation (pgvector, chat_turn_embeddings) — ver MEMORY_AUGMENTATION_LAYER.md
 ```
 
 - **ROADMAP MySQL** cobre sobretudo **dados → digest estruturado** e runtime seguro.
@@ -50,6 +51,14 @@ dados → evidência → cognição → contexto LLM
 |------|---------------------|--------|
 | **Fase 2.5 — Cognitive Foundation** | [`PLANO_EXECUCAO.md`](../execution/PLANO_EXECUCAO.md) + [`ARQUITETURA_COGNITIVA_CENTRAL.md`](./ARQUITETURA_COGNITIVA_CENTRAL.md) | Separar *entendimento* (`CognitivePlan`, intent) de *execução* (SQL/planos semânticos). |
 | **Fase 5.5 — Cognitive Orchestrator** | Idem | Fundir evidência analítica + memória conversacional + políticas de atenção num turno coerente. |
+
+---
+
+## Camada opcional — Memory Augmentation
+
+Subsistema **experimental** e **congelado** para expansão: embeddings só para recuperação de turnos de chat, desacoplado do broker analítico.
+
+- [`MEMORY_AUGMENTATION_LAYER.md`](./MEMORY_AUGMENTATION_LAYER.md) — regras MAY/MUST NOT, modos `off` / `index_only` / `retrieve`, lista de não-fazer.
 
 ---
 
