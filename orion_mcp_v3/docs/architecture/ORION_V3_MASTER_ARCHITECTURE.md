@@ -23,7 +23,7 @@ Este ficheiro **não duplica** o conteúdo dos outros roadmaps. Serve para:
 O caminho de maturidade **não** é só “memória + SQL”. O alvo é um **sistema cognitivo orientado por evidência**:
 
 ```text
-Core:     dados → evidência → cognição → contexto LLM
+Core:     dados → capacidade de resposta → evidência → cognição → contexto LLM
 Optional: Memory Augmentation (pgvector, chat_turn_embeddings) — ver MEMORY_AUGMENTATION_LAYER.md
 ```
 
@@ -59,6 +59,14 @@ Optional: Memory Augmentation (pgvector, chat_turn_embeddings) — ver MEMORY_AU
 Subsistema **experimental** e **congelado** para expansão: embeddings só para recuperação de turnos de chat, desacoplado do broker analítico.
 
 - [`MEMORY_AUGMENTATION_LAYER.md`](./MEMORY_AUGMENTATION_LAYER.md) — regras MAY/MUST NOT, modos `off` / `index_only` / `retrieve`, lista de não-fazer.
+
+---
+
+## Camada analítica — Answer Capability
+
+Seam entre templates SQL e resposta final. Declara quais métricas/dimensões cada query consegue responder e projeta respostas diretas antes do LLM.
+
+- [`ANSWER_CAPABILITY_LAYER.md`](./ANSWER_CAPABILITY_LAYER.md) — `AnswerCapability`, `AnswerPlan`, `ProjectedAnswer` e regras de projeção.
 
 ---
 

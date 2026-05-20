@@ -65,7 +65,7 @@ pytest tests/ -v
 
 ### O Analista
 
-"Use as skills:@.cursor/skills/assistente-desenvolvimento  e Atue como um Arquiteto de Software Principal e Analista de Sistemas Sênior. Sua missão é analisar o projeto fornecido com o objetivo de propor melhorias estruturais, de processo e de performance.
+"Atue como um Arquiteto de Software Principal e Analista de Sistemas Sênior. Sua missão é analisar o projeto fornecido com o objetivo de propor melhorias estruturais, de processo e de performance.
 
 Gere um documento técnico e detalhado estruturado estritamente nos seguintes tópicos:
 
