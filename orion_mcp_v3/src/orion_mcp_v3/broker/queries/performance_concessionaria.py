@@ -6,7 +6,7 @@ Responde:
     - Quanto cada concessionária faturou no período?
     - Qual concessionária tem maior volume de OS?
     - Qual o ranking de concessionárias por faturamento?
-    - Qual o ticket médio por loja?
+    - Qual o ticket médio por concessionárias?
 
 Retorna:
     - concessionaria (VARCHAR)
@@ -58,3 +58,38 @@ VALUE_KEY = "faturamento"
 TIME_KEY = None
 GRAIN = "total"
 LABEL_KEY = "concessionaria"
+DEFAULT_MEASURE = "faturamento"
+DEFAULT_DIMENSION = "concessionaria"
+MEASURES = {
+    "total_os": {
+        "label": "volume de OS",
+        "kind": "count",
+        "synonyms": ("volume", "volume de vendas", "total de OS", "quantidade de OS"),
+        "additive": True,
+    },
+    "total_recebimentos": {
+        "label": "volume de recebimentos",
+        "kind": "count",
+        "synonyms": ("recebimentos", "total de recebimentos"),
+        "additive": True,
+    },
+    "faturamento": {
+        "label": "receita/faturamento",
+        "kind": "money",
+        "synonyms": ("faturamento", "receita", "valor de vendas"),
+        "additive": True,
+    },
+    "ticket_medio": {
+        "label": "ticket médio",
+        "kind": "money",
+        "synonyms": ("ticket", "ticket médio"),
+        "additive": False,
+    },
+}
+DIMENSIONS = {
+    "concessionaria": {
+        "label": "concessionária",
+        "synonyms": ("concessionária", "concessionaria", "loja", "unidade"),
+    },
+}
+SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")

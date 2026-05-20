@@ -69,6 +69,41 @@ VALUE_KEY = "total_recebido"
 TIME_KEY = None
 GRAIN = "total"
 LABEL_KEY = "forma_pagamento"
+DEFAULT_MEASURE = "total_recebido"
+DEFAULT_DIMENSION = "forma_pagamento"
+MEASURES = {
+    "qtd_recebimentos": {
+        "label": "quantidade de recebimentos",
+        "kind": "count",
+        "synonyms": ("quantidade", "volume", "qtd recebimentos"),
+        "additive": True,
+    },
+    "total_recebido": {
+        "label": "total recebido",
+        "kind": "money",
+        "synonyms": ("recebido", "faturamento", "receita", "total recebido"),
+        "additive": True,
+    },
+    "ticket_medio": {
+        "label": "ticket médio",
+        "kind": "money",
+        "synonyms": ("ticket", "ticket médio"),
+        "additive": False,
+    },
+    "percentual_total": {
+        "label": "percentual sobre o total",
+        "kind": "percent",
+        "synonyms": ("percentual", "participação", "share"),
+        "additive": False,
+    },
+}
+DIMENSIONS = {
+    "forma_pagamento": {
+        "label": "forma de pagamento",
+        "synonyms": ("forma de pagamento", "pagamento", "meio de pagamento"),
+    },
+}
+SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
 
 # 4 placeholders: subquery(date_from, date_to) + WHERE(date_from, date_to)
 PARAMETERS = ("date_from", "date_to", "date_from", "date_to")

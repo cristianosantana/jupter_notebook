@@ -48,6 +48,7 @@ _MONTHS_PT: dict[str, int] = {
     "março": 3,
     "abr": 4,
     "abril": 4,
+    "abriu": 4,
     "mai": 5,
     "maio": 5,
     "jun": 6,
@@ -67,7 +68,7 @@ _MONTHS_PT: dict[str, int] = {
 }
 
 _MONTH_NAME_RX = (
-    r"jan(?:eiro)?|fev(?:ereiro)?|mar(?:[cç]o)?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?"
+    r"jan(?:eiro)?|fev(?:ereiro)?|mar(?:[cç]o)?|abr(?:il|iu)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?"
 )
 _MONTH_RANGE_RX = re.compile(
     rf"\b(?:de\s+|entre\s+)?(?P<start>{_MONTH_NAME_RX})\s+"
@@ -320,7 +321,12 @@ def _explicit_period_hint(blob: str) -> dict[str, str] | None:
 class IntentResolver:
     """Análise lexical mínima; evoluir para IntentResolver com modelo quando existir política."""
 
-    def resolve(self, user_input: str, recent_context: str | None = None) -> CognitivePlan:
+    def resolve(
+        self,
+        user_input: str,
+        recent_context: str | None = None,
+        policy_request: str | None = None,
+    ) -> CognitivePlan:
         text = (user_input or "").strip()
         blob = f"{text}\n{(recent_context or '').strip()}".strip()
 
@@ -332,6 +338,18 @@ class IntentResolver:
         exe = P._any_match(P.EXECUTION_PATTERNS, blob)
         explicit_period = _explicit_period_hint(blob)
         tmp = tmp or explicit_period is not None
+
+        metrics = self._extract_metric_hints(blob)
+        entities = self._extract_entity_hints(blob)
+        policy_bias = self._policy_analytics_bias(
+            blob,
+            policy_request=policy_request,
+            has_temporal=tmp,
+            has_comparison=cmp_,
+            has_metrics=bool(metrics),
+            has_entities=bool(entities),
+        )
+        ana = ana or policy_bias
 
         needs_comparison = cmp_
         needs_temporal_context = tmp
@@ -364,8 +382,6 @@ class IntentResolver:
             exe=exe,
         )
 
-        metrics = self._extract_metric_hints(blob)
-        entities = self._extract_entity_hints(blob)
         time_scope = self._time_scope_hint(blob, explicit_period=explicit_period) if tmp else None
         hints = {
             "resolver": "heuristic_v1",
@@ -373,6 +389,7 @@ class IntentResolver:
                 "comparative": cmp_,
                 "temporal": tmp,
                 "analytical": ana,
+                "policy_analytical_bias": policy_bias,
                 "recall": rec,
                 "monitoring": mon,
                 "execution": exe,
@@ -499,6 +516,33 @@ class IntentResolver:
             return "yesterday"
         return None
 
+    @staticmethod
+    def _policy_analytics_bias(
+        blob: str,
+        *,
+        policy_request: str | None,
+        has_temporal: bool,
+        has_comparison: bool,
+        has_metrics: bool,
+        has_entities: bool,
+    ) -> bool:
+        policy = (policy_request or "").strip().lower()
+        if policy != "analytical":
+            return False
+        lower = blob.lower()
+        data_like = (
+            has_temporal
+            or has_comparison
+            or has_metrics
+            or has_entities
+            or re.search(
+                r"\b(maior|menor|top|ranking|total|m[eé]dia|media|por|recebimento|recebido)\b",
+                lower,
+            )
+            is not None
+        )
+        return bool(data_like)
+
     def _extract_metric_hints(self, blob: str) -> tuple[str, ...]:
         out: list[str] = []
         lower = blob.lower()
@@ -509,6 +553,11 @@ class IntentResolver:
             ("revenue", "faturado"),
             ("revenue", "faturação"),
             ("revenue", "revenue"),
+            ("revenue", "receita"),
+            ("revenue", "recebimento"),
+            ("revenue", "recebimentos"),
+            ("revenue", "recebido"),
+            ("revenue", "recebidos"),
             ("ticket", "ticket"),
         ):
             if needle in lower and label not in out:

@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from orion_mcp_v3.broker.answer_capability import (
+    AnswerCapability,
+    DimensionCapability,
+    MeasureCapability,
+)
 from orion_mcp_v3.broker.queries import get_all_modules
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 
@@ -32,6 +37,7 @@ class QueryTemplate:
     time_key: str | None
     grain: str = "day"
     label_key: str | None = None
+    capability: AnswerCapability | None = None
 
 
 _METRIC_SYNONYMS: dict[str, list[str]] = {
@@ -194,6 +200,72 @@ def _default_params() -> dict[str, Any]:
     return {"date_from": _default_date_from, "date_to": _default_date_to}
 
 
+def _build_capability(slug: str, mod: Any) -> AnswerCapability:
+    measures_raw = getattr(mod, "MEASURES", None)
+    dimensions_raw = getattr(mod, "DIMENSIONS", None)
+
+    if not isinstance(measures_raw, dict):
+        value_key = str(mod.VALUE_KEY)
+        measures_raw = {
+            value_key: {
+                "label": value_key,
+                "kind": "number",
+                "synonyms": (value_key,),
+                "additive": True,
+            },
+        }
+    if not isinstance(dimensions_raw, dict):
+        label_key = getattr(mod, "LABEL_KEY", None)
+        time_key = getattr(mod, "TIME_KEY", None)
+        dimensions_raw = {}
+        if label_key:
+            dimensions_raw[str(label_key)] = {"label": str(label_key), "synonyms": (str(label_key),)}
+        if time_key:
+            dimensions_raw[str(time_key)] = {"label": str(time_key), "synonyms": (str(time_key),)}
+
+    measures = {
+        str(key): MeasureCapability(
+            column=str(value.get("column", key)),
+            label=str(value.get("label", key)),
+            kind=str(value.get("kind", "number")),
+            synonyms=tuple(str(v) for v in value.get("synonyms", ())),
+            additive=bool(value.get("additive", True)),
+            sortable=bool(value.get("sortable", True)),
+        )
+        for key, value in measures_raw.items()
+        if isinstance(value, dict)
+    }
+    dimensions = {
+        str(key): DimensionCapability(
+            column=str(value.get("column", key)),
+            label=str(value.get("label", key)),
+            synonyms=tuple(str(v) for v in value.get("synonyms", ())),
+        )
+        for key, value in dimensions_raw.items()
+        if isinstance(value, dict)
+    }
+
+    default_measure = str(getattr(mod, "DEFAULT_MEASURE", getattr(mod, "VALUE_KEY", "")))
+    if default_measure not in measures:
+        default_measure = next(iter(measures))
+    default_dimension = getattr(mod, "DEFAULT_DIMENSION", getattr(mod, "LABEL_KEY", None))
+    default_dimension = str(default_dimension) if default_dimension else None
+    if default_dimension is not None and default_dimension not in dimensions:
+        default_dimension = next(iter(dimensions), None)
+
+    supported = getattr(mod, "SUPPORTED_OPERATIONS", None)
+    if not supported:
+        supported = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
+
+    return AnswerCapability(
+        measures=measures,
+        dimensions=dimensions,
+        default_measure=default_measure,
+        default_dimension=default_dimension,
+        supported_operations=tuple(str(v) for v in supported),
+    )
+
+
 def _build_registry() -> QueryTemplateRegistry:
     reg = QueryTemplateRegistry()
 
@@ -212,6 +284,7 @@ def _build_registry() -> QueryTemplateRegistry:
             time_key=getattr(mod, "TIME_KEY", None),
             grain=getattr(mod, "GRAIN", "day"),
             label_key=getattr(mod, "LABEL_KEY", None),
+            capability=_build_capability(slug, mod),
         ))
 
     return reg
