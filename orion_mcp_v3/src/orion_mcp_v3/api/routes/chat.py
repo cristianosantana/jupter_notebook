@@ -139,7 +139,7 @@ def create_chat_router(
                 },
             )
 
-        cognitive_plan = resolver.resolve(req.message)
+        cognitive_plan = resolver.resolve(req.message, policy_request=req.policy)
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
 
         if trace_pipe:
@@ -376,7 +376,9 @@ def create_chat_router(
             EvidenceAggregator,
             QueryExpander,
         )
+        from orion_mcp_v3.broker.answer_projector import build_projected_answer
         from orion_mcp_v3.broker.evidence_series_resolve import resolve_evidence_series_specs
+        from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 
         if trace_enabled:
             log_pipeline_event(
@@ -503,6 +505,41 @@ def create_chat_router(
                 grain="month",
                 templates=ANALYTICS_TEMPLATES,
             )
+            projected = build_projected_answer(message, results, templates=ANALYTICS_TEMPLATES)
+            if projected is not None:
+                projected_dict = projected.as_dict()
+                complementary_summary = (
+                    "Resumo estatístico complementar (não substitui a resposta direta):\n"
+                    f"{merged.summary}"
+                )
+                merged = EvidenceBlock(
+                    summary=f"{projected.summary}\n\n{complementary_summary}",
+                    insights={**dict(merged.insights), "direct_answer": projected_dict},
+                    metrics={**dict(merged.metrics), "answer_plan": projected_dict["plan"]},
+                    confidence=merged.confidence,
+                    coverage=merged.coverage,
+                    provenance=merged.provenance,
+                    sample_refs=merged.sample_refs,
+                    supporting_data={**dict(merged.supporting_data), "direct_answer": projected_dict},
+                )
+                if trace_enabled:
+                    log_pipeline_event(
+                        etapa="answer_project",
+                        fase="post",
+                        conversation_id=conversation_id,
+                        dados={
+                            "presente": True,
+                            "plan": projected_dict["plan"],
+                            "summary": projected.summary,
+                        },
+                    )
+            elif trace_enabled:
+                log_pipeline_event(
+                    etapa="answer_project",
+                    fase="post",
+                    conversation_id=conversation_id,
+                    dados={"presente": False},
+                )
             if trace_enabled:
                 log_pipeline_event(
                     etapa="analytics_merge",

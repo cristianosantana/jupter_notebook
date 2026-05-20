@@ -76,3 +76,41 @@ VALUE_KEY = "valor_total_recebido"
 TIME_KEY = "data_recebimento"
 GRAIN = "day"
 LABEL_KEY = None
+DEFAULT_MEASURE = "valor_total_recebido"
+DEFAULT_DIMENSION = "data_recebimento"
+MEASURES = {
+    "total_recebimentos": {
+        "label": "volume de recebimentos",
+        "kind": "count",
+        "synonyms": ("volume", "quantidade", "recebimentos"),
+        "additive": True,
+    },
+    "valor_total_recebido": {
+        "label": "faturamento diário",
+        "kind": "money",
+        "synonyms": ("faturamento", "receita", "valor recebido", "total recebido"),
+        "additive": True,
+    },
+    "ticket_medio": {
+        "label": "ticket médio diário",
+        "kind": "money",
+        "synonyms": ("ticket", "ticket médio"),
+        "additive": False,
+    },
+    "total_dinheiro": {"label": "dinheiro", "kind": "money", "synonyms": ("dinheiro",), "additive": True},
+    "total_deposito": {"label": "depósito", "kind": "money", "synonyms": ("depósito", "deposito"), "additive": True},
+    "total_credito": {"label": "crédito", "kind": "money", "synonyms": ("crédito", "credito", "cartão de crédito"), "additive": True},
+    "total_cheque": {"label": "cheque", "kind": "money", "synonyms": ("cheque",), "additive": True},
+    "total_concessionaria": {"label": "concessionária", "kind": "money", "synonyms": ("concessionária", "concessionaria"), "additive": True},
+    "total_debito": {"label": "débito", "kind": "money", "synonyms": ("débito", "debito", "cartão de débito"), "additive": True},
+    "total_pix": {"label": "pix", "kind": "money", "synonyms": ("pix",), "additive": True},
+    "total_permuta": {"label": "permuta", "kind": "money", "synonyms": ("permuta",), "additive": True},
+    "total_parcelamento": {"label": "parcelamento", "kind": "money", "synonyms": ("parcelamento",), "additive": True},
+}
+DIMENSIONS = {
+    "data_recebimento": {
+        "label": "data",
+        "synonyms": ("data", "dia", "diário", "diario"),
+    },
+}
+SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")

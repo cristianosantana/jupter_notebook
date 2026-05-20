@@ -62,3 +62,38 @@ VALUE_KEY = "valor_total"
 TIME_KEY = None
 GRAIN = "total"
 LABEL_KEY = "vendedor"
+DEFAULT_MEASURE = "valor_total"
+DEFAULT_DIMENSION = "vendedor"
+MEASURES = {
+    "total_vendas": {
+        "label": "volume de vendas",
+        "kind": "count",
+        "synonyms": ("volume", "volume de vendas", "quantidade de vendas", "total de vendas"),
+        "additive": True,
+    },
+    "valor_total": {
+        "label": "faturamento",
+        "kind": "money",
+        "synonyms": ("faturamento", "receita", "valor total", "valor vendido"),
+        "additive": True,
+    },
+    "ticket_medio": {
+        "label": "ticket médio",
+        "kind": "money",
+        "synonyms": ("ticket", "ticket médio", "média por venda"),
+        "additive": False,
+    },
+    "maior_venda": {
+        "label": "maior venda individual",
+        "kind": "money",
+        "synonyms": ("maior venda", "maior recebimento", "maior valor individual"),
+        "additive": False,
+    },
+}
+DIMENSIONS = {
+    "vendedor": {
+        "label": "vendedor",
+        "synonyms": ("vendedor", "vendedores", "consultor"),
+    },
+}
+SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")

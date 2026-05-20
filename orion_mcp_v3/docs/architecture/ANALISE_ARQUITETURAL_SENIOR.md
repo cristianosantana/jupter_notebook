@@ -1,428 +1,216 @@
-# Analise Arquitetural Senior — Orion MCP v3
+# Análise Arquitetural Sênior — Orion MCP v3
 
-Este documento analisa o projeto Orion MCP v3 sob a perspectiva de arquitetura de software, fluxo de processamento, gargalos operacionais e melhorias estruturais. O foco da análise é o estado atual do sistema como um runtime cognitivo analítico: entrada conversacional, resolução de intenção, memoria contextual, execução analitica segura, evidencia, orquestração cognitiva e narração LLM.
+Este documento revisa o Orion MCP v3 como um **runtime cognitivo analítico**. A análise usa a linguagem das skills de engenharia carregadas: **Module**, **Interface**, **Implementation**, **Seam**, **Adapter**, **Depth**, **Leverage**, **Locality** e **Deletion test**.
+
+O objetivo não é listar arquivos; é identificar onde o sistema ganha ou perde profundidade arquitetural, quais caminhos de execução existem, onde a complexidade está concentrada e quais mudanças aumentam resiliência, escalabilidade e manutenção.
 
 ## 1. Arquitetura e Estrutura do Projeto
 
-### Organização geral
+### 1.1 Tese arquitetural
 
-O Orion MCP v3 esta organizado como um backend Python orientado por camadas. A estrutura principal vive em `src/orion_mcp_v3/` e separa contratos, runtime cognitivo, API HTTP, broker analitico, memoria conversacional, providers externos e infraestrutura.
+O Orion não deve ser interpretado como um sistema de memória vetorial. Ele está mais próximo de um **runtime cognitivo analítico orientado por evidência**, onde a pergunta humana é transformada em plano, dados, evidência, contexto e narração.
 
-O desenho atual favorece uma arquitetura de runtime:
-
-```text
-api
-  -> runtime
-  -> memory
-  -> broker
-  -> providers
-  -> infra / connection_hub
-contracts
-  -> base comum para runtime, broker e memory
-```
-
-O papel de cada area e o seguinte:
-
-- `api/`: borda HTTP FastAPI. Cria a aplicação, injeta dependencias, inicializa pools, configura o provider LLM e expõe rotas de chat, sessões e opções.
-- `runtime/`: nucleo cognitivo. Contem resolução de intenção, estado de sessão, politica de atenção, fusão de contexto, alocação de orçamento, scheduler, renderização de prompt e narração.
-- `broker/`: nucleo analitico. Transforma intenção em planos semanticos, compila queries seguras, executa MySQL, agrega resultados e constroi evidencia.
-- `memory/`: memoria conversacional. Inclui repositorios de conversa, recuperação episodica, recuperação lexical/semantica e Memory Augmentation opcional por pgvector.
-- `contracts/`: contratos estáveis compartilhados (`CognitivePlan`, `SemanticQueryPlan`, `EvidenceBlock`, `ContextBlock`, `AnalyticalDigest`, proveniencia).
-- `providers/`: adaptações externas, principalmente OpenAI para LLM e embeddings.
-- `protocols/`: interfaces para providers (`LLMProvider`, `EmbeddingService`).
-- `connection_hub/`: clientes e pools de conexão com bancos.
-- `infra/`: migrações e documentação de persistencia, sobretudo Postgres/pgvector e Redis keyspace.
-- `docs/`: documentação arquitetural, roadmaps, guias, notas e decisões de direção.
-
-### Núcleo cognitivo e analítico
-
-O valor central do Orion não esta nos embeddings. O projeto evolui para um runtime cognitivo analítico onde o caminho de maior valor e:
+O eixo central é:
 
 ```text
 pergunta humana
   -> intenção cognitiva
-  -> plano analítico
-  -> SQL seguro / MySQL
-  -> evidencia estruturada
-  -> digest / redução
-  -> proveniencia / drift
+  -> estratégia analítica
+  -> plano semântico
+  -> SQL seguro / templates
+  -> evidência estruturada
   -> fusão contextual
-  -> resposta narrada
+  -> prompt governado por atenção
+  -> narração LLM
 ```
 
-Essa direção esta refletida em módulos como:
+Embeddings existem, mas pertencem à camada opcional de **Memory Augmentation**. Eles devem aumentar continuidade conversacional, não decidir analytics.
 
-- `runtime/intent_resolver.py`: resolve intenção e atenção a partir da mensagem.
-- `broker/planner.py`: deriva `SemanticQueryPlan` a partir do `CognitivePlan`.
-- `broker/query_expander.py`: expande intenção em planos concretos.
-- `broker/sql_compiler.py`: compila SELECT seguro com allowlist.
-- `broker/executor.py`: executa plano/template em MySQL.
-- `broker/evidence_builder.py`: gera baseline, variação, anomalias, confidence e coverage.
-- `broker/evidence_aggregator.py`: agrega evidencias de múltiplos resultados.
-- `runtime/cognitive_orchestrator.py`: funde evidence, digest e memoria em prompt final.
+### 1.2 Mapa de módulos
 
-### Memory Augmentation
+#### `api` — Module de borda HTTP e composition root operacional
 
-O subsistema vetorial foi corretamente rebaixado para uma camada experimental e opcional:
+**Interface:** rotas FastAPI (`/api/v1/chat`, `/api/v1/sessions`, `/api/v1/chat/options`, `/health`) e modelos de request/response.
 
-- `memory/chat_turn_embedding_store.py`: indexa e consulta `chat_turn_embeddings`.
-- `memory/vector_retriever.py`: transforma resultados pgvector em `ContextBlock`.
-- `memory/retrieval_pipeline.py`: combina memoria episodica, lexical e opcionalmente vetorial.
-- `providers/openai_embedding.py`: implementa embeddings externos.
+**Implementation:** inicializa dependências no lifespan, injeta providers, executa fluxo de chat, controla SSE, tracing e persistência de mensagens.
 
-A configuração `ORION_EMBEDDING_MODE` deve preservar o escopo:
+**Arquivos principais:**
 
-- `off`: sem embeddings.
-- `index_only`: indexa turnos, mas não usa retrieval vetorial.
-- `retrieve`: indexa e usa `VectorRetriever` em paralelo com lexical.
+- `src/orion_mcp_v3/api/main.py`
+- `src/orion_mcp_v3/api/routes/chat.py`
+- `src/orion_mcp_v3/api/models.py`
 
-Essa camada não deve decidir SQL, não deve entrar no planner, não deve compor prompt diretamente e não deve ser requisito para `POST /chat`.
+**Avaliação de profundidade:** hoje o `api` é um Module pouco profundo no `routes/chat.py`: a Interface HTTP é simples, mas a Implementation concentra quase todo o processo. Isso dá alto acoplamento operacional e baixa Locality para bugs do turno de chat.
 
-### Acoplamento e dependências
+**Deletion test:** se `routes/chat.py` fosse removido, a complexidade não desapareceria; ela reapareceria espalhada em runtime, memory e broker. Isso indica que existe um Module real ali, mas ele ainda está mal nomeado e pouco encapsulado.
 
-A direção de dependencias esperada e saudável:
+#### `runtime` — Module cognitivo
+
+**Interface:** `IntentResolver.resolve()`, `CognitiveOrchestrator.finalize_prompt()`, `CognitiveNarrator.narrate()`, `AttentionPolicy`, scheduler, allocator e prompt renderer.
+
+**Implementation:** interpreta intenção, monta camadas de contexto, aplica política de atenção, aloca orçamento de tokens, renderiza prompt e chama o provider LLM.
+
+**Arquivos principais:**
+
+- `src/orion_mcp_v3/runtime/intent_resolver.py`
+- `src/orion_mcp_v3/runtime/cognitive_orchestrator.py`
+- `src/orion_mcp_v3/runtime/analytical_system_prompt.py`
+- `src/orion_mcp_v3/runtime/narrator.py`
+- `src/orion_mcp_v3/runtime/context_fusion.py`
+- `src/orion_mcp_v3/runtime/budget_allocator.py`
+
+**Avaliação de profundidade:** é o Module mais próximo do desenho desejado. `CognitiveOrchestrator.finalize_prompt()` oferece uma Interface pequena para muita Implementation: fusão, scheduler, allocator e render. O novo `analytical_system_prompt` aumenta Leverage porque injeta regras analíticas e anti-alucinação sem espalhar instruções pelo código.
+
+**Risco:** o `runtime/__init__.py` é um barrel grande. Ele aumenta conveniência, mas também carrega muitos símbolos e pode mascarar dependências indiretas. O risco é import coupling, não comportamento imediato.
+
+#### `broker` — Module analítico
+
+**Interface:** `CognitivePlan -> SemanticQueryPlan -> AnalyticsResult -> EvidenceBlock`.
+
+**Implementation:** resolve plano analítico, expande templates, compila SQL seguro, executa MySQL, agrega evidência e calcula estatísticas.
+
+**Arquivos principais:**
+
+- `src/orion_mcp_v3/broker/planner.py`
+- `src/orion_mcp_v3/broker/query_expander.py`
+- `src/orion_mcp_v3/broker/sql_compiler.py`
+- `src/orion_mcp_v3/broker/executor.py`
+- `src/orion_mcp_v3/broker/evidence_builder.py`
+- `src/orion_mcp_v3/broker/evidence_aggregator.py`
+- `src/orion_mcp_v3/broker/queries/*.py`
+
+**Avaliação de profundidade:** conceitualmente é profundo: uma pergunta vira evidência analítica. Mas a Interface ainda vaza algumas políticas em `hints`, templates e datas. O `broker` deve ficar livre de embeddings e de lógica conversacional.
+
+**Seam importante:** o melhor seam é entre `CognitivePlan` e `SemanticQueryPlan`, porque concentra a transformação de intenção em estratégia executável.
+
+#### `memory` — Module de memória conversacional
+
+**Interface:** `ConversationStateRepository`, `MemoryRetrievalPipeline.collect_blocks()`, retrievers episódico, lexical e vetorial opcional.
+
+**Implementation:** guarda mensagens, recupera histórico recente, faz matching lexical e opcionalmente pgvector.
+
+**Arquivos principais:**
+
+- `src/orion_mcp_v3/memory/retrieval_pipeline.py`
+- `src/orion_mcp_v3/memory/composer.py`
+- `src/orion_mcp_v3/memory/episodic_retriever.py`
+- `src/orion_mcp_v3/memory/semantic_retriever.py`
+- `src/orion_mcp_v3/memory/vector_retriever.py`
+- `src/orion_mcp_v3/memory/chat_turn_embedding_store.py`
+- `src/orion_mcp_v3/memory/repositories/*.py`
+
+**Avaliação de profundidade:** a separação `retrieval_pipeline != composer` está correta. O composer deve continuar puro: blocos prontos entram, prompt/memória composta sai. O retrieval deve continuar fora dele.
+
+**Risco:** o seam de embeddings ainda é raso. `ChatTurnEmbeddingStore` recebe `EmbeddingService`, mas ainda depende de `OpenAIEmbeddingService.to_pgvector`. Isso prende o Module de memória a um Adapter concreto.
+
+#### `contracts` — Module de linguagem comum
+
+**Interface:** dataclasses e enums de domínio técnico: `CognitivePlan`, `SemanticQueryPlan`, `ContextBlock`, `EvidenceBlock`, `AnalyticalDigest`, `CoverageInfo`, `ProvenanceAnchor`.
+
+**Implementation:** quase inexistente; o valor é estabilidade sem dependências de runtime/broker/memory.
+
+**Avaliação de profundidade:** é o melhor seam do projeto. Callers dependem de tipos estáveis, e decisões de runtime podem mudar sem quebrar o broker quando o contrato é preservado.
+
+#### `providers` e `protocols` — Adapters de borda externa
+
+**Interface:** `LLMProvider`, `EmbeddingService`.
+
+**Implementation:** `OpenAIProvider`, `OpenAIEmbeddingService`, `NullLLMProvider`, `EchoLLMProvider`.
+
+**Avaliação de profundidade:** o seam de LLM está bom. O seam de embeddings precisa ser mais neutro, porque a serialização pgvector não deveria depender do adapter OpenAI.
+
+#### `connection_hub` e `infra` — Adapters de dados
+
+**Interface:** pools e clientes para MySQL/Postgres/Redis; migrações.
+
+**Implementation:** drivers concretos, scripts de migração, keyspaces.
+
+**Avaliação de profundidade:** adequado como camada de infraestrutura. A atenção principal deve ir para o modelo de persistência de mensagens, que hoje usa JSONB crescente.
+
+### 1.3 Acoplamento e dependências
+
+Direção saudável atual:
 
 ```text
-api -> runtime / memory / broker / providers / config
+api -> runtime / broker / memory / providers / config
 runtime -> contracts / protocols
 broker -> contracts / connection_hub
 memory -> contracts / repositories / providers opcionais
 providers -> protocols
-contracts -> sem dependencias de runtime/broker/memory
+contracts -> sem dependência de runtime, broker ou memory
 ```
 
-Pontos de acoplamento relevantes:
+Pontos complexos:
 
-1. `api/routes/chat.py` é o maior nó de coordenação.
-   - Recebe HTTP.
-   - Persiste mensagens.
-   - Resolve intenção.
-   - Recupera memoria.
-   - Dispara analytics.
-   - Orquestra prompt.
-   - Chama narrator/LLM.
-   - Controla streaming SSE.
-   - Registra tracing.
+1. `api/routes/chat.py` é o maior nó de coordenação. Ele faz request handling, persistência, retrieval, analytics, evidence merge, orchestration, narration, streaming e tracing.
+2. `api/main.py` é composition root. Isso é aceitável, mas deve continuar restrito a bootstrapping.
+3. `runtime/__init__.py` e `broker/__init__.py` reduzem a clareza de dependências reais.
+4. `memory/retrieval_pipeline.py` não deve depender de helpers privados do composer. Se houver lógica compartilhada, ela deve virar utilitário público ou Module próprio.
+5. `memory/chat_turn_embedding_store.py` ainda deixa o Adapter OpenAI atravessar o seam de memória.
+6. `broker/query_expander.py` e templates ainda carregam parte da política temporal; isso deveria ser resolvido antes, no plano.
 
-   Esse arquivo concentra demasiada lógica de aplicação. Ainda não é necessariamente um problema funcional, mas e o principal ponto de crescimento descontrolado.
+### 1.4 Dependências circulares ou nós de risco
 
-2. `api/main.py` concentra composição de infraestrutura.
-   - Cria pool MySQL.
-   - Cria pool Postgres.
-   - Inicializa repositorio de conversa.
-   - Inicializa store de embeddings.
-   - Configura provider LLM.
+Não há sinal de ciclo fatal atual, mas existem zonas de risco:
 
-   O acoplamento e aceitável para uma composition root, mas deve continuar restrito a inicialização, sem lógica de dominio.
-
-3. `memory/chat_turn_embedding_store.py` recebe `EmbeddingService`, mas ainda utiliza `OpenAIEmbeddingService.to_pgvector`.
-   - Isso introduz dependencia concreta de provider dentro da camada de memoria.
-   - O ideal seria mover conversão de vector literal para helper neutro ou para o protocolo.
-
-4. `memory/retrieval_pipeline.py` usa helpers internos do composer em algumas versões do projeto.
-   - Se helpers privados forem reaproveitados entre módulos, a fronteira entre retrieval e composition enfraquece.
-   - A decisão arquitetural correta e manter retrieval fora do composer, com utilitarios públicos se necessário.
-
-5. Barrels `runtime/__init__.py` e `broker/__init__.py`.
-   - Facilitam imports.
-   - Aumentam risco de carregar submódulos desnecessários.
-   - Podem mascarar ciclos indiretos em evolução futura.
-
-### Dependências circulares e nós complexos
-
-Não ha sinal de ciclo fatal ativo no caminho principal, mas ha regiões sensíveis:
-
-- `runtime/__init__.py`: importa muitos submódulos e pode participar de ciclos se contratos voltarem a depender de runtime.
-- `broker/__init__.py`: expõe muitos componentes e pode induzir import pesado.
-- `api/routes/chat.py`: nó mais complexo do sistema, concentrando controle transacional, recuperação, analytics, streaming e narração.
-
-O projeto ja corrigiu um risco importante ao mover proveniencia para `contracts/provenance.py`, reduzindo dependencias de `contracts` para `runtime`.
+- `runtime/__init__.py`: ao exportar muitos símbolos, pode reintroduzir ciclos se contratos ou módulos de broker importarem runtime por conveniência.
+- `broker/__init__.py`: mesmo risco para executor, templates, evidence e planner.
+- `api/routes/chat.py`: não é ciclo, mas é um hub. Quanto mais regras entrarem ali, menor será a Locality.
+- `contracts` já foi corrigido ao mover proveniência para `contracts/provenance.py`; isso deve ser preservado.
 
 ## 2. Mapeamento Ponta a Ponta do Processo (Caminhos e Fluxos)
 
-### Bootstrap da aplicação
+### 2.1 Bootstrap
 
-O ciclo começa em `api/main.py`.
-
-Passos:
-
-1. Carrega `OrionSettings`.
+1. `api/main.py` carrega `OrionSettings`.
 2. Configura logging e tracing.
-3. Cria FastAPI.
+3. Cria aplicação FastAPI.
 4. No lifespan:
-   - Se `ORION_MYSQL_URL` existir, cria pool MySQL e `AnalyticsExecutor`.
-   - Se `ORION_POSTGRES_URL` existir, cria pool Postgres e `PostgresConversationStateRepository`.
-   - Se embeddings estiverem ativos e Postgres existir, cria `ChatTurnEmbeddingStore`.
-   - Se LLM tiver API key, cria provider OpenAI; caso contrario usa provider nulo.
-5. Cria `SessionManager` com repositório compartilhado pelo state do lifespan.
+   - tenta criar pool MySQL e `AnalyticsExecutor`;
+   - tenta criar pool Postgres e `PostgresConversationStateRepository`;
+   - cria `ChatTurnEmbeddingStore` se embeddings estiverem ativos;
+   - cria provider LLM real se há API key, senão `NullLLMProvider`.
+5. Cria `SessionManager`.
 6. Registra router `/api/v1`.
 
-Caminhos alternativos:
+Fluxos alternativos:
 
-- Sem MySQL: chat continua sem analytics real.
-- Sem Postgres: sessões ficam em memória local do processo.
-- Sem LLM API key: usa `NullLLMProvider`.
-- Sem embeddings: memoria permanece episodica/lexical.
-- Falha ao inicializar MySQL/Postgres: loga erro e degrada para modo parcial.
+- Sem MySQL: analytics é pulado.
+- Sem Postgres: sessões ficam em memória local.
+- Sem LLM real: provider nulo.
+- Sem embeddings: memory segue episódica + lexical.
+- Falha em inicialização de pool: loga e degrada.
 
-### Happy path de `POST /api/v1/chat`
+```mermaid
+sequenceDiagram
+    participant APP as FastAPI_Lifespan
+    participant CFG as OrionSettings
+    participant MY as MySQLPool
+    participant PG as PostgresPool
+    participant LLM as LLMProvider
 
-Fluxo principal:
+    APP->>CFG: carregar config
+    APP->>MY: criar pool se ORION_MYSQL_URL
+    MY-->>APP: executor ou analytics desabilitado
+    APP->>PG: criar pool se ORION_POSTGRES_URL
+    PG-->>APP: repo Postgres ou fallback in-memory
+    APP->>LLM: criar OpenAIProvider ou NullLLMProvider
+```
 
-1. Recebe `ChatRequest`.
-2. Normaliza `conversation_id`.
-3. Obtém ou cria `Session`.
-4. Persiste mensagem do usuário.
-5. Se `embedding_mode` permitir indexação, tenta indexar o turno.
-6. Resolve intenção com `IntentResolver`.
-7. Converte perfil cognitivo em `AttentionPolicy`.
-8. Recupera memoria:
-   - episodica por conversa;
-   - lexical/semantica;
-   - vetorial apenas se `ORION_EMBEDDING_MODE=retrieve`.
-9. Verifica se a intenção exige analytics e se executor MySQL/allowlist existem.
-10. Se sim, executa `_run_analytics`.
-11. Converte resultados em `EvidenceBlock`.
-12. `CognitiveOrchestrator` funde:
-    - mensagem do usuário;
-    - evidence;
-    - digest, quando existir;
-    - memory blocks;
-    - politica de atenção;
-    - orçamento de tokens.
-13. `CognitiveNarrator` chama LLM ou provider nulo.
-14. Persiste resposta do assistente.
-15. Se `embedding_mode` permitir, tenta indexar resposta.
-16. Retorna `ChatResponse`.
+### 2.2 Happy path do chat analítico
 
-### Fluxo de analytics
-
-Quando `cognitive_plan.needs_analytics == true` e MySQL esta disponível:
-
-1. `QueryExpander` expande o plano cognitivo em um ou mais `SemanticQueryPlan`.
-2. Para cada plano:
-   - usa template analítico quando disponível;
-   - ou compila plano via SQL allowlisted.
-3. `AnalyticsExecutor` executa consultas em MySQL.
-4. `asyncio.gather(..., return_exceptions=True)` coleta resultados.
-5. Exceções individuais são convertidas em eventos de log e descartadas.
-6. Se nenhum resultado valido sobrar, segue sem evidencia.
-7. Se houver resultados, `EvidenceAggregator` / `EvidenceBuilder` constroem evidencia.
-8. Evidence entra no orquestrador como `ContextBlock` de fonte `BROKER`.
-
-### Fluxo de memoria
-
-A recuperação de memoria ocorre antes do analytics:
-
-1. `MemoryRetrievalPipeline` recebe `session_id`, query e retrievers.
-2. Adiciona summary/essence se houver cache.
-3. Executa `VectorRetriever` se modo `retrieve`.
-4. Executa `SemanticRetriever` lexical.
-5. Executa `EpisodicRetriever` ou fallback para mensagens recentes.
-6. Deduplica blocos.
-7. Opcionalmente comprime.
-8. Retorna `ContextBlock[]` ao orquestrador.
-
-Observação arquitetural: memoria e analytics são fluxos independentes que se encontram apenas na fusão contextual. Isso e correto: memoria não deve decidir SQL.
-
-### Fluxo de streaming SSE
-
-Quando `stream=true`:
-
-1. A rota monta o mesmo contexto cognitivo.
-2. Retorna `StreamingResponse`.
-3. `narrate_stream` emite deltas.
-4. O gerador acumula texto.
-5. No `finally`, persiste resposta completa do assistente.
-6. Atualiza fase da sessão para `IDLE`.
-7. Emite evento final `done`.
-
-Riscos:
-
-- Se a conexão cair no meio, apenas os deltas acumulados ate o `finally` serão persistidos.
-- A resposta streaming tem metadados mais simples que a resposta não-streaming.
-- Erros no LLM durante streaming podem deixar resposta parcial.
-
-### Fluxos de exceção e degradação
-
-Principais caminhos:
-
-- Erro no pool MySQL durante startup: analytics desabilitado; chat continua.
-- Erro no pool Postgres durante startup: repositório in-memory; chat continua.
-- Erro de embedding: capturado no `SessionManager`, logado e não derruba chat.
-- Erro individual em query analytics: capturado por `gather(..., return_exceptions=True)`, resultado descartado.
-- Todos os analytics falham: segue sem `EvidenceBlock`.
-- Erro no repositório ativo ao gravar mensagem: tende a propagar como erro HTTP.
-- Erro no retrieval de memoria: tende a propagar.
-- Erro no LLM real: tende a propagar, salvo tratamento interno do provider/narrator.
-
-## 3. Diagnóstico de Problemas e Gargalos
-
-### Gargalos de performance
-
-1. Caminho crítico do chat muito longo.
-   - O endpoint executa persistência, memoria, analytics, orquestração, LLM e persistência final.
-   - Com embeddings ativos, pode aguardar chamada externa de embedding antes do pipeline principal.
-
-2. Persistência de conversa em JSONB crescente.
-   - `PostgresConversationStateRepository` mantém mensagens como array JSONB por conversa.
-   - Cada append faz leitura, desserialização, merge e update do histórico completo.
-   - Com `FOR UPDATE`, concorrência por sessão fica serializada.
-   - Custo cresce linearmente com tamanho da conversa.
-
-3. `GET /sessions` potencialmente explosivo.
-   - Lista sessões e busca mensagens por sessão.
-   - O default de muitas mensagens completas por sessão pode gerar resposta muito grande.
-   - Falta paginação/cursor por histórico.
-
-4. Fan-out analítico sem orçamento operacional explícito.
-   - `asyncio.gather` paraleliza planos.
-   - Não ha timeout por plano, limite global por processo ou cancelamento coordenado visível no fluxo.
-
-5. Processamento em memória de resultados analíticos.
-   - Evidence/reducers podem receber muitas linhas.
-   - Sem limite rígido de linhas processadas, o custo de memoria e CPU cresce com o resultado SQL.
-
-6. Cache de embeddings por sessão.
-   - Cache evita re-embed imediato, mas precisa TTL/LRU para sessões numerosas.
-
-### Gargalos de concorrência
-
-- Sessões em memória local não são compartilhadas entre processos.
-- Repositório Postgres por JSONB usa lock por conversa em append.
-- Indexação de embeddings no caminho de gravação aumenta latência do turno.
-- Sem semáforo por provider externo, LLM/embedding podem saturar rate limit.
-- Analytics pode consumir conexões MySQL em rajadas se multiplos requests fizerem fan-out.
-
-### Pontos cegos de negócio
-
-1. Sem MySQL, perguntas analíticas ainda geram resposta narrada sem evidência real.
-   - O sistema degrada bem tecnicamente, mas deve sinalizar melhor ao usuário quando não ha dados reais.
-
-2. Confidence do planner ainda e heurística.
-   - O valor `confidence` não e calibrado estatisticamente.
-   - Pode induzir falsa segurança se usado como métrica forte.
-
-3. Periodos temporais default podem estar hardcoded.
-   - O compilador e templates precisam derivar janela temporal do `CognitivePlan`, não assumir periodo fixo.
-
-4. Evidence e digest ainda não parecem totalmente integrados em todos os caminhos.
-   - O chat usa `EvidenceBlock`; `AnalyticalDigest` existe, mas nem sempre entra no fluxo final.
-
-5. Streaming pode persistir resposta parcial.
-   - Isso e aceitável se documentado, mas precisa metadado de completion/failure.
-
-### Dívidas técnicas
-
-- `api/routes/chat.py` acumula responsabilidades de application service, tracing, orchestration e streaming.
-- `api/main.py` mistura composition root com detalhes de inicialização de subsistemas.
-- Barrels grandes podem mascarar dependencias e dificultar análise de ciclos.
-- `memory/chat_turn_embedding_store.py` ainda conhece conversão concreta de OpenAI para pgvector.
-- Observabilidade ainda depende muito de logs JSONL, sem métricas operacionais permanentes.
-- Timeouts existem em settings, mas precisam ser aplicados consistentemente.
-- Falta suite de carga/concorrência para conversas longas e múltiplas sessões.
-
-## 4. Plano de Ação e Melhorias
-
-### Prioridade 1 — Resiliência do caminho crítico
-
-1. Isolar a indexação de embeddings do request.
-   - Mover `store.index_turn` para tarefa supervisionada ou fila.
-   - Garantir que falha de embedding nunca impacte latência do chat.
-   - Manter `ORION_EMBEDDING_MODE=off` como default.
-
-2. Aplicar timeouts reais.
-   - LLM: timeout por chamada.
-   - Embeddings: timeout curto e retry limitado.
-   - MySQL: timeout por plano.
-   - Postgres: timeout por append/listagem.
-   - Registrar timeout no pipeline trace.
-
-3. Padronizar erros.
-   - Criar camada de erro de aplicação para chat.
-   - Retornar mensagens controladas para falha de LLM, dados indisponíveis, timeout analytics.
-   - Garantir `CognitivePhase.IDLE` em blocos `finally` quando houver erro.
-
-### Prioridade 2 — Persistência e escalabilidade de sessões
-
-1. Migrar mensagens para modelo append-only.
-   - Criar `conversation_messages(session_id, message_id, role, content, created_at)`.
-   - Manter `conversation_state` como metadados da sessão.
-   - Opcionalmente manter snapshot JSONB para cache.
-
-2. Paginar `GET /sessions`.
-   - Endpoint de lista: apenas metadata, última mensagem, contagem, updated_at.
-   - Endpoint de histórico: `GET /sessions/{id}/messages?limit=&cursor=`.
-   - Reduzir default de `session_list_max_messages`.
-
-3. Testar concorrência por sessão.
-   - Dois requests simultâneos no mesmo `conversation_id`.
-   - Sequência correta de `message_id`.
-   - Ausência de perda de mensagens.
-
-### Prioridade 3 — Núcleo analítico
-
-1. Fortalecer `CognitivePlan -> SemanticQueryPlan`.
-   - Taxonomia clara de intents analíticas.
-   - Mapeamento explicito para `AnalyticsStrategy`.
-   - Testes por pergunta-tipo: ranking, queda, baseline, comparação, monitoramento.
-
-2. Fortalecer DSL SQL.
-   - Validar campos obrigatorios por strategy.
-   - Externalizar politicas temporais.
-   - Melhorar templates por domínio.
-
-3. Evoluir `EvidenceBuilder`.
-   - Separar cálculo estatístico, cobertura, anomalias e formatação.
-   - Adicionar métricas de qualidade da evidência.
-   - Garantir provenance em todos os blocos analíticos.
-
-4. Integrar digest de forma consistente.
-   - Definir quando `AnalyticalDigest` entra no prompt.
-   - Controlar budget entre evidence, digest e memoria.
-   - Testar drift guard na narração.
-
-### Prioridade 4 — Observabilidade e operação
-
-1. Transformar trace em métricas.
-   - Latência por etapa: intent, memory, analytics, evidence, orchestrate, narrate.
-   - Contadores: analytics skipped, analytics failed, vector hits, lexical hits.
-   - Tokens: prompt, completion, budget fitted/dropped.
-   - Pools: conexões ocupadas, waits, timeouts.
-
-2. Definir SLOs internos.
-   - p95 chat sem analytics.
-   - p95 chat com analytics.
-   - p95 streaming first token.
-   - taxa de fallback sem evidence.
-
-3. Adicionar testes de carga.
-   - Conversa com milhares de mensagens.
-   - Muitas sessões em `/sessions`.
-   - MySQL lento.
-   - LLM lento.
-   - Provider de embeddings indisponível.
-
-### Prioridade 5 — Simplificação arquitetural
-
-1. Extrair application services de `api/routes/chat.py`.
-   - `ChatTurnService`: fluxo não-stream.
-   - `StreamingChatService`: fluxo SSE.
-   - `AnalyticsPipelineService`: `_run_analytics`.
-   - `MemoryContextService`: montagem de memory blocks.
-
-2. Reduzir barrels.
-   - Preferir imports diretos em módulos sensíveis.
-   - Manter `__init__.py` apenas para API pública estável.
-
-3. Manter embeddings congelados.
-   - Sem novos retrievers vetoriais no broker.
-   - Sem writer para `memory_embeddings` sem decisão explícita.
-   - Sem vector dentro do composer/planner.
-
-## 5. Utilize diagramas de sequência em texto (estilo Mermaid) para ilustrar o fluxo dos dados e a interação entre os componentes
-
-### Diagrama 1 — Happy path do chat analítico
+1. Cliente envia `POST /api/v1/chat`.
+2. `SessionManager` cria/obtém sessão.
+3. Mensagem do usuário é persistida.
+4. `IntentResolver` retorna `CognitivePlan`.
+5. `MemoryRetrievalPipeline` retorna `ContextBlock[]`.
+6. `analytics_guard` verifica `needs_analytics`, executor e allowlist.
+7. `_run_analytics` expande planos e executa templates.
+8. `EvidenceAggregator` produz `EvidenceBlock`.
+9. `CognitiveOrchestrator` injeta `system_prompt`, user turn, evidence, digest e memória.
+10. Scheduler e allocator empacotam blocos.
+11. `CognitiveNarrator` chama `LLMProvider`.
+12. Resposta é persistida e retornada.
 
 ```mermaid
 sequenceDiagram
@@ -437,58 +225,44 @@ sequenceDiagram
     participant LLM as LLMProvider
 
     U->>API: POST /api/v1/chat
-    API->>SM: record_user_message()
-    API->>IR: resolve(message)
+    API->>SM: record_user_message
+    API->>IR: resolve
     IR-->>API: CognitivePlan
-    API->>MEM: collect_blocks(session, query)
+    API->>MEM: collect_blocks
     MEM-->>API: ContextBlock[]
-    API->>ANA: run_analytics(plan)
+    API->>ANA: expand + execute + aggregate
     ANA-->>API: EvidenceBlock
-    API->>ORCH: finalize_prompt(evidence, memory)
-    ORCH-->>API: prompt_text + packed_blocks
-    API->>NAR: narrate(orchestration)
-    NAR->>LLM: complete(prompt)
-    LLM-->>NAR: response
-    NAR-->>API: narration
-    API->>SM: record_assistant_message()
+    API->>ORCH: finalize_prompt
+    ORCH-->>API: prompt_text
+    API->>NAR: narrate
+    NAR->>LLM: chat(messages)
+    LLM-->>NAR: LLMResponse
+    API->>SM: record_assistant_message
     API-->>U: ChatResponse
 ```
 
-### Diagrama 2 — Degradação sem MySQL, Postgres, LLM e embeddings
+### 2.3 Fluxo de memória
 
-```mermaid
-sequenceDiagram
-    participant APP as FastAPI_Lifespan
-    participant MY as MySQLPool
-    participant PG as PostgresPool
-    participant API as ChatAPI
-    participant MEM as InMemoryRepo
-    participant NULL as NullLLMProvider
-
-    APP->>MY: tentar criar pool
-    MY-->>APP: falha ou ausente
-    APP->>PG: tentar criar pool
-    PG-->>APP: falha ou ausente
-    APP->>NULL: usar provider nulo se sem API key
-    API->>MEM: persistir em memoria local
-    API-->>API: analytics skipped
-    API->>NULL: narrate sem LLM real
-```
-
-### Diagrama 3 — Memory retrieval com vector opcional
+1. `MemoryRetrievalPipeline` recebe `session_id`, query e retrievers.
+2. Adiciona summary/essence se existir.
+3. Executa `SemanticRetriever` lexical.
+4. Executa `VectorRetriever` somente se `ORION_EMBEDDING_MODE=retrieve`.
+5. Executa `EpisodicRetriever` para turnos recentes.
+6. Deduplica e comprime se configurado.
+7. Retorna blocos para o orquestrador.
 
 ```mermaid
 sequenceDiagram
     participant API as ChatAPI
     participant PIPE as MemoryRetrievalPipeline
-    participant EPI as EpisodicRetriever
     participant SEM as SemanticRetriever
     participant VEC as VectorRetriever
+    participant EPI as EpisodicRetriever
 
     API->>PIPE: collect_blocks(query)
     PIPE->>SEM: retrieve lexical
     SEM-->>PIPE: semantic_lexical blocks
-    alt embedding_mode == retrieve
+    alt embedding_mode retrieve
         PIPE->>VEC: retrieve vector
         VEC-->>PIPE: vector blocks
     else off or index_only
@@ -496,10 +270,17 @@ sequenceDiagram
     end
     PIPE->>EPI: retrieve recent turns
     EPI-->>PIPE: episodic blocks
-    PIPE-->>API: deduped ContextBlock[]
+    PIPE-->>API: ContextBlock[]
 ```
 
-### Diagrama 4 — Analytics fan-out e evidencia
+### 2.4 Fluxo analítico
+
+1. `QueryExpander` escolhe templates e planos.
+2. Cada plano executa via `AnalyticsExecutor`.
+3. Templates SQL usam `date_from` e `date_to` vindos do `CognitivePlan.time_scope`.
+4. `asyncio.gather(..., return_exceptions=True)` captura falhas individuais.
+5. Resultados válidos viram evidence.
+6. Se todos falham, fluxo segue sem evidence.
 
 ```mermaid
 sequenceDiagram
@@ -511,12 +292,12 @@ sequenceDiagram
 
     API->>EXP: expand(CognitivePlan)
     EXP-->>API: SemanticQueryPlan[]
-    par plano 1
-        API->>EXE: execute_plan(plan1)
+    par plano_1
+        API->>EXE: execute_template(plan_1)
         EXE->>SQL: SELECT allowlisted
         SQL-->>EXE: rows
-    and plano N
-        API->>EXE: execute_plan(planN)
+    and plano_N
+        API->>EXE: execute_template(plan_N)
         EXE->>SQL: SELECT allowlisted
         SQL-->>EXE: rows
     end
@@ -524,59 +305,356 @@ sequenceDiagram
     EVD-->>API: EvidenceBlock
 ```
 
-### Diagrama 5 — Streaming SSE
+### 2.5 Streaming SSE
+
+1. O mesmo pipeline cognitivo é montado.
+2. `narrate_stream()` produz chunks.
+3. A rota emite SSE.
+4. No `finally`, persiste texto acumulado.
+
+Risco: se a conexão cair após poucos chunks, o texto parcial pode ser persistido. Isso deve ser tratado como comportamento explícito ou enriquecido com metadado de completion.
 
 ```mermaid
 sequenceDiagram
-    participant U as Usuario
     participant API as ChatAPI
     participant NAR as CognitiveNarrator
     participant SM as SessionManager
+    participant U as Usuario
 
-    U->>API: POST /chat stream=true
-    API->>NAR: narrate_stream(orchestration)
+    API->>NAR: narrate_stream
     loop chunks
         NAR-->>API: delta
-        API-->>U: SSE data delta
+        API-->>U: SSE data
     end
-    API->>SM: record_assistant_message(texto_acumulado)
-    API-->>U: SSE done
+    API->>SM: record_assistant_message(texto acumulado)
+    API-->>U: done
 ```
 
-### Diagrama 6 — Fluxo de erro em analytics
+### 2.6 Fluxos de exceção e tratamentos
+
+- **MySQL ausente:** analytics não executa; resposta pode sair sem evidência.
+- **Postgres ausente:** sessão fica em memória local; não há persistência cross-process.
+- **LLM ausente:** `NullLLMProvider`.
+- **Embedding falha:** erro é logado; chat deve continuar.
+- **Uma query falha:** resultado é descartado; evidence usa o restante.
+- **Todas queries falham:** sem evidence.
+- **Persistência falha:** tende a propagar como erro HTTP.
+- **LLM retorna vazio:** resolvido parcialmente aumentando budget para modelos constrained; deve permanecer observável via log do narrator.
+
+## 3. Diagnóstico de Problemas e Gargalos
+
+### 3.1 Pontos cegos
+
+1. **Pergunta analítica sem evidence real.** Quando MySQL está indisponível, o fluxo pode seguir para narração. O usuário deveria receber aviso explícito de que analytics não executou.
+2. **Confidence heurística.** `CognitivePlan.confidence` não é calibrada estatisticamente. Deve ser tratada como sinal operacional, não probabilidade.
+3. **Duplicidade de instruções ao LLM.** `analytical_system_prompt` injeta regras e `narrator` também injeta anti-alucinação/cobertura. Isso pode ser aceitável, mas deve ser racionalizado para evitar conflito.
+4. **Evidence em duas vias.** O `EvidenceBlock` entra no prompt principal e parte dele também entra no coverage note do narrator. Isso aumenta tokens e pode criar prioridade ambígua.
+5. **Streaming parcial.** Persistir resposta parcial sem metadata pode confundir histórico.
+
+### 3.2 Gargalos de performance
+
+1. **Caminho crítico longo.** Persistência, memory retrieval, analytics, orchestration, LLM e persistência final acontecem na requisição.
+2. **JSONB crescente em conversas.** Append de mensagem lê e regrava array inteiro, com lock por sessão. Isso degrada com histórico longo.
+3. **`GET /sessions` pesado.** O limite padrão de mensagens completas por sessão é alto e pode gerar payloads muito grandes.
+4. **Fan-out analytics sem orçamento dedicado.** Há paralelismo, mas não um Module claro para timeout, cancelamento, limite global ou circuit breaker.
+5. **LLM constrained model.** Modelos como `gpt-5*` consomem tokens internos; sem budget adequado, podem retornar vazio.
+6. **Embeddings no caminho de gravação.** Mesmo opcionais, se ativos podem adicionar latência externa ao turno.
+
+### 3.3 Gargalos de concorrência
+
+- `PostgresConversationStateRepository` serializa updates por conversa.
+- Sessões in-memory não são distribuídas entre workers.
+- Analytics concorrente pode saturar MySQL.
+- LLM e embeddings não têm semaphore/rate limiter local.
+- Streaming mantém requisição aberta e consome recursos por conexão.
+
+### 3.4 Dívidas técnicas
+
+1. `api/routes/chat.py` precisa virar Module de aplicação.
+2. `_run_analytics` não deveria viver dentro da rota.
+3. `ConversationStateRepository` precisa de Adapter Postgres append-only.
+4. `ChatTurnEmbeddingStore` não deve conhecer `OpenAIEmbeddingService.to_pgvector`.
+5. Barrels grandes devem ser reduzidos ou tratados como API pública estável.
+6. Logs JSONL são úteis, mas métricas operacionais ainda faltam.
+
+## 4. Plano de Ação e Melhorias
+
+### Prioridade 1 — Deepen o Module de turno de chat
+
+**Problema:** `api/routes/chat.py` concentra responsabilidades demais.
+
+**Solução proposta:** extrair um Module `ChatTurnRunner` ou `ChatTurnService`.
+
+**Interface sugerida:**
+
+```python
+result = await chat_turn_runner.run(request)
+stream = chat_turn_runner.stream(request)
+```
+
+**O que fica atrás da Implementation:**
+
+- sessão;
+- persistência;
+- intent;
+- memory retrieval;
+- analytics;
+- orchestration;
+- narration;
+- tracing;
+- estado cognitivo.
+
+**Benefício:** aumenta Locality para bugs de chat e aumenta Leverage dos testes. Um teste de integração chamaria a Interface do turno e validaria comportamento sem passar por HTTP.
+
+### Prioridade 2 — Extrair `AnalyticsPipeline`
+
+**Problema:** `_run_analytics` é um pipeline real, mas está embutido na rota.
+
+**Interface sugerida:**
+
+```python
+evidence = await analytics_pipeline.run(cognitive_plan, message, trace_context)
+```
+
+**Implementation escondida:**
+
+- expandir planos;
+- executar templates;
+- aplicar timeout;
+- descartar falhas parciais;
+- agregar evidence;
+- registrar trace.
+
+**Benefício:** melhora testabilidade e torna explícito onde aplicar budget, cancelamento e observabilidade.
+
+### Prioridade 3 — Criar Module temporal dedicado
+
+**Problema:** parsing temporal já cresceu em `IntentResolver`. Ele é valioso, mas pode virar um subdomínio próprio.
+
+**Interface sugerida:**
+
+```python
+date_range = temporal_resolver.resolve(text, today=date.today())
+```
+
+**Contrato:**
+
+- `date_from`;
+- `date_to`;
+- `period_grain`;
+- `period_source`;
+- `confidence`;
+- `original_text`.
+
+**Benefício:** concentra a complexidade de datas em um seam pequeno, testável e reutilizável por planner/templates.
+
+### Prioridade 4 — Migrar mensagens para append-only
+
+**Problema:** JSONB crescente tem custo linear e lock por conversa.
+
+**Solução proposta:**
+
+- manter `conversation_state` para metadados;
+- criar `conversation_messages`;
+- escrever mensagens append-only;
+- paginar histórico;
+- manter Adapter in-memory compatível com a mesma Interface.
+
+**Benefício:** melhora concorrência e performance sem alterar callers.
+
+### Prioridade 5 — Racionalizar instruções ao LLM
+
+**Problema:** `analytical_system_prompt` e `narrator` podem duplicar regras de cobertura/evidência.
+
+**Solução proposta:**
+
+- deixar `analytical_system_prompt` responsável por identidade, estrutura e regras analíticas;
+- deixar `narrator` responsável apenas por chamar provider e registrar resultado;
+- mover coverage note para metadata/bloco próprio ou removê-lo se evidence já estiver no prompt.
+
+**Benefício:** prompt mais previsível, menor custo de tokens, menor risco de instruções conflitantes.
+
+### Prioridade 6 — Seams de providers e budgets
+
+**Problema:** providers externos têm comportamentos específicos e custos variáveis.
+
+**Melhorias:**
+
+- tornar budget por modelo configurável;
+- adicionar timeout e retry limitado;
+- logar `finish_reason`, model e token usage em nível controlado;
+- manter teste de regressão para `gpt-5*` com `max_completion_tokens` mínimo.
+
+### Prioridade 7 — Métricas e SLOs
+
+Criar métricas por etapa:
+
+- `intent_latency_ms`;
+- `memory_latency_ms`;
+- `analytics_latency_ms`;
+- `orchestrate_latency_ms`;
+- `llm_latency_ms`;
+- `reply_chars`;
+- `evidence_confidence`;
+- `analytics_result_count`;
+- `vector_hit_count`;
+- `prompt_tokens`;
+- `completion_tokens`.
+
+SLOs sugeridos:
+
+- p95 chat sem analytics;
+- p95 chat com analytics;
+- p95 tempo até primeiro chunk em streaming;
+- taxa de respostas sem evidence em perguntas analíticas;
+- taxa de `finish_reason=length`.
+
+## 5. Diagramas de Sequência em Texto (Mermaid)
+
+### 5.1 Arquitetura macro
 
 ```mermaid
-sequenceDiagram
-    participant API as ChatAPI
-    participant EXE as AnalyticsExecutor
-    participant LOG as PipelineTrace
-    participant ORCH as CognitiveOrchestrator
-
-    API->>EXE: execute plans com gather(return_exceptions=True)
-    EXE-->>API: resultados + excecoes
-    API->>LOG: registrar erro por plano
-    alt algum resultado valido
-        API->>ORCH: evidence parcial
-    else nenhum resultado valido
-        API->>ORCH: evidence=None
-    end
+flowchart TB
+    API[api Module] --> Runtime[runtime Module]
+    API --> Memory[memory Module]
+    API --> Broker[broker Module]
+    Runtime --> Contracts[contracts Module]
+    Broker --> Contracts
+    Memory --> Contracts
+    Broker --> MySQL[(MySQL)]
+    Memory --> Postgres[(Postgres)]
+    Runtime --> Provider[LLMProvider Adapter]
+    Memory --> Embedding[Embedding Adapter Opcional]
 ```
 
-### Diagrama 7 — Fluxo recomendado para indexação em background
+### 5.2 Turno de chat com analytics
 
 ```mermaid
 sequenceDiagram
     participant API as ChatAPI
     participant SM as SessionManager
-    participant Q as EmbeddingQueue
-    participant EMB as EmbeddingWorker
-    participant PG as Postgres_pgvector
+    participant IR as IntentResolver
+    participant MEM as MemoryRetrievalPipeline
+    participant ANA as AnalyticsPipeline
+    participant ORCH as CognitiveOrchestrator
+    participant NAR as CognitiveNarrator
 
-    API->>SM: record_user_message()
-    SM->>Q: enqueue(turn)
-    SM-->>API: retorna sem esperar embedding
-    Q->>EMB: consumir turno
-    EMB->>PG: INSERT chat_turn_embeddings
+    API->>SM: append user message
+    API->>IR: resolve(user_message)
+    IR-->>API: CognitivePlan
+    API->>MEM: collect_blocks(session, query)
+    MEM-->>API: ContextBlock[]
+    API->>ANA: run(plan, query)
+    ANA-->>API: EvidenceBlock
+    API->>ORCH: finalize_prompt(plan, evidence, memory)
+    ORCH-->>API: prompt_text
+    API->>NAR: narrate(orchestration)
+    NAR-->>API: NarrationResult
+    API->>SM: append assistant message
 ```
 
-Esse fluxo reduz latência no caminho crítico e preserva a regra arquitetural: embeddings são auxiliares, opcionais e não bloqueiam cognição analítica.
+### 5.3 Caminho alternativo sem analytics
+
+```mermaid
+sequenceDiagram
+    participant API as ChatAPI
+    participant IR as IntentResolver
+    participant MEM as MemoryRetrievalPipeline
+    participant ORCH as CognitiveOrchestrator
+    participant NAR as CognitiveNarrator
+
+    API->>IR: resolve
+    IR-->>API: needs_analytics=false
+    API->>MEM: collect_blocks
+    MEM-->>API: memory blocks
+    API-->>API: skip analytics
+    API->>ORCH: finalize_prompt(evidence=None)
+    API->>NAR: narrate
+```
+
+### 5.4 Degradação sem infraestrutura externa
+
+```mermaid
+sequenceDiagram
+    participant APP as Lifespan
+    participant MY as MySQL
+    participant PG as Postgres
+    participant LLM as LLM
+    participant API as ChatAPI
+
+    APP->>MY: tentar pool
+    MY-->>APP: indisponível
+    APP->>PG: tentar pool
+    PG-->>APP: indisponível
+    APP->>LLM: verificar API key
+    LLM-->>APP: NullLLMProvider se ausente
+    API-->>API: usar memória local e sem analytics
+```
+
+### 5.5 Memory Augmentation opcional
+
+```mermaid
+sequenceDiagram
+    participant PIPE as MemoryRetrievalPipeline
+    participant SEM as SemanticRetriever
+    participant VEC as VectorRetriever
+    participant EPI as EpisodicRetriever
+
+    PIPE->>SEM: lexical retrieval
+    alt ORION_EMBEDDING_MODE=retrieve
+        PIPE->>VEC: vector retrieval
+    else off/index_only
+        PIPE-->>PIPE: skip vector
+    end
+    PIPE->>EPI: recent turns
+    PIPE-->>PIPE: dedupe + compress
+```
+
+### 5.6 Analytics com falhas parciais
+
+```mermaid
+sequenceDiagram
+    participant ANA as AnalyticsPipeline
+    participant EXE as AnalyticsExecutor
+    participant AGG as EvidenceAggregator
+
+    ANA->>EXE: execute plan 1
+    ANA->>EXE: execute plan 2
+    ANA->>EXE: execute plan N
+    EXE-->>ANA: results + exceptions
+    ANA-->>ANA: discard exceptions
+    alt any valid result
+        ANA->>AGG: aggregate(valid_results)
+        AGG-->>ANA: EvidenceBlock
+    else none valid
+        ANA-->>ANA: evidence=None
+    end
+```
+
+### 5.7 Provider LLM constrained model
+
+```mermaid
+sequenceDiagram
+    participant NAR as CognitiveNarrator
+    participant OAI as OpenAIProvider
+    participant API as OpenAI_API
+
+    NAR->>OAI: chat(messages)
+    OAI-->>OAI: choose max_completion_tokens for constrained model
+    OAI->>API: chat.completions.create
+    API-->>OAI: choices + usage + finish_reason
+    OAI-->>NAR: LLMResponse
+```
+
+## Conclusão
+
+O Orion tem um núcleo promissor porque seus contratos já apontam para um runtime analítico governado por evidência, atenção e proveniência. O principal trabalho arquitetural agora não é adicionar mais camadas, mas **aprofundar módulos existentes**:
+
+1. transformar `routes/chat.py` em uma Interface de aplicação menor;
+2. tornar analytics um Module profundo;
+3. isolar interpretação temporal;
+4. trocar persistência JSONB crescente por append-only;
+5. manter Memory Augmentation opcional e simples;
+6. tornar provider/LLM budgets observáveis e configuráveis.
+
+Essa direção aumenta **Leverage** para callers e testes, e aumenta **Locality** para manutenção: bugs de chat ficam no Module de turno, bugs de analytics no Module analítico, bugs temporais no temporal resolver, e bugs de provider no Adapter externo.

@@ -3,11 +3,13 @@ visao_executiva
 ================
 
 Responde:
-    - Quanto cada concessionária faturou por mês?
-    - Qual o crescimento mensal?
-    - Qual o ticket médio da operação por período?
-    - Qual loja possui maior/menor receita?
-    - Qual o maior e menor recebimento individual?
+    - faturamento por concessionária;
+    - total de OS por concessionária;
+    - ticket médio por concessionária;
+    - maior recebimento por concessionária;
+    - menor recebimento por concessionária;
+    - ranking maior/menor por qualquer uma dessas métricas;
+    - análise por período mensal.
 
 Retorna:
     - periodo (VARCHAR) — formato YYYY-MM
@@ -73,3 +75,48 @@ VALUE_KEY = "faturamento"
 TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "concessionaria"
+DEFAULT_MEASURE = "faturamento"
+DEFAULT_DIMENSION = "concessionaria"
+MEASURES = {
+    "total_os": {
+        "label": "volume de OS",
+        "kind": "count",
+        "synonyms": ("volume", "volume de vendas", "total de OS", "quantidade de OS"),
+        "additive": True,
+    },
+    "faturamento": {
+        "label": "receita/faturamento",
+        "kind": "money",
+        "synonyms": ("receita", "faturamento", "valor de vendas", "valor vendido"),
+        "additive": True,
+    },
+    "ticket_medio": {
+        "label": "ticket médio",
+        "kind": "money",
+        "synonyms": ("ticket", "ticket médio", "média por OS"),
+        "additive": False,
+    },
+    "maior_recebimento": {
+        "label": "maior recebimento individual",
+        "kind": "money",
+        "synonyms": ("maior recebimento", "maior venda individual", "maior valor individual"),
+        "additive": False,
+    },
+    "menor_recebimento": {
+        "label": "menor recebimento individual",
+        "kind": "money",
+        "synonyms": ("menor recebimento", "menor venda individual", "menor valor individual"),
+        "additive": False,
+    },
+}
+DIMENSIONS = {
+    "concessionaria": {
+        "label": "concessionária",
+        "synonyms": ("concessionária", "concessionaria", "loja", "unidade"),
+    },
+    "periodo": {
+        "label": "período",
+        "synonyms": ("período", "periodo", "mês", "mes"),
+    },
+}
+SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")

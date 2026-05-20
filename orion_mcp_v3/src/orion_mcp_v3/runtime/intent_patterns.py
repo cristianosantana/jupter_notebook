@@ -48,9 +48,11 @@ ANALYTICAL_PATTERNS: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"\bfaturamento\b|\bfaturou\b|\bfaturam\b|\bfaturamos\b|\bfaturado\b|\bfaturação\b|\brevenue\b|\breceita\b",
+        r"\bfaturamento\b|\bfaturou\b|\bfaturam\b|\bfaturamos\b|\bfaturado\b|\bfaturação\b|\brevenue\b|\breceita\b"
+        r"|\brecebimento(s)?\b|\brecebido(s)?\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\b(maior|menor)\s+recebimento\b", re.IGNORECASE),
     re.compile(r"\btop\s+\d*\s*clientes?\b|\bmaiores?\s+clientes?\b", re.IGNORECASE),
     re.compile(r"\bvendas?\b|\bsales\b", re.IGNORECASE),
     re.compile(r"\bvolume\s+de\s+vendas\b", re.IGNORECASE),
