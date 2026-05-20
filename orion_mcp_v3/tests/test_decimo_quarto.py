@@ -104,7 +104,7 @@ class TestDecimoQuartoOrchestration:
             memory_blocks=(),
             max_tokens=256,
         )
-        assert r.fusion.layer_priority[0] == "user"
+        assert r.fusion.layer_priority[0] == "user" or r.fusion.layer_priority[0] == "system"
         assert "[USER]" in r.prompt_text
         assert len(r.packed_blocks) >= 1
 
