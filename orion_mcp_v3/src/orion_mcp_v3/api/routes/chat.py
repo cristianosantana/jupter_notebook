@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -31,6 +32,7 @@ from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
 from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
 from orion_mcp_v3.memory.retrieval_pipeline import MemoryRetrievalPipeline
@@ -65,6 +67,66 @@ from orion_mcp_v3.runtime.narrator import CognitiveNarrator
 from orion_mcp_v3.runtime.session_manager import SessionManager
 
 _LOG = logging.getLogger("orion.api.chat")
+
+
+def _is_all_records_followup(message: str) -> bool:
+    text = (message or "").strip().lower()
+    return bool(
+        re.search(r"\btod[oa]s?\s+(os\s+)?registros\b", text)
+        or re.search(r"\btod[oa]s?\s+(os\s+)?registos\b", text)
+        or "lista completa" in text
+    )
+
+
+def _format_followup_value(value: Any, measure: str | None) -> str:
+    try:
+        n = float(str(value))
+    except (TypeError, ValueError):
+        return str(value)
+    if measure and "percentual" in measure:
+        return f"{n:.2f}%".replace(".", ",")
+    if measure and any(token in measure for token in ("quantidade", "qtd", "total_os")):
+        return f"{n:,.0f}".replace(",", ".")
+    whole = f"{n:,.2f}"
+    left, right = whole.rsplit(".", 1)
+    return f"R$ {left.replace(',', '.')},{right}"
+
+
+def _all_records_evidence_from_last(evidence: Any, message: str) -> EvidenceBlock | None:
+    if not isinstance(evidence, EvidenceBlock):
+        return None
+    direct = evidence.supporting_data.get("direct_answer") if evidence.supporting_data else None
+    if not isinstance(direct, dict):
+        return None
+    plan = direct.get("plan")
+    rows = direct.get("rows")
+    if not isinstance(plan, dict) or not isinstance(rows, list) or not rows:
+        return None
+    measure = str(plan.get("measure") or "")
+    dimension = plan.get("dimension")
+    dim = str(dimension) if dimension else None
+    lines = [f"Resposta direta da memória analítica: todos os registros de {measure}:"]
+    for i, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get(dim, f"registro {i}")) if dim else f"registro {i}"
+        value = _format_followup_value(row.get(measure), measure)
+        period = row.get("periodo")
+        suffix = f" ({period})" if period else ""
+        lines.append(f"{i}. {label}{suffix}: {value}")
+    if len(lines) == 1:
+        return None
+    summary = "\n".join(lines)
+    return EvidenceBlock(
+        summary=summary,
+        insights={**dict(evidence.insights), "memory_followup": True, "followup_query": message},
+        metrics={**dict(evidence.metrics), "memory_followup": True, "input_rows": len(lines) - 1},
+        confidence=evidence.confidence,
+        coverage=evidence.coverage,
+        provenance=evidence.provenance,
+        sample_refs=evidence.sample_refs,
+        supporting_data={**dict(evidence.supporting_data), "memory_followup": True},
+    )
 
 
 def _resolve_policy(name: str) -> AttentionPolicy:
@@ -327,6 +389,8 @@ def create_chat_router(
             evidence = await _run_analytics(
                 exec_, al, cognitive_plan, req.message, trace_enabled=trace_pipe, conversation_id=cid,
             )
+            if evidence is not None:
+                session.extra["last_analytical_evidence"] = evidence
         elif trace_pipe:
             parts: list[str] = []
             if not cognitive_plan.needs_analytics:
@@ -341,6 +405,14 @@ def create_chat_router(
                 conversation_id=cid,
                 dados={"executado": False, "motivo": ",".join(parts)},
             )
+
+        if evidence is None and _is_all_records_followup(req.message):
+            memory_evidence = _all_records_evidence_from_last(
+                session.extra.get("last_analytical_evidence"),
+                req.message,
+            )
+            if memory_evidence is not None:
+                evidence = memory_evidence
 
         current_signature = (
             signature_from_evidence(evidence, fallback=cognitive_plan)

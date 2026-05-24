@@ -243,7 +243,7 @@ def project_answer(
     return ProjectedAnswer(
         plan=plan,
         summary=" ".join(parts),
-        rows=selected,
+        rows=tuple(ordered),
         top=top,
         bottom=bottom if plan.operation == "top_and_bottom" else None,
     )

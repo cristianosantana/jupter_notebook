@@ -36,7 +36,7 @@ Label key: periodo
 
 SQL = """\
 SELECT
-    DATE_FORMAT(os.data_pagamento, '%Y-%m') AS periodo,
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo,
     COUNT(DISTINCT os.id) AS quantidade_os,
     ROUND(SUM(financeiro.recebido_total), 2) AS total,
     ROUND(SUM(financeiro.recebido_total) / COUNT(DISTINCT os.id), 2) AS ticket_medio_os,
@@ -122,7 +122,7 @@ WHERE
     AND os.data_pagamento >= %s
     AND os.data_pagamento < DATE_ADD(%s, INTERVAL 1 DAY)
 GROUP BY
-    DATE_FORMAT(os.data_pagamento, '%Y-%m')
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m')
 ORDER BY periodo DESC"""
 
 ANSWERS = (

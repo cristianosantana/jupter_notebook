@@ -31,7 +31,7 @@ Label key: concessionaria
 
 SQL = """\
 SELECT
-    DATE_FORMAT(os.created_at, '%m/%Y') AS periodo,
+    DATE_FORMAT(os.created_at, '%%m/%%Y') AS periodo,
     LOWER(co.nome) AS concessionaria,
     COUNT(DISTINCT os.id) AS quantidade_os,
     ROUND(SUM(COALESCE(os_vendas.valor_venda, 0)), 2) AS vendas,
@@ -95,7 +95,7 @@ WHERE
     AND os.os_tipo_id IN (1, 2, 5)
     AND os.created_at >= %s
     AND os.created_at < DATE_ADD(%s, INTERVAL 1 DAY)
-GROUP BY DATE_FORMAT(os.created_at, '%m/%Y'), co.id, co.nome
+GROUP BY DATE_FORMAT(os.created_at, '%%m/%%Y'), co.id, co.nome
 ORDER BY periodo DESC, vendas DESC"""
 
 ANSWERS = (

@@ -32,7 +32,7 @@ Label key: vendedor
 
 SQL = """\
 SELECT
-    DATE_FORMAT(os.created_at, '%m/%Y') AS periodo,
+    DATE_FORMAT(os.created_at, '%%m/%%Y') AS periodo,
     LOWER(fu.nome) AS vendedor,
     LOWER(co.nome) AS concessionaria,
     COUNT(DISTINCT os.id) AS quantidade_os,
@@ -98,7 +98,7 @@ WHERE
     AND os.created_at >= %s
     AND os.created_at < DATE_ADD(%s, INTERVAL 1 DAY)
 GROUP BY
-    DATE_FORMAT(os.created_at, '%m/%Y'),
+    DATE_FORMAT(os.created_at, '%%m/%%Y'),
     fu.id,
     fu.nome,
     co.id,
