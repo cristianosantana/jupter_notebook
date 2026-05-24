@@ -82,9 +82,15 @@ def _score_measure(measure: MeasureCapability, query_text: str) -> int:
         t = _norm(term)
         if t and t in q:
             score += 8 if t == _norm(measure.label) else 5
-    if measure.column == "ticket_medio" and "ticket" in q:
+    if measure.column in {"ticket_medio", "ticket_medio_os"} and "ticket" in q:
         score += 20
-    if measure.column in {"total_vendas", "total_os", "qtd_recebimentos", "total_recebimentos"}:
+    if measure.column in {
+        "total_vendas",
+        "total_os",
+        "qtd_recebimentos",
+        "total_recebimentos",
+        "quantidade_os",
+    }:
         if "volume" in q or "quantidade" in q or "qtd" in q:
             score += 18
     if measure.column in {"faturamento", "valor_total", "valor_total_recebido", "total_recebido"}:
@@ -237,7 +243,7 @@ def project_answer(
     return ProjectedAnswer(
         plan=plan,
         summary=" ".join(parts),
-        rows=selected,
+        rows=tuple(ordered),
         top=top,
         bottom=bottom if plan.operation == "top_and_bottom" else None,
     )

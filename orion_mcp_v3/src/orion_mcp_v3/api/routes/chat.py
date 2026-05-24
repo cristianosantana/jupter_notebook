@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -26,8 +27,12 @@ from orion_mcp_v3.api.models import (
     SessionListResponse,
     UsageInfo,
 )
+from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
+from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
+from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
 from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
 from orion_mcp_v3.memory.retrieval_pipeline import MemoryRetrievalPipeline
@@ -46,6 +51,17 @@ from orion_mcp_v3.runtime.analytics_pipeline_trace import (
     snapshot_orchestration,
     snapshot_semantic_plan,
 )
+from orion_mcp_v3.runtime.analytical_context_policy import AnalyticalContextIsolationPolicy
+from orion_mcp_v3.runtime.analytical_signature import signature_from_evidence, signature_from_plan
+from orion_mcp_v3.runtime.analytical_intent_interpreter import (
+    AnalyticalIntentInterpreter,
+    memory_context_from_messages,
+)
+from orion_mcp_v3.runtime.analytical_intent_validator import IntentContractValidator
+from orion_mcp_v3.runtime.heuristic_signal_catalog import (
+    HeuristicSignalCatalog,
+    extract_heuristic_signals,
+)
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver, map_attention_profile_to_policy
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator
 from orion_mcp_v3.runtime.session_manager import SessionManager
@@ -53,11 +69,93 @@ from orion_mcp_v3.runtime.session_manager import SessionManager
 _LOG = logging.getLogger("orion.api.chat")
 
 
+def _is_all_records_followup(message: str) -> bool:
+    text = (message or "").strip().lower()
+    return bool(
+        re.search(r"\btod[oa]s?\s+(os\s+)?registros\b", text)
+        or re.search(r"\btod[oa]s?\s+(os\s+)?registos\b", text)
+        or "lista completa" in text
+    )
+
+
+def _format_followup_value(value: Any, measure: str | None) -> str:
+    try:
+        n = float(str(value))
+    except (TypeError, ValueError):
+        return str(value)
+    if measure and "percentual" in measure:
+        return f"{n:.2f}%".replace(".", ",")
+    if measure and any(token in measure for token in ("quantidade", "qtd", "total_os")):
+        return f"{n:,.0f}".replace(",", ".")
+    whole = f"{n:,.2f}"
+    left, right = whole.rsplit(".", 1)
+    return f"R$ {left.replace(',', '.')},{right}"
+
+
+def _all_records_evidence_from_last(evidence: Any, message: str) -> EvidenceBlock | None:
+    if not isinstance(evidence, EvidenceBlock):
+        return None
+    direct = evidence.supporting_data.get("direct_answer") if evidence.supporting_data else None
+    if not isinstance(direct, dict):
+        return None
+    plan = direct.get("plan")
+    rows = direct.get("rows")
+    if not isinstance(plan, dict) or not isinstance(rows, list) or not rows:
+        return None
+    measure = str(plan.get("measure") or "")
+    dimension = plan.get("dimension")
+    dim = str(dimension) if dimension else None
+    lines = [f"Resposta direta da memória analítica: todos os registros de {measure}:"]
+    for i, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get(dim, f"registro {i}")) if dim else f"registro {i}"
+        value = _format_followup_value(row.get(measure), measure)
+        period = row.get("periodo")
+        suffix = f" ({period})" if period else ""
+        lines.append(f"{i}. {label}{suffix}: {value}")
+    if len(lines) == 1:
+        return None
+    summary = "\n".join(lines)
+    return EvidenceBlock(
+        summary=summary,
+        insights={**dict(evidence.insights), "memory_followup": True, "followup_query": message},
+        metrics={**dict(evidence.metrics), "memory_followup": True, "input_rows": len(lines) - 1},
+        confidence=evidence.confidence,
+        coverage=evidence.coverage,
+        provenance=evidence.provenance,
+        sample_refs=evidence.sample_refs,
+        supporting_data={**dict(evidence.supporting_data), "memory_followup": True},
+    )
+
+
 def _resolve_policy(name: str) -> AttentionPolicy:
     try:
         return AttentionPolicy(name.strip().lower())
     except ValueError:
         return AttentionPolicy.BALANCED
+
+
+def _should_interpret_with_llm(
+    plan: CognitivePlan,
+    *,
+    policy_request: str | None,
+    memory_context_has_analytics: bool,
+    regex_signals: HeuristicSignalCatalog,
+    provider: LLMProvider,
+) -> bool:
+    if isinstance(provider, NullLLMProvider):
+        return False
+    signal_labels = {s.label for s in regex_signals.signals}
+    followup = any(s.kind == "followup_signal" for s in regex_signals.signals)
+    policy = (policy_request or "").strip().lower()
+    return (
+        plan.confidence < 0.7
+        or followup
+        or plan.needs_comparison
+        or (policy == "analytical" and plan.time_scope is None and bool(signal_labels))
+        or (memory_context_has_analytics and (plan.needs_analytics or "comparative" in signal_labels))
+    )
 
 
 def create_chat_router(
@@ -76,6 +174,10 @@ def create_chat_router(
     narr = narrator or CognitiveNarrator(provider)
     orchestrator = CognitiveOrchestrator()
     resolver = IntentResolver()
+    context_policy = AnalyticalContextIsolationPolicy()
+    capability_catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    intent_interpreter = AnalyticalIntentInterpreter(provider)
+    intent_validator = IntentContractValidator(capability_catalog)
     _fixed_executor = analytics_executor
     _fixed_allowlist = analytics_allowlist
     # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
@@ -96,7 +198,7 @@ def create_chat_router(
         presets = sorted({p for p in raw_presets if tmin <= p <= tmax})
         def_mx = min(max(int(settings.max_tokens), tmin), tmax)
         policies = [p.value for p in AttentionPolicy]
-        dp = (settings.default_policy or "balanced").strip().lower()
+        dp = (settings.default_policy or "analytical").strip().lower()
         if dp not in policies:
             dp = AttentionPolicy.BALANCED.value
         return ChatOptionsResponse(
@@ -140,7 +242,68 @@ def create_chat_router(
             )
 
         cognitive_plan = resolver.resolve(req.message, policy_request=req.policy)
+        recent_messages = await sm.get_recent_messages(session)
+        memory_context = memory_context_from_messages(recent_messages, current_message=req.message)
+        regex_signals = extract_heuristic_signals(req.message)
+        interpret_with_llm = _should_interpret_with_llm(
+            cognitive_plan,
+            policy_request=req.policy,
+            memory_context_has_analytics=memory_context.has_analytical_memory,
+            regex_signals=regex_signals,
+            provider=provider,
+        )
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="intent_interpret",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "used_llm": interpret_with_llm,
+                    "regex_signal_count": len(regex_signals.signals),
+                    "has_analytical_memory": memory_context.has_analytical_memory,
+                },
+            )
+        accepted_contract = None
+        rejected_reason = "not_needed"
+        if interpret_with_llm:
+            contract = await intent_interpreter.interpret(
+                req.message,
+                recent_context=memory_context,
+                capabilities=capability_catalog,
+                regex_signals=regex_signals,
+                heuristic_plan=cognitive_plan,
+            )
+            if contract is None:
+                rejected_reason = "no_valid_json"
+            else:
+                validation = intent_validator.validate(
+                    contract,
+                    heuristic_plan=cognitive_plan,
+                    has_analytical_memory=memory_context.has_analytical_memory,
+                )
+                if validation.accepted and validation.cognitive_plan is not None:
+                    accepted_contract = validation.contract
+                    cognitive_plan = validation.cognitive_plan
+                    rejected_reason = None
+                else:
+                    rejected_reason = validation.rejected_reason or "validator_rejected"
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="intent_interpret",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    "used_llm": interpret_with_llm,
+                    "accepted": accepted_contract is not None,
+                    "rejected_reason": rejected_reason,
+                    "operation": accepted_contract.operation.value if accepted_contract else None,
+                    "metric": accepted_contract.metric if accepted_contract else None,
+                    "dimension": accepted_contract.dimension if accepted_contract else None,
+                    "regex_signal_count": len(regex_signals.signals),
+                },
+            )
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
+        context_decision = context_policy.decide(cognitive_plan)
 
         if trace_pipe:
             log_pipeline_event(
@@ -168,6 +331,7 @@ def create_chat_router(
             settings.embedding_should_retrieve
             and embed_store is not None
             and isinstance(embed_store, ChatTurnEmbeddingStore)
+            and context_decision.allow_vector_memory
         ):
             vec_ret = VectorRetriever(embed_store)
         memory_blocks = await memory_pipeline.collect_blocks(
@@ -225,6 +389,8 @@ def create_chat_router(
             evidence = await _run_analytics(
                 exec_, al, cognitive_plan, req.message, trace_enabled=trace_pipe, conversation_id=cid,
             )
+            if evidence is not None:
+                session.extra["last_analytical_evidence"] = evidence
         elif trace_pipe:
             parts: list[str] = []
             if not cognitive_plan.needs_analytics:
@@ -238,6 +404,36 @@ def create_chat_router(
                 fase="post",
                 conversation_id=cid,
                 dados={"executado": False, "motivo": ",".join(parts)},
+            )
+
+        if evidence is None and _is_all_records_followup(req.message):
+            memory_evidence = _all_records_evidence_from_last(
+                session.extra.get("last_analytical_evidence"),
+                req.message,
+            )
+            if memory_evidence is not None:
+                evidence = memory_evidence
+
+        current_signature = (
+            signature_from_evidence(evidence, fallback=cognitive_plan)
+            if evidence is not None
+            else signature_from_plan(cognitive_plan)
+        )
+        isolation = context_policy.filter_with_trace(
+            memory_blocks,
+            cognitive_plan,
+            signature=current_signature,
+        )
+        memory_blocks = list(isolation.kept_blocks)
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="context_isolation",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    **isolation.as_trace(context_decision),
+                    "signature": current_signature.as_dict(),
+                },
             )
 
         sm.update_phase(session, CognitivePhase.FUSING)

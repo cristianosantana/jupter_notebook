@@ -51,8 +51,10 @@ def test_configure_pipeline_file_logging_writes_jsonl(tmp_path) -> None:
     assert path.parent == log_dir.resolve()
     assert path.name.startswith("analytics_pipeline_")
     assert path.suffix == ".jsonl"
+    assert not path.exists()
 
     log_pipeline_event(etapa="x", fase="pre", dados={"k": 1})
+    assert path.exists()
     shutdown_pipeline_file_logging()
 
     text = path.read_text(encoding="utf-8").strip()

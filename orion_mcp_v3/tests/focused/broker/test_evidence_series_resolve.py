@@ -31,13 +31,13 @@ def test_resolve_specs_use_per_template_value_keys() -> None:
     r0 = AnalyticsResult(
         plan=p0,
         sql="s0",
-        rows=[{"valor_total_recebido": 10.0, "data_recebimento": "2026-01-01"}],
+        rows=[{"valor_total_recebido": 10.0, "data_pagamento": "2026-01-01"}],
         row_count=1,
     )
     r1 = AnalyticsResult(
         plan=p1,
         sql="s1",
-        rows=[{"total_recebido": 99.0, "forma_pagamento": "pix"}],
+        rows=[{"total": 99.0, "periodo": "2026-01"}],
         row_count=1,
     )
 
@@ -47,14 +47,14 @@ def test_resolve_specs_use_per_template_value_keys() -> None:
         default_value_key="wrong_default",
     )
     assert specs[0].value_key == "valor_total_recebido"
-    assert specs[0].time_key == "data_recebimento"
+    assert specs[0].time_key == "data_pagamento"
     assert specs[0].label_key is None
-    assert specs[1].value_key == "total_recebido"
-    assert specs[1].time_key is None
-    assert specs[1].label_key == "forma_pagamento"
+    assert specs[1].value_key == "total"
+    assert specs[1].time_key == "periodo"
+    assert specs[1].label_key == "periodo"
 
     block = EvidenceAggregator().merge((r0, r1), templates=reg, value_key="wrong_default")
-    assert "total_recebido" in block.summary.lower() or "99" in block.summary
+    assert "total" in block.summary.lower() or "99" in block.summary
     assert "valor_total_recebido" in block.summary.lower() or "10" in block.summary
     assert "Sem valores numéricos" not in block.summary
 

@@ -9,8 +9,8 @@ Responde:
     - Quanto foi recebido em cada forma de pagamento por dia?
 
 Retorna:
-    - data_recebimento (DATE)
-    - total_recebimentos (INT)
+    - data_pagamento (DATE)
+    - quantidade_os (INT)
     - valor_total_recebido (DECIMAL)
     - ticket_medio (DECIMAL)
     - total_dinheiro (DECIMAL) — caixa_tipo id=1
@@ -29,35 +29,49 @@ Parâmetros:
 
 Granularidade: day
 Value key: valor_total_recebido
-Time key: data_recebimento
+Time key: data_pagamento
 """
 
 SQL = """\
 SELECT
-    DATE(cx.data_vencimento) AS data_recebimento,
-    COUNT(*) AS total_recebimentos,
-    ROUND(SUM(cx.valor), 2) AS valor_total_recebido,
-    ROUND(AVG(cx.valor), 2) AS ticket_medio,
-    ROUND(SUM(CASE WHEN ct.id = 1 THEN cx.valor ELSE 0 END), 2) AS total_dinheiro,
-    ROUND(SUM(CASE WHEN ct.id = 2 THEN cx.valor ELSE 0 END), 2) AS total_deposito,
-    ROUND(SUM(CASE WHEN ct.id = 3 THEN cx.valor ELSE 0 END), 2) AS total_credito,
-    ROUND(SUM(CASE WHEN ct.id = 4 THEN cx.valor ELSE 0 END), 2) AS total_cheque,
-    ROUND(SUM(CASE WHEN ct.id = 5 THEN cx.valor ELSE 0 END), 2) AS total_concessionaria,
-    ROUND(SUM(CASE WHEN ct.id = 6 THEN cx.valor ELSE 0 END), 2) AS total_debito,
-    ROUND(SUM(CASE WHEN ct.id = 7 THEN cx.valor ELSE 0 END), 2) AS total_pix,
-    ROUND(SUM(CASE WHEN ct.id = 8 THEN cx.valor ELSE 0 END), 2) AS total_permuta,
-    ROUND(SUM(CASE WHEN ct.id = 9 THEN cx.valor ELSE 0 END), 2) AS total_parcelamento
+    DATE(cx.data_pagamento) AS data_pagamento,
+    COUNT(DISTINCT os.id) AS quantidade_os,
+    ROUND(SUM(cx.valor - IFNULL(es.total_estorno, 0)), 2) AS valor_total_recebido,
+    ROUND(AVG(cx.valor - IFNULL(es.total_estorno, 0)), 2) AS ticket_medio,
+    ROUND(SUM(CASE WHEN ct.id = 1 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_dinheiro,
+    ROUND(SUM(CASE WHEN ct.id = 2 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_deposito,
+    ROUND(SUM(CASE WHEN ct.id = 3 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_credito,
+    ROUND(SUM(CASE WHEN ct.id = 4 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_cheque,
+    ROUND(SUM(CASE WHEN ct.id = 5 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_concessionaria,
+    ROUND(SUM(CASE WHEN ct.id = 6 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_debito,
+    ROUND(SUM(CASE WHEN ct.id = 7 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_pix,
+    ROUND(SUM(CASE WHEN ct.id = 8 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_permuta,
+    ROUND(SUM(CASE WHEN ct.id = 9 THEN cx.valor - IFNULL(es.total_estorno, 0) ELSE 0 END), 2) AS total_parcelamento
 FROM caixas cx
     INNER JOIN os os ON os.id = cx.os_id
     INNER JOIN os_tipos ost ON ost.id = os.os_tipo_id
     INNER JOIN caixa_tipos ct ON ct.id = cx.caixa_tipo_id
+    LEFT JOIN (
+        SELECT
+            caixa_id,
+            SUM(valor) AS total_estorno
+        FROM estornos
+        WHERE
+            status IN (3, 4)
+            AND deleted_at IS NULL
+            AND created_at >= %s
+            AND created_at < DATE_ADD(%s, INTERVAL 1 DAY)
+        GROUP BY caixa_id
+    ) es ON es.caixa_id = cx.id
 WHERE
     cx.deleted_at IS NULL
     AND cx.cancelado = 0
+    AND cx.valor > 0
     AND ost.ativo = 1
-    AND cx.created_at >= %s AND cx.created_at < %s
-GROUP BY DATE(cx.created_at)
-ORDER BY cx.created_at DESC"""
+    AND cx.data_pagamento >= %s
+    AND cx.data_pagamento < DATE_ADD(%s, INTERVAL 1 DAY)
+GROUP BY DATE(cx.data_pagamento)
+ORDER BY cx.data_pagamento DESC"""
 
 ANSWERS = (
     "faturamento diário",
@@ -73,16 +87,16 @@ ANSWERS = (
 )
 
 VALUE_KEY = "valor_total_recebido"
-TIME_KEY = "data_recebimento"
+TIME_KEY = "data_pagamento"
 GRAIN = "day"
 LABEL_KEY = None
 DEFAULT_MEASURE = "valor_total_recebido"
-DEFAULT_DIMENSION = "data_recebimento"
+DEFAULT_DIMENSION = "data_pagamento"
 MEASURES = {
-    "total_recebimentos": {
-        "label": "volume de recebimentos",
+    "quantidade_os": {
+        "label": "quantidade de OS",
         "kind": "count",
-        "synonyms": ("volume", "quantidade", "recebimentos"),
+        "synonyms": ("volume", "quantidade", "recebimentos", "quantidade de OS", "total de OS"),
         "additive": True,
     },
     "valor_total_recebido": {
@@ -108,9 +122,12 @@ MEASURES = {
     "total_parcelamento": {"label": "parcelamento", "kind": "money", "synonyms": ("parcelamento",), "additive": True},
 }
 DIMENSIONS = {
-    "data_recebimento": {
+    "data_pagamento": {
         "label": "data",
-        "synonyms": ("data", "dia", "diário", "diario"),
+        "synonyms": ("data", "dia", "diário", "diario", "data pagamento", "data de pagamento"),
     },
 }
 SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
+
+# 4 placeholders: estornos(date_from, date_to) + pagamentos(date_from, date_to)
+PARAMETERS = ("date_from", "date_to", "date_from", "date_to")

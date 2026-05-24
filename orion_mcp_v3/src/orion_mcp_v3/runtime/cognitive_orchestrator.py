@@ -16,6 +16,7 @@ from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, Cont
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.runtime.analytical_system_prompt import build_analytical_system_block
+from orion_mcp_v3.runtime.analytical_signature import signature_from_evidence
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.budget_allocator import allocate
 from orion_mcp_v3.runtime.context_fusion import ContextFusion, ContextFusionResult
@@ -36,12 +37,23 @@ class CognitiveOrchestrationResult:
 
 
 def _evidence_to_context_block(eb: EvidenceBlock) -> ContextBlock:
+    signature = signature_from_evidence(eb)
     md: dict[str, object] = {
         "fusion_kind": "evidence",
         "evidence_confidence": eb.confidence,
         "coverage_labels": list(eb.coverage.labels),
         "provenance_count": len(eb.provenance),
+        "analytical_signature": signature.as_dict(),
     }
+    direct_answer = eb.supporting_data.get("direct_answer") if eb.supporting_data else None
+    answer_plan = eb.metrics.get("answer_plan") if eb.metrics else None
+    metrics_value_key = eb.metrics.get("value_key") if eb.metrics else None
+    if answer_plan is not None:
+        md["answer_plan"] = answer_plan
+    if direct_answer is not None:
+        md["direct_answer"] = direct_answer
+    if metrics_value_key is not None:
+        md["metrics_value_key"] = metrics_value_key
     if eb.provenance:
         md["provenance_sources"] = [a.source for a in eb.provenance[:8]]
     return ContextBlock(

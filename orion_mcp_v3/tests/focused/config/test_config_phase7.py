@@ -23,7 +23,7 @@ def test_settings_defaults(monkeypatch) -> None:
     assert s.llm_model == "gpt-5-mini"
     assert s.llm_max_tokens == 2048
     assert s.memory_window == 60
-    assert s.default_policy == "balanced"
+    assert s.default_policy == "analytical"
     assert s.api_port == 8000
     assert s.log_level == "INFO"
 

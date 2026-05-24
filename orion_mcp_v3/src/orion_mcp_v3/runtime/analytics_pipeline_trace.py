@@ -25,15 +25,16 @@ _LOG = logging.getLogger("orion.analytics.pipeline")
 
 _PIPELINE_JSONL_HANDLER: logging.Handler | None = None
 _PIPELINE_JSONL_PATH: Path | None = None
+_PIPELINE_JSONL_PENDING_PATH: Path | None = None
 
 
 def configure_pipeline_file_logging(s: "OrionSettings") -> Path | None:
     """
     Se ``analytics_pipeline_trace`` e ``analytics_pipeline_log_dir`` estiverem activos,
-    acrescenta um :class:`logging.FileHandler` ao logger ``orion.analytics.pipeline``
-    com uma linha JSON por evento (sem envoltório de log da consola).
+    prepara o caminho do JSONL. O :class:`logging.FileHandler` só é criado no
+    primeiro :func:`log_pipeline_event`, evitando ficheiros vazios por startup/reload.
     """
-    global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH
+    global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH, _PIPELINE_JSONL_PENDING_PATH
 
     shutdown_pipeline_file_logging()
 
@@ -50,21 +51,34 @@ def configure_pipeline_file_logging(s: "OrionSettings") -> Path | None:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = base / f"analytics_pipeline_{stamp}.jsonl"
 
-    h = logging.FileHandler(path, mode="a", encoding="utf-8")
+    _LOG.setLevel(logging.INFO)
+    _PIPELINE_JSONL_HANDLER = None
+    _PIPELINE_JSONL_PATH = None
+    _PIPELINE_JSONL_PENDING_PATH = path.resolve()
+    return _PIPELINE_JSONL_PENDING_PATH
+
+
+def _ensure_pipeline_file_handler() -> None:
+    """Cria o handler JSONL no primeiro evento real."""
+    global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH, _PIPELINE_JSONL_PENDING_PATH
+
+    if _PIPELINE_JSONL_HANDLER is not None or _PIPELINE_JSONL_PENDING_PATH is None:
+        return
+    h = logging.FileHandler(_PIPELINE_JSONL_PENDING_PATH, mode="a", encoding="utf-8")
     h.setLevel(logging.INFO)
     h.setFormatter(logging.Formatter("%(message)s"))
     _LOG.addHandler(h)
-    _LOG.setLevel(logging.INFO)
     _PIPELINE_JSONL_HANDLER = h
-    _PIPELINE_JSONL_PATH = path.resolve()
-    return _PIPELINE_JSONL_PATH
+    _PIPELINE_JSONL_PATH = _PIPELINE_JSONL_PENDING_PATH
 
 
 def shutdown_pipeline_file_logging() -> None:
     """Remove e fecha o handler JSONL (ex.: no shutdown do lifespan da app)."""
-    global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH
+    global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH, _PIPELINE_JSONL_PENDING_PATH
 
+    _PIPELINE_JSONL_PENDING_PATH = None
     if _PIPELINE_JSONL_HANDLER is None:
+        _PIPELINE_JSONL_PATH = None
         return
     try:
         _LOG.removeHandler(_PIPELINE_JSONL_HANDLER)
@@ -118,6 +132,7 @@ def log_pipeline_event(
         payload["conversation_id"] = conversation_id
     if dados:
         payload["dados"] = _json_safe(dict(dados))
+    _ensure_pipeline_file_handler()
     _LOG.info("%s", json.dumps(payload, ensure_ascii=False, default=str))
 
 
@@ -131,6 +146,7 @@ def snapshot_cognitive_plan(cp: Any) -> dict[str, Any]:
     return {
         "intent_type": cp.intent_type.value,
         "needs_analytics": cp.needs_analytics,
+        "needs_comparison": cp.needs_comparison,
         "confidence": cp.confidence,
         "metrics": list(cp.metrics),
         "attention_profile": cp.attention_profile.value,

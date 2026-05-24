@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from fastapi.testclient import TestClient
 
 from orion_mcp_v3.api.main import create_app
 from orion_mcp_v3.api.models import ChatRequest, ChatResponse, HealthResponse
-from orion_mcp_v3.protocols.llm import EchoLLMProvider, NullLLMProvider
+from orion_mcp_v3.protocols.llm import (
+    ChatMessage,
+    EchoLLMProvider,
+    LLMResponse,
+    LLMResponseMeta,
+    LLMStreamChunk,
+    NullLLMProvider,
+)
 from orion_mcp_v3.runtime import Session, SessionManager
 from orion_mcp_v3.runtime.context_state import CognitivePhase
 
@@ -79,6 +87,51 @@ def test_session_update_phase() -> None:
 def _make_client(provider=None) -> TestClient:
     app = create_app(llm_provider=provider or NullLLMProvider())
     return TestClient(app)
+
+
+class IntentThenNarrationProvider:
+    def __init__(self) -> None:
+        self.chat_calls = 0
+
+    async def generate(self, prompt: str, **kwargs):  # type: ignore[no-untyped-def]
+        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+
+    async def chat(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
+        self.chat_calls += 1
+        if self.chat_calls == 1:
+            return LLMResponse(
+                text=json.dumps(
+                    {
+                        "intent_type": "comparative",
+                        "operation": "delta",
+                        "needs_analytics": True,
+                        "needs_memory": True,
+                        "needs_comparison": True,
+                        "metric": "sales",
+                        "dimension": "seller",
+                        "date_ranges": [
+                            {
+                                "label": "março",
+                                "date_from": "2026-03-01",
+                                "date_to": "2026-03-31",
+                            },
+                            {
+                                "label": "abril",
+                                "date_from": "2026-04-01",
+                                "date_to": "2026-04-30",
+                            },
+                        ],
+                        "source_periods": "explicit",
+                        "inherits_from_previous": [],
+                        "confidence": 0.92,
+                    }
+                ),
+                meta=LLMResponseMeta(model="fake"),
+            )
+        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+
+    async def stream(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
+        yield LLMStreamChunk(delta="narrativa ok", finish_reason="stop")
 
 
 def test_health_endpoint() -> None:
@@ -167,6 +220,23 @@ def test_chat_endpoint_returns_cognitive_intent() -> None:
     assert r.status_code == 200
     meta = r.json()["meta"]
     assert meta["cognitive_intent"] is not None
+
+
+def test_chat_uses_llm_intent_contract_when_valid() -> None:
+    provider = IntentThenNarrationProvider()
+    client = _make_client(provider)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "faça uma comparação entre março e abril de 2026 por vendedor",
+            "policy": "analytical",
+        },
+    )
+
+    assert r.status_code == 200
+    assert r.json()["meta"]["cognitive_intent"] == "comparative"
+    assert provider.chat_calls >= 2
 
 
 def test_chat_endpoint_invalid_message() -> None:

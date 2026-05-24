@@ -19,36 +19,36 @@ def _result(slug: str, rows: list[dict]) -> AnalyticsResult:  # type: ignore[typ
     )
 
 
-def test_visao_executiva_projects_top_and_bottom_revenue() -> None:
+def test_performance_concessionaria_projects_top_and_bottom_sales() -> None:
     rows = [
         {
-            "periodo": "2026-04",
+            "periodo": "04/2026",
             "concessionaria": "osaka",
-            "total_os": 176,
-            "faturamento": "187547.00",
-            "ticket_medio": "1041.93",
-            "maior_recebimento": "13020.00",
-            "menor_recebimento": "0.00",
+            "quantidade_os": 176,
+            "vendas": "187547.00",
+            "ticket_medio_os": "1041.93",
+            "recebido": "13020.00",
+            "percentual_recebido": "6.94",
         },
         {
-            "periodo": "2026-04",
+            "periodo": "04/2026",
             "concessionaria": "strada jeep",
-            "total_os": 261,
-            "faturamento": "112575.00",
-            "ticket_medio": "428.04",
-            "maior_recebimento": "9405.00",
-            "menor_recebimento": "0.00",
+            "quantidade_os": 261,
+            "vendas": "112575.00",
+            "ticket_medio_os": "428.04",
+            "recebido": "9405.00",
+            "percentual_recebido": "8.35",
         },
     ]
 
     projected = build_projected_answer(
         "Qual concessionária possui maior/menor receita em abril de 2026?",
-        [_result("visao_executiva", rows)],
+        [_result("performance_concessionaria", rows)],
         templates=ANALYTICS_TEMPLATES,
     )
 
     assert projected is not None
-    assert projected.plan.measure == "faturamento"
+    assert projected.plan.measure == "vendas"
     assert projected.plan.operation == "top_and_bottom"
     assert projected.top is not None
     assert projected.bottom is not None
@@ -59,8 +59,8 @@ def test_visao_executiva_projects_top_and_bottom_revenue() -> None:
 
 def test_performance_vendedor_projects_ticket_not_total_value() -> None:
     rows = [
-        {"vendedor": "ana", "total_vendas": 10, "valor_total": "10000.00", "ticket_medio": "1000.00"},
-        {"vendedor": "bia", "total_vendas": 20, "valor_total": "12000.00", "ticket_medio": "600.00"},
+        {"vendedor": "ana", "quantidade_os": 10, "vendas": "10000.00", "ticket_medio_os": "1000.00"},
+        {"vendedor": "bia", "quantidade_os": 20, "vendas": "12000.00", "ticket_medio_os": "600.00"},
     ]
 
     projected = build_projected_answer(
@@ -70,15 +70,15 @@ def test_performance_vendedor_projects_ticket_not_total_value() -> None:
     )
 
     assert projected is not None
-    assert projected.plan.measure == "ticket_medio"
+    assert projected.plan.measure == "ticket_medio_os"
     assert projected.top is not None
     assert projected.top["vendedor"] == "ana"
 
 
 def test_performance_vendedor_projects_sales_volume_not_revenue() -> None:
     rows = [
-        {"vendedor": "ana", "total_vendas": 10, "valor_total": "20000.00", "ticket_medio": "2000.00"},
-        {"vendedor": "bia", "total_vendas": 20, "valor_total": "12000.00", "ticket_medio": "600.00"},
+        {"vendedor": "ana", "quantidade_os": 10, "vendas": "20000.00", "ticket_medio_os": "2000.00"},
+        {"vendedor": "bia", "quantidade_os": 20, "vendas": "12000.00", "ticket_medio_os": "600.00"},
     ]
 
     projected = build_projected_answer(
@@ -88,41 +88,41 @@ def test_performance_vendedor_projects_sales_volume_not_revenue() -> None:
     )
 
     assert projected is not None
-    assert projected.plan.measure == "total_vendas"
+    assert projected.plan.measure == "quantidade_os"
     assert projected.top is not None
     assert projected.top["vendedor"] == "bia"
 
 
-def test_visao_executiva_list_summary_materializes_ticket_values() -> None:
+def test_performance_concessionaria_list_summary_materializes_ticket_values() -> None:
     rows = [
         {
-            "periodo": "2026-04",
+            "periodo": "04/2026",
             "concessionaria": "osaka",
-            "total_os": 176,
-            "faturamento": "187547.00",
-            "ticket_medio": "1041.93",
-            "maior_recebimento": "13020.00",
-            "menor_recebimento": "0.00",
+            "quantidade_os": 176,
+            "vendas": "187547.00",
+            "ticket_medio_os": "1041.93",
+            "recebido": "13020.00",
+            "percentual_recebido": "6.94",
         },
         {
-            "periodo": "2026-04",
+            "periodo": "04/2026",
             "concessionaria": "distribuição ppf",
-            "total_os": 48,
-            "faturamento": "118669.99",
-            "ticket_medio": "2282.12",
-            "maior_recebimento": "7600.00",
-            "menor_recebimento": "210.00",
+            "quantidade_os": 48,
+            "vendas": "118669.99",
+            "ticket_medio_os": "2282.12",
+            "recebido": "7600.00",
+            "percentual_recebido": "6.40",
         },
     ]
 
     projected = build_projected_answer(
         "Qual o ticket médio por concessionárias entre janeiro e abriu de 2026?",
-        [_result("visao_executiva", rows)],
+        [_result("performance_concessionaria", rows)],
         templates=ANALYTICS_TEMPLATES,
     )
 
     assert projected is not None
-    assert projected.plan.measure == "ticket_medio"
+    assert projected.plan.measure == "ticket_medio_os"
     assert projected.plan.operation == "list"
     assert "distribuição ppf: R$ 2.282,12" in projected.summary
     assert "osaka: R$ 1.041,93" in projected.summary
@@ -166,3 +166,29 @@ def test_analytical_policy_does_not_force_small_talk() -> None:
 
     assert plan.needs_analytics is False
     assert plan.intent_type.value == "conversational"
+
+
+def test_comparative_sales_question_sets_needs_comparison() -> None:
+    plan = IntentResolver().resolve(
+        "faça uma comparação entre março e abriu de 2026? "
+        "quero saber qual vendedor teve queda nas vendas e qual teve aumento",
+        policy_request="memory_focused",
+    )
+
+    assert plan.intent_type.value == "comparative"
+    assert plan.needs_analytics is True
+    assert plan.needs_comparison is True
+    assert plan.time_scope == "2026-03-01/2026-04-30"
+
+
+def test_crossing_revenue_question_without_dates_is_comparative() -> None:
+    plan = IntentResolver().resolve(
+        "quero que vc cruze os faturamentos e me diga quais houve queda e quais subiram?",
+        policy_request="analytical",
+    )
+
+    assert plan.intent_type.value == "comparative"
+    assert plan.needs_analytics is True
+    assert plan.needs_comparison is True
+    assert plan.hints["signals"]["comparative"] is True
+    assert plan.time_scope is None
