@@ -30,6 +30,11 @@ from orion_mcp_v3.broker.query_templates import (
     QueryTemplate,
     QueryTemplateRegistry,
 )
+from orion_mcp_v3.broker.query_capability_catalog import (
+    QueryCapabilityCatalog,
+    QueryCapabilityEntry,
+    build_query_capability_catalog,
+)
 from orion_mcp_v3.broker.planner import (
     build_query_plan,
     build_semantic_retrieval_plan,
@@ -83,6 +88,9 @@ __all__ = [
     "QueryExpander",
     "QueryTemplate",
     "QueryTemplateRegistry",
+    "QueryCapabilityCatalog",
+    "QueryCapabilityEntry",
+    "build_query_capability_catalog",
     "dedupe_plans",
     "chunk_rows",
     "ChunkReducer",

@@ -152,12 +152,10 @@ class QueryTemplateRegistry:
                 if answer.lower() in qt_lower:
                     score += 4
             # Perguntas por concessionária: ``faturamento_diário`` agrega por dia global (sem dimensão
-            # loja); preferir séries mensais (``visao_executiva``) ou ranking no período.
+            # loja); preferir séries mensais por concessionária.
             if "concessionária" in qt_lower or "concessionaria" in qt_lower:
-                if template.slug == "visao_executiva":
-                    score += 10
-                elif template.slug == "performance_concessionaria":
-                    score += 8
+                if template.slug == "performance_concessionaria":
+                    score += 12
                 elif template.slug == "faturamento_diario":
                     score -= 8
 
@@ -167,17 +165,17 @@ class QueryTemplateRegistry:
                 "concessionária" in qt_lower or "concessionaria" in qt_lower
             )
             # Série temporal por loja (mês) vs. totais no período — com contexto temporal explícito,
-            # preferir granularidade mensal ``visao_executiva``.
+            # preferir a query mensal por concessionária.
             if (
                 has_concessionaria_dim
                 and cp.needs_temporal_context
-                and template.slug == "visao_executiva"
+                and template.slug == "performance_concessionaria"
             ):
                 score += 22
             if has_vendedor_dim and not has_concessionaria_dim:
                 if template.slug == "performance_vendedor":
                     score += 14
-                elif template.slug in ("visao_executiva", "faturamento_diario"):
+                elif template.slug in ("performance_concessionaria", "faturamento_diario"):
                     score -= 6
 
         if cp.needs_temporal_context and template.time_key:

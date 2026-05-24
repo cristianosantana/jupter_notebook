@@ -144,7 +144,7 @@ def test_resolve_params_uses_explicit_numeric_range_from_intent_resolver() -> No
 
 def test_execute_template() -> None:
     mysql = MagicMock()
-    rows = [{"data_recebimento": "2026-05-01", "valor_total_recebido": 1500.0}]
+    rows = [{"data_pagamento": "2026-05-01", "valor_total_recebido": 1500.0}]
     mysql.select = AsyncMock(return_value=rows)
     executor = AnalyticsExecutor(mysql, ANALYTICS_ALLOWLIST)
 
@@ -160,7 +160,7 @@ def test_execute_template() -> None:
         assert result.plan.intent_slug == "template.faturamento_diario"
         assert "template_slug" in result.plan.hints
         mysql.select.assert_awaited_once_with(
-            tpl.sql, params=("2026-01-01", "2026-06-01")
+            tpl.sql, params=("2026-01-01", "2026-06-01", "2026-01-01", "2026-06-01")
         )
 
     asyncio.run(run())
@@ -205,7 +205,6 @@ def test_all_templates_registered() -> None:
         "performance_concessionaria",
         "performance_vendedor",
         "formas_pagamento",
-        "visao_executiva",
     }
     assert set(ANALYTICS_TEMPLATES.slugs) == expected
 

@@ -26,6 +26,21 @@ from orion_mcp_v3.runtime.analytical_signature import (
     signature_from_plan,
     signatures_compatible,
 )
+from orion_mcp_v3.runtime.analytical_intent_interpreter import (
+    AnalyticalIntentInterpreter,
+    AnalyticalMemoryContext,
+    AnalyticalMemoryTurn,
+    memory_context_from_messages,
+)
+from orion_mcp_v3.runtime.analytical_intent_validator import (
+    IntentContractValidator,
+    IntentValidationResult,
+)
+from orion_mcp_v3.runtime.heuristic_signal_catalog import (
+    HeuristicSignal,
+    HeuristicSignalCatalog,
+    extract_heuristic_signals,
+)
 from orion_mcp_v3.runtime.budget_allocator import AllocationResult, allocate, estimate_tokens
 from orion_mcp_v3.runtime.prompt_render import render_blocks_to_prompt
 from orion_mcp_v3.runtime.context_builder import AnalyticalContextBuilder
@@ -85,6 +100,9 @@ __all__ = [
     "AnalyticalContextIsolationPolicy",
     "AnalyticalSignature",
     "AnalyticalContextBuilder",
+    "AnalyticalIntentInterpreter",
+    "AnalyticalMemoryContext",
+    "AnalyticalMemoryTurn",
     "apply_decay",
     "apply_decay_to_sequence",
     "apply_decay_with_clock",
@@ -105,6 +123,11 @@ __all__ = [
     "ContextFusionResult",
     "FusionSource",
     "IntentResolver",
+    "IntentContractValidator",
+    "IntentValidationResult",
+    "HeuristicSignal",
+    "HeuristicSignalCatalog",
+    "extract_heuristic_signals",
     "map_attention_profile_to_policy",
     "NarrationResult",
     "ContextState",
@@ -123,6 +146,7 @@ __all__ = [
     "signature_from_metadata",
     "signature_from_plan",
     "signatures_compatible",
+    "memory_context_from_messages",
     "policy_shares",
     "resolve_age_seconds",
     "resolve_cognitive_conflicts",

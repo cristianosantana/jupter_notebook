@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import unicodedata
 
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextSource
@@ -63,6 +64,21 @@ _ANALYTICAL_MARKERS = (
     "direct_answer",
 )
 
+_MEASURE_TERMS: dict[str, tuple[str, ...]] = {
+    "valor_total": ("valor_total", "faturamento", "receita", "valor total"),
+    "faturamento": ("faturamento", "receita"),
+    "total_vendas": ("total_vendas", "vendas", "volume de vendas", "volume"),
+    "total_os": ("total_os", "volume de os", "volume", "vendas"),
+    "ticket_medio": ("ticket_medio", "ticket médio", "ticket medio", "ticket"),
+}
+
+_DIMENSION_TERMS: dict[str, tuple[str, ...]] = {
+    "vendedor": ("vendedor", "vendedores"),
+    "concessionaria": ("concessionaria", "concessionária", "concessionárias"),
+    "concessionária": ("concessionaria", "concessionária", "concessionárias"),
+    "forma_pagamento": ("forma_pagamento", "forma de pagamento", "pagamento"),
+}
+
 
 def _has_recall_hint(plan: CognitivePlan) -> bool:
     hints = plan.hints or {}
@@ -96,6 +112,45 @@ def _is_analytical_memory_block(block: ContextBlock) -> bool:
         return True
     text = (block.text or "").lower()
     return any(marker in text for marker in _ANALYTICAL_MARKERS)
+
+
+def _norm(text: str) -> str:
+    raw = "".join(
+        c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c)
+    )
+    return " ".join(raw.split())
+
+
+def _terms_for(value: str | None, aliases: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
+    if not value:
+        return ()
+    return tuple(_norm(t) for t in aliases.get(value, (value,)) if t)
+
+
+def _same_analytical_shape_ignoring_dates(
+    current: AnalyticalSignature,
+    historical: AnalyticalSignature,
+) -> bool:
+    if not historical.has_analytical_shape:
+        return False
+    if current.measure and historical.measure and current.measure != historical.measure:
+        return False
+    if current.dimension and historical.dimension and current.dimension != historical.dimension:
+        return False
+    if current.template_slug and historical.template_slug and current.template_slug != historical.template_slug:
+        return False
+    return True
+
+
+def _text_matches_signature(text: str, current: AnalyticalSignature) -> bool:
+    """Fallback para memória antiga que ainda não persistia `analytical_signature`."""
+
+    blob = _norm(text)
+    measure_terms = _terms_for(current.measure, _MEASURE_TERMS)
+    dimension_terms = _terms_for(current.dimension, _DIMENSION_TERMS)
+    measure_ok = not measure_terms or any(term in blob for term in measure_terms)
+    dimension_ok = not dimension_terms or any(term in blob for term in dimension_terms)
+    return bool(measure_ok and dimension_ok)
 
 
 class AnalyticalContextIsolationPolicy:
@@ -144,11 +199,14 @@ class AnalyticalContextIsolationPolicy:
             is_analytical = _is_analytical_memory_block(block)
             if is_analytical:
                 historical_sig = signature_from_metadata(block.metadata or {})
-                compatible = (
-                    signature is not None
-                    and historical_sig is not None
-                    and signatures_compatible(signature, historical_sig)
-                )
+                if signature is not None and historical_sig is not None and plan.needs_comparison:
+                    compatible = _same_analytical_shape_ignoring_dates(signature, historical_sig)
+                elif signature is not None and historical_sig is not None:
+                    compatible = signatures_compatible(signature, historical_sig)
+                elif signature is not None and plan.needs_comparison:
+                    compatible = _text_matches_signature(block.text or "", signature)
+                else:
+                    compatible = False
                 if not decision.allow_historical_analytics or not compatible:
                     dropped_analytical += 1
                     continue

@@ -15,6 +15,8 @@ O eixo central é:
 ```text
 pergunta humana
   -> intenção cognitiva
+  -> interpretação semântica LLM opcional
+  -> contrato de intenção validado
   -> estratégia analítica
   -> plano semântico
   -> SQL seguro / templates
@@ -49,13 +51,16 @@ Embeddings existem, mas pertencem à camada opcional de **Memory Augmentation**.
 
 #### `runtime` — Module cognitivo
 
-**Interface:** `IntentResolver.resolve()`, `CognitiveOrchestrator.finalize_prompt()`, `CognitiveNarrator.narrate()`, `AttentionPolicy`, scheduler, allocator e prompt renderer.
+**Interface:** `IntentResolver.resolve()`, `AnalyticalIntentInterpreter.interpret()`, `IntentContractValidator.validate()`, `CognitiveOrchestrator.finalize_prompt()`, `CognitiveNarrator.narrate()`, `AttentionPolicy`, scheduler, allocator e prompt renderer.
 
 **Implementation:** interpreta intenção, monta camadas de contexto, aplica política de atenção, aloca orçamento de tokens, renderiza prompt e chama o provider LLM.
 
 **Arquivos principais:**
 
 - `src/orion_mcp_v3/runtime/intent_resolver.py`
+- `src/orion_mcp_v3/runtime/analytical_intent_interpreter.py`
+- `src/orion_mcp_v3/runtime/analytical_intent_validator.py`
+- `src/orion_mcp_v3/runtime/heuristic_signal_catalog.py`
 - `src/orion_mcp_v3/runtime/cognitive_orchestrator.py`
 - `src/orion_mcp_v3/runtime/analytical_context_policy.py`
 - `src/orion_mcp_v3/runtime/analytical_signature.py`
@@ -67,6 +72,8 @@ Embeddings existem, mas pertencem à camada opcional de **Memory Augmentation**.
 **Avaliação de profundidade:** é o Module mais próximo do desenho desejado. `CognitiveOrchestrator.finalize_prompt()` oferece uma Interface pequena para muita Implementation: fusão, scheduler, allocator e render. O novo `analytical_system_prompt` aumenta Leverage porque injeta regras analíticas e anti-alucinação sem espalhar instruções pelo código.
 
 O isolamento analítico aprofunda esse Module: `AnalyticalContextIsolationPolicy` decide quando memória analítica histórica pode competir por atenção, e `AnalyticalSignature` dá ao runtime uma forma explícita de comparar métrica, dimensão, operação, template e período antes de reutilizar histórico. Isso preserva a tese central do projeto: evidência atual vence memória antiga.
+
+A nova camada de interpretação aprofunda outro seam: `IntentResolver` continua barato e heurístico, mas seus regex agora também viram `HeuristicSignalCatalog`. O LLM usa esses sinais, o histórico recente e o catálogo de capabilities para propor um `AnalyticalIntentContract`; o `IntentContractValidator` aceita somente contratos compatíveis com enum, datas e capacidades declaradas. Assim, o sistema ganha entendimento contextual sem entregar ao LLM o poder de inventar SQL ou capacidades.
 
 **Risco:** o `runtime/__init__.py` é um barrel grande. Ele aumenta conveniência, mas também carrega muitos símbolos e pode mascarar dependências indiretas. O risco é import coupling, não comportamento imediato.
 
@@ -121,7 +128,7 @@ O `broker` deve continuar livre de embeddings e de lógica conversacional. A sua
 
 #### `contracts` — Module de linguagem comum
 
-**Interface:** dataclasses e enums de domínio técnico: `CognitivePlan`, `SemanticQueryPlan`, `ContextBlock`, `EvidenceBlock`, `AnalyticalDigest`, `CoverageInfo`, `ProvenanceAnchor`.
+**Interface:** dataclasses e enums de domínio técnico: `CognitivePlan`, `AnalyticalIntentContract`, `SemanticQueryPlan`, `ContextBlock`, `EvidenceBlock`, `AnalyticalDigest`, `CoverageInfo`, `ProvenanceAnchor`.
 
 **Implementation:** quase inexistente; o valor é estabilidade sem dependências de runtime/broker/memory.
 
@@ -221,15 +228,18 @@ sequenceDiagram
 2. `SessionManager` cria/obtém sessão.
 3. Mensagem do usuário é persistida.
 4. `IntentResolver` retorna `CognitivePlan`, usando `policy_request` como bias quando a política explícita é `analytical` e o texto parece pergunta de dados.
-5. `MemoryRetrievalPipeline` retorna `ContextBlock[]`.
-6. `analytics_guard` verifica `needs_analytics`, executor e allowlist.
-7. `_run_analytics` expande planos e executa templates.
-8. `AnswerProjector` escolhe a melhor `AnswerCapability` e gera `ProjectedAnswer`.
-9. `EvidenceAggregator` produz `EvidenceBlock`, com resposta direta em primeiro plano e estatística complementar subordinada.
-10. `CognitiveOrchestrator` injeta `system_prompt`, user turn, evidence, digest e memória.
-11. Scheduler e allocator empacotam blocos.
-12. `CognitiveNarrator` chama `LLMProvider`.
-13. Resposta é persistida e retornada.
+5. `HeuristicSignalCatalog` reaproveita regex existentes como sinais genéricos.
+6. Se a intenção é ambígua, contextual ou comparativa, `AnalyticalIntentInterpreter` chama o LLM para produzir `AnalyticalIntentContract`.
+7. `IntentContractValidator` aceita o contrato apenas se ele respeitar capabilities, enums, datas e fontes de comparação; se falhar, o plano heurístico permanece.
+8. `MemoryRetrievalPipeline` retorna `ContextBlock[]`.
+9. `analytics_guard` verifica `needs_analytics`, executor e allowlist.
+10. `_run_analytics` expande planos e executa templates.
+11. `AnswerProjector` escolhe a melhor `AnswerCapability` e gera `ProjectedAnswer`.
+12. `EvidenceAggregator` produz `EvidenceBlock`, com resposta direta em primeiro plano e estatística complementar subordinada.
+13. `CognitiveOrchestrator` injeta `system_prompt`, user turn, evidence, digest e memória.
+14. Scheduler e allocator empacotam blocos.
+15. `CognitiveNarrator` chama `LLMProvider`.
+16. Resposta é persistida e retornada.
 
 ```mermaid
 sequenceDiagram
@@ -237,6 +247,9 @@ sequenceDiagram
     participant API as ChatAPI
     participant SM as SessionManager
     participant IR as IntentResolver
+    participant HS as HeuristicSignals
+    participant II as IntentInterpreter
+    participant IV as IntentValidator
     participant MEM as MemoryRetrievalPipeline
     participant ANA as AnalyticsPipeline
     participant AP as AnswerProjector
@@ -248,6 +261,13 @@ sequenceDiagram
     API->>SM: record_user_message
     API->>IR: resolve(message, policy_request)
     IR-->>API: CognitivePlan
+    API->>HS: extract regex signals
+    alt ambiguous_or_contextual
+        API->>II: interpret(message, context, capabilities, signals)
+        II-->>API: AnalyticalIntentContract
+        API->>IV: validate(contract)
+        IV-->>API: accepted CognitivePlan or fallback
+    end
     API->>MEM: collect_blocks
     MEM-->>API: ContextBlock[]
     API->>ANA: expand + execute
@@ -346,11 +366,11 @@ Exemplo de mapeamento:
 
 ```text
 "Qual o ticket médio por concessionárias entre janeiro e abril de 2026?"
-  -> template_slug = visao_executiva
-  -> measure = ticket_medio
+  -> template_slug = performance_concessionaria
+  -> measure = ticket_medio_os
   -> dimension = concessionaria
   -> operation = list
-  -> summary = lista materializada de concessionária: ticket_medio
+  -> summary = lista materializada de concessionária: ticket_medio_os
 ```
 
 ```mermaid

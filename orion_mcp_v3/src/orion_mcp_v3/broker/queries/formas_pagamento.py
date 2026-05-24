@@ -3,107 +3,239 @@ formas_pagamento
 =================
 
 Responde:
-    - Qual a distribuição de receita por forma de pagamento?
+    - Qual a distribuição mensal de receita por forma de pagamento?
     - Quanto foi recebido em PIX, cartão, dinheiro etc.?
-    - Qual o percentual de cada forma de pagamento sobre o total vendido?
-    - Qual forma de pagamento é mais utilizada?
+    - Qual o percentual de cada forma de pagamento sobre o total recebido?
+    - Qual o ticket médio por OS paga?
 
 Retorna:
-    - forma_pagamento (VARCHAR)
-    - qtd_recebimentos (INT)
-    - total_recebido (DECIMAL)
-    - ticket_medio (DECIMAL)
-    - percentual_total (DECIMAL) — % sobre total geral
+    - periodo (VARCHAR, YYYY-MM)
+    - quantidade_os (INT)
+    - total (DECIMAL)
+    - ticket_medio_os (DECIMAL)
+    - dinheiro (DECIMAL)
+    - deposito (DECIMAL)
+    - cartao_credito (DECIMAL)
+    - cortesia (DECIMAL)
+    - pix (DECIMAL)
+    - percentual_dinheiro (DECIMAL)
+    - percentual_deposito (DECIMAL)
+    - percentual_credito (DECIMAL)
+    - percentual_cortesia (DECIMAL)
+    - percentual_pix (DECIMAL)
 
 Parâmetros:
     - date_from (str): data início — default últimos 30 dias
     - date_to (str): data fim — default hoje
 
-Granularidade: total (agregado no período)
-Value key: total_recebido
-Time key: None
-Label key: forma_pagamento
+Granularidade: month (agregado por período)
+Value key: total
+Time key: periodo
+Label key: periodo
 """
 
 SQL = """\
 SELECT
-    LOWER(ct.nome) AS forma_pagamento,
-    COUNT(*) AS qtd_recebimentos,
-    ROUND(SUM(cx.valor), 2) AS total_recebido,
-    ROUND(AVG(cx.valor), 2) AS ticket_medio,
-    ROUND(
-        (SUM(cx.valor) / (
-            SELECT SUM(c2.valor)
-            FROM caixas c2
-                INNER JOIN os o2 ON o2.id = c2.os_id
-                INNER JOIN os_tipos ost2 ON ost2.id = o2.os_tipo_id
-            WHERE c2.deleted_at IS NULL
-                AND ost2.ativo = 1
-                AND c2.data_vencimento >= %s AND c2.data_vencimento < %s
-        )) * 100, 2
-    ) AS percentual_total
-FROM caixas cx
-    INNER JOIN caixa_tipos ct ON ct.id = cx.caixa_tipo_id
-    INNER JOIN os os ON os.id = cx.os_id
-    INNER JOIN os_tipos ost ON ost.id = os.os_tipo_id
+    DATE_FORMAT(os.data_pagamento, '%Y-%m') AS periodo,
+    COUNT(DISTINCT os.id) AS quantidade_os,
+    ROUND(SUM(financeiro.recebido_total), 2) AS total,
+    ROUND(SUM(financeiro.recebido_total) / COUNT(DISTINCT os.id), 2) AS ticket_medio_os,
+    ROUND(SUM(financeiro.recebido_dinheiro), 2) AS dinheiro,
+    ROUND(SUM(financeiro.recebido_deposito), 2) AS deposito,
+    ROUND(SUM(financeiro.recebido_credito), 2) AS cartao_credito,
+    ROUND(SUM(financeiro.recebido_concessionaria), 2) AS cortesia,
+    ROUND(SUM(financeiro.recebido_pix), 2) AS pix,
+    ROUND((SUM(financeiro.recebido_dinheiro) / SUM(financeiro.recebido_total)) * 100, 2) AS percentual_dinheiro,
+    ROUND((SUM(financeiro.recebido_deposito) / SUM(financeiro.recebido_total)) * 100, 2) AS percentual_deposito,
+    ROUND((SUM(financeiro.recebido_credito) / SUM(financeiro.recebido_total)) * 100, 2) AS percentual_credito,
+    ROUND((SUM(financeiro.recebido_concessionaria) / SUM(financeiro.recebido_total)) * 100, 2) AS percentual_cortesia,
+    ROUND((SUM(financeiro.recebido_pix) / SUM(financeiro.recebido_total)) * 100, 2) AS percentual_pix
+FROM os
+INNER JOIN os_tipos ost
+    ON ost.id = os.os_tipo_id
+INNER JOIN (
+    SELECT
+        cx.os_id,
+        SUM(cx.valor - IFNULL(es.total_estorno, 0)) AS recebido_total,
+        SUM(
+            CASE
+                WHEN ct.id = 1
+                THEN cx.valor - IFNULL(es.total_estorno, 0)
+                ELSE 0
+            END
+        ) AS recebido_dinheiro,
+        SUM(
+            CASE
+                WHEN ct.id = 2
+                THEN cx.valor - IFNULL(es.total_estorno, 0)
+                ELSE 0
+            END
+        ) AS recebido_deposito,
+        SUM(
+            CASE
+                WHEN ct.id = 3
+                THEN cx.valor - IFNULL(es.total_estorno, 0)
+                ELSE 0
+            END
+        ) AS recebido_credito,
+        SUM(
+            CASE
+                WHEN ct.id = 5
+                THEN cx.valor - IFNULL(es.total_estorno, 0)
+                ELSE 0
+            END
+        ) AS recebido_concessionaria,
+        SUM(
+            CASE
+                WHEN ct.id = 7
+                THEN cx.valor - IFNULL(es.total_estorno, 0)
+                ELSE 0
+            END
+        ) AS recebido_pix
+    FROM caixas cx
+    INNER JOIN caixa_tipos ct
+        ON ct.id = cx.caixa_tipo_id
+    LEFT JOIN (
+        SELECT
+            caixa_id,
+            SUM(valor) AS total_estorno
+        FROM estornos
+        WHERE
+            status IN (3, 4)
+            AND deleted_at IS NULL
+            AND created_at >= %s
+            AND created_at < DATE_ADD(%s, INTERVAL 1 DAY)
+        GROUP BY caixa_id
+    ) es
+        ON es.caixa_id = cx.id
+    WHERE
+        cx.deleted_at IS NULL
+        AND cx.cancelado = 0
+        AND cx.valor > 0
+    GROUP BY cx.os_id
+) financeiro
+    ON financeiro.os_id = os.id
 WHERE
-    cx.deleted_at IS NULL
+    os.deleted_at IS NULL
+    AND os.paga = 1
     AND ost.ativo = 1
-    AND cx.data_vencimento >= %s AND cx.data_vencimento < %s
-GROUP BY ct.nome
-ORDER BY total_recebido DESC"""
+    AND os.data_pagamento >= %s
+    AND os.data_pagamento < DATE_ADD(%s, INTERVAL 1 DAY)
+GROUP BY
+    DATE_FORMAT(os.data_pagamento, '%Y-%m')
+ORDER BY periodo DESC"""
 
 ANSWERS = (
     "formas de pagamento",
     "forma de pagamento",
+    "mix financeiro",
+    "distribuição mensal por forma de pagamento",
     "distribuição por forma de pagamento",
     "percentual por forma de pagamento",
+    "percentual de pix",
+    "percentual de cartão",
+    "percentual de dinheiro",
     "quanto foi pago em pix",
     "quanto foi pago em cartão",
     "receita por tipo de pagamento",
+    "ticket médio por OS",
     "revenue",
     "sales",
 )
 
-VALUE_KEY = "total_recebido"
-TIME_KEY = None
-GRAIN = "total"
-LABEL_KEY = "forma_pagamento"
-DEFAULT_MEASURE = "total_recebido"
-DEFAULT_DIMENSION = "forma_pagamento"
+VALUE_KEY = "total"
+TIME_KEY = "periodo"
+GRAIN = "month"
+LABEL_KEY = "periodo"
+DEFAULT_MEASURE = "total"
+DEFAULT_DIMENSION = "periodo"
 MEASURES = {
-    "qtd_recebimentos": {
-        "label": "quantidade de recebimentos",
+    "quantidade_os": {
+        "label": "quantidade de OS",
         "kind": "count",
-        "synonyms": ("quantidade", "volume", "qtd recebimentos"),
+        "synonyms": ("quantidade", "volume", "quantidade de OS", "total de OS"),
         "additive": True,
     },
-    "total_recebido": {
+    "total": {
         "label": "total recebido",
         "kind": "money",
-        "synonyms": ("recebido", "faturamento", "receita", "total recebido"),
+        "synonyms": ("total", "recebido", "faturamento", "receita", "total recebido"),
         "additive": True,
     },
-    "ticket_medio": {
-        "label": "ticket médio",
+    "ticket_medio_os": {
+        "label": "ticket médio por OS",
         "kind": "money",
-        "synonyms": ("ticket", "ticket médio"),
+        "synonyms": ("ticket", "ticket médio", "ticket médio OS", "média por OS"),
         "additive": False,
     },
-    "percentual_total": {
-        "label": "percentual sobre o total",
+    "dinheiro": {
+        "label": "dinheiro",
+        "kind": "money",
+        "synonyms": ("dinheiro", "recebido dinheiro", "pagamento em dinheiro"),
+        "additive": True,
+    },
+    "deposito": {
+        "label": "depósito",
+        "kind": "money",
+        "synonyms": ("depósito", "deposito", "recebido depósito", "recebido deposito"),
+        "additive": True,
+    },
+    "cartao_credito": {
+        "label": "cartão de crédito",
+        "kind": "money",
+        "synonyms": ("cartão", "cartao", "cartão crédito", "cartao credito", "crédito", "credito"),
+        "additive": True,
+    },
+    "cortesia": {
+        "label": "cortesia/concessionária",
+        "kind": "money",
+        "synonyms": ("cortesia", "concessionária", "concessionaria"),
+        "additive": True,
+    },
+    "pix": {
+        "label": "pix",
+        "kind": "money",
+        "synonyms": ("pix", "recebido pix"),
+        "additive": True,
+    },
+    "percentual_dinheiro": {
+        "label": "percentual dinheiro",
         "kind": "percent",
-        "synonyms": ("percentual", "participação", "share"),
+        "synonyms": ("percentual dinheiro", "% dinheiro", "participação dinheiro"),
+        "additive": False,
+    },
+    "percentual_deposito": {
+        "label": "percentual depósito",
+        "kind": "percent",
+        "synonyms": ("percentual depósito", "percentual deposito", "% depósito", "% deposito"),
+        "additive": False,
+    },
+    "percentual_credito": {
+        "label": "percentual crédito",
+        "kind": "percent",
+        "synonyms": ("percentual crédito", "percentual credito", "% crédito", "% credito"),
+        "additive": False,
+    },
+    "percentual_cortesia": {
+        "label": "percentual cortesia",
+        "kind": "percent",
+        "synonyms": ("percentual cortesia", "% cortesia", "participação cortesia"),
+        "additive": False,
+    },
+    "percentual_pix": {
+        "label": "percentual pix",
+        "kind": "percent",
+        "synonyms": ("percentual pix", "% pix", "participação pix"),
         "additive": False,
     },
 }
 DIMENSIONS = {
-    "forma_pagamento": {
-        "label": "forma de pagamento",
-        "synonyms": ("forma de pagamento", "pagamento", "meio de pagamento"),
+    "periodo": {
+        "label": "período",
+        "synonyms": ("período", "periodo", "mês", "mes", "competência", "competencia"),
     },
 }
 SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
 
-# 4 placeholders: subquery(date_from, date_to) + WHERE(date_from, date_to)
+# 4 placeholders: estornos(date_from, date_to) + OS pagas(date_from, date_to)
 PARAMETERS = ("date_from", "date_to", "date_from", "date_to")

@@ -16,9 +16,20 @@ from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.evidence_series_spec import EvidenceSeriesSpec
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.contracts.semantic_retrieval_plan import SemanticRetrievalPlan
+from orion_mcp_v3.contracts.analytical_intent import (
+    AnalyticalDateRange,
+    AnalyticalIntentContract,
+    AnalyticalIntentType,
+    AnalyticalOperation,
+    SourcePeriods,
+)
 
 __all__ = [
     "AnalyticalDigest",
+    "AnalyticalDateRange",
+    "AnalyticalIntentContract",
+    "AnalyticalIntentType",
+    "AnalyticalOperation",
     "EvidenceBlock",
     "EvidenceSeriesSpec",
     "AttentionProfile",
@@ -34,4 +45,5 @@ __all__ = [
     "SemanticRetrievalPlan",
     "AnalyticsStrategy",
     "RetrievalStrategy",
+    "SourcePeriods",
 ]

@@ -2,7 +2,7 @@
 
 ## Contexto
 
-As queries analíticas do Orion já retornam colunas suficientes para responder perguntas objetivas. Exemplo: `visao_executiva` retorna `periodo`, `concessionaria`, `total_os`, `faturamento`, `ticket_medio`, `maior_recebimento` e `menor_recebimento`.
+As queries analíticas do Orion já retornam colunas suficientes para responder perguntas objetivas. Exemplo: `performance_concessionaria` retorna `periodo`, `concessionaria`, `quantidade_os`, `vendas`, `ticket_medio_os`, `recebido` e `percentual_recebido`.
 
 O problema observado nos logs não era falta de dados nem falha do SQL. O problema era o seam entre `QueryTemplate` e `EvidenceBuilder`: cada template declarava apenas um `VALUE_KEY`, então o pipeline tratava uma query rica como se ela respondesse só uma métrica principal.
 
@@ -50,8 +50,8 @@ DIMENSIONS = {
 Representa a interpretação objetiva da pergunta:
 
 ```text
-template_slug = visao_executiva
-measure = faturamento
+template_slug = performance_concessionaria
+measure = vendas
 dimension = concessionaria
 operation = top_and_bottom
 ```

@@ -15,6 +15,10 @@ COMPARATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bmelhorou\b", re.IGNORECASE),
     re.compile(r"\bpiorou\b", re.IGNORECASE),
     re.compile(r"\bcompar(a|ar|ado|ação)\b", re.IGNORECASE),
+    re.compile(r"\bcruz(a|ar|e|ou|amento)\b", re.IGNORECASE),
+    re.compile(r"\bqueda(s)?\b|\bvariaç(?:ão|oes|ões)\b|\bdelta\b", re.IGNORECASE),
+    re.compile(r"\bsubi(u|ram|r|da|do)?\b|\baument(o|ou|aram|ar|o)?\b|\bcresce(u|ram|r)?\b", re.IGNORECASE),
+    re.compile(r"\bcai(u|ram|r)?\b|\bredu(ziu|ziram|ção|coes|ções)\b|\bdiminui(u|ram|r)?\b", re.IGNORECASE),
     re.compile(r"\bversus\b|\bvs\.?\b", re.IGNORECASE),
 )
 
@@ -71,7 +75,7 @@ RECALL_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 MONITORING_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\balerta\b|\balarme\b|\bmonitor(ar|ização)?\b", re.IGNORECASE),
-    re.compile(r"\bsubiu\b|\bdesceu\b|\banomaly\b", re.IGNORECASE),
+    re.compile(r"\banomalia\b|\banomaly\b", re.IGNORECASE),
 )
 
 EXECUTION_PATTERNS: tuple[re.Pattern[str], ...] = (

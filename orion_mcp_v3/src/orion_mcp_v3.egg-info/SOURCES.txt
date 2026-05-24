@@ -32,7 +32,6 @@ src/orion_mcp_v3/broker/queries/faturamento_diario.py
 src/orion_mcp_v3/broker/queries/formas_pagamento.py
 src/orion_mcp_v3/broker/queries/performance_concessionaria.py
 src/orion_mcp_v3/broker/queries/performance_vendedor.py
-src/orion_mcp_v3/broker/queries/visao_executiva.py
 src/orion_mcp_v3/config/__init__.py
 src/orion_mcp_v3/config/allowlists.py
 src/orion_mcp_v3/config/settings.py
