@@ -5,7 +5,7 @@ formas_pagamento
 Responde:
     - Qual a distribuição de receita por forma de pagamento?
     - Quanto foi recebido em PIX, cartão, dinheiro etc.?
-    - Qual o percentual de cada forma sobre o total?
+    - Qual o percentual de cada forma de pagamento sobre o total vendido?
     - Qual forma de pagamento é mais utilizada?
 
 Retorna:

@@ -42,10 +42,8 @@ export function App() {
   /** ``null`` = nova conversa: primeira mensagem sem ``conversation_id``; o backend devolve o id em ``meta``. */
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
 
-  const [message, setMessage] = useState(
-    'Qual forma de pagamento domina o faturamento entre janeiro e abril de 2026?',
-  )
-  const [policy, setPolicy] = useState('balanced')
+  const [message, setMessage] = useState('')
+  const [policy, setPolicy] = useState('analytical')
   const [maxTokens, setMaxTokens] = useState(4096)
   const [stream, setStream] = useState(false)
   const [reply, setReply] = useState('')
@@ -275,7 +273,7 @@ export function App() {
                 onChange={(e) => setPolicy(e.target.value)}
                 disabled={!options?.policies.length}
               >
-                {(options?.policies ?? ['balanced']).map((p) => (
+                {(options?.policies ?? ['analytical']).map((p) => (
                   <option key={p} value={p}>
                     {p}
                   </option>

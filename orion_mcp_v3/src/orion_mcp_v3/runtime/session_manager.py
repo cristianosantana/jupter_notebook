@@ -65,7 +65,7 @@ class SessionManager:
         repository: ConversationStateRepository | None = None,
         shared_conversation_repository_slot: dict[str, Any] | None = None,
         default_token_budget: int = 4096,
-        default_policy: AttentionPolicy = AttentionPolicy.BALANCED,
+        default_policy: AttentionPolicy = AttentionPolicy.ANALYTICAL,
         memory_window: int = 60,
         session_list_max_messages: int | None = None,
     ) -> None:

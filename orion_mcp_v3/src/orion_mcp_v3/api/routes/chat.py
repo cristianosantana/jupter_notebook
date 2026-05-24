@@ -46,6 +46,8 @@ from orion_mcp_v3.runtime.analytics_pipeline_trace import (
     snapshot_orchestration,
     snapshot_semantic_plan,
 )
+from orion_mcp_v3.runtime.analytical_context_policy import AnalyticalContextIsolationPolicy
+from orion_mcp_v3.runtime.analytical_signature import signature_from_evidence, signature_from_plan
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver, map_attention_profile_to_policy
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator
 from orion_mcp_v3.runtime.session_manager import SessionManager
@@ -76,6 +78,7 @@ def create_chat_router(
     narr = narrator or CognitiveNarrator(provider)
     orchestrator = CognitiveOrchestrator()
     resolver = IntentResolver()
+    context_policy = AnalyticalContextIsolationPolicy()
     _fixed_executor = analytics_executor
     _fixed_allowlist = analytics_allowlist
     # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
@@ -96,7 +99,7 @@ def create_chat_router(
         presets = sorted({p for p in raw_presets if tmin <= p <= tmax})
         def_mx = min(max(int(settings.max_tokens), tmin), tmax)
         policies = [p.value for p in AttentionPolicy]
-        dp = (settings.default_policy or "balanced").strip().lower()
+        dp = (settings.default_policy or "analytical").strip().lower()
         if dp not in policies:
             dp = AttentionPolicy.BALANCED.value
         return ChatOptionsResponse(
@@ -141,6 +144,7 @@ def create_chat_router(
 
         cognitive_plan = resolver.resolve(req.message, policy_request=req.policy)
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
+        context_decision = context_policy.decide(cognitive_plan)
 
         if trace_pipe:
             log_pipeline_event(
@@ -168,6 +172,7 @@ def create_chat_router(
             settings.embedding_should_retrieve
             and embed_store is not None
             and isinstance(embed_store, ChatTurnEmbeddingStore)
+            and context_decision.allow_vector_memory
         ):
             vec_ret = VectorRetriever(embed_store)
         memory_blocks = await memory_pipeline.collect_blocks(
@@ -238,6 +243,28 @@ def create_chat_router(
                 fase="post",
                 conversation_id=cid,
                 dados={"executado": False, "motivo": ",".join(parts)},
+            )
+
+        current_signature = (
+            signature_from_evidence(evidence, fallback=cognitive_plan)
+            if evidence is not None
+            else signature_from_plan(cognitive_plan)
+        )
+        isolation = context_policy.filter_with_trace(
+            memory_blocks,
+            cognitive_plan,
+            signature=current_signature,
+        )
+        memory_blocks = list(isolation.kept_blocks)
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="context_isolation",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    **isolation.as_trace(context_decision),
+                    "signature": current_signature.as_dict(),
+                },
             )
 
         sm.update_phase(session, CognitivePhase.FUSING)

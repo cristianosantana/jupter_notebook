@@ -60,7 +60,7 @@ class OrionSettings(BaseSettings):
     # ── Runtime cognitivo ────────────────────────────────────────────
     max_tokens: int = Field(4096, ge=64, le=128000, description="Orçamento default do prompt.")
     default_limit: int = Field(500, ge=1, description="LIMIT default em queries SQL.")
-    default_policy: str = Field("balanced", description="AttentionPolicy default.")
+    default_policy: str = Field("analytical", description="AttentionPolicy default.")
     memory_window: int = Field(60, ge=1, description="Mensagens recentes na memory window.")
     session_list_max_messages: int = Field(
         50_000,
