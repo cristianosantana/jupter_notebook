@@ -182,12 +182,13 @@ class QueryExpander:
         if preferred_slug:
             tpl = self._registry.get(preferred_slug)
             if tpl is not None:
+                semantic_reason = _hint_value(cognitive, "semantic_reason") or "validated_intent_contract"
                 return [
                     self._template_plan(
                         tpl,
                         cognitive,
                         correlation_id=correlation_id,
-                        semantic_reason="validated_intent_contract",
+                        semantic_reason=semantic_reason,
                     )
                 ]
 
@@ -223,9 +224,11 @@ class QueryExpander:
                 "_template": tpl,
                 "template_slug": tpl.slug,
                 "template_params": params,
-                "selected_metric": contract_dict.get("metric") or _first(cognitive.metrics),
-                "selected_dimension": contract_dict.get("dimension") or _first(cognitive.entities),
-                "selected_operation": contract_dict.get("operation"),
+                "selected_metric": _hint_value(cognitive, "selected_metric") or contract_dict.get("metric") or _first(cognitive.metrics),
+                "selected_dimension": _hint_value(cognitive, "selected_dimension")
+                or contract_dict.get("dimension")
+                or _first(cognitive.entities),
+                "selected_operation": _hint_value(cognitive, "selected_operation") or contract_dict.get("operation"),
                 "semantic_reason": semantic_reason,
             },
             correlation_id=correlation_id,
@@ -361,6 +364,14 @@ def _preferred_template_slug(cognitive: CognitivePlan) -> str | None:
         raw = contract.get("template_slug")
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
+    return None
+
+
+def _hint_value(cognitive: CognitivePlan, key: str) -> str | None:
+    hints = cognitive.hints if isinstance(cognitive.hints, Mapping) else {}
+    raw = hints.get(key)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
     return None
 
 

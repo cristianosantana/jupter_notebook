@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from orion_mcp_v3.broker import (
+    ANALYTICS_TEMPLATES,
     AnalyticsExecutor,
     AnalyticsResult,
     EvidenceAggregator,
@@ -106,6 +107,34 @@ def test_max_cap_four_plans(allowlist) -> None:
     )
     plans = QueryExpander(max_plans=4).expand(cp, allowlist)
     assert len(plans) <= 4
+
+
+def test_llm_query_selector_template_skips_generic_fanout(allowlist) -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        confidence=0.2,
+        metrics=("vendas", "ticket_medio_os"),
+        entities=("concessionaria",),
+        hints={
+            "template_slug": "performance_concessionaria",
+            "selected_metric": "vendas",
+            "selected_dimension": "concessionaria",
+            "selected_operation": "ranking_desc",
+            "semantic_reason": "llm_query_selector",
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        allowlist,
+        query_text="cruze faturamento das concessionárias de janeiro a março",
+    )
+
+    assert len(plans) == 1
+    assert plans[0].intent_slug == "template.performance_concessionaria"
+    assert plans[0].hints["semantic_reason"] == "llm_query_selector"
+    assert plans[0].hints["selected_dimension"] == "concessionaria"
 
 
 def test_execute_plan_method(allowlist) -> None:
