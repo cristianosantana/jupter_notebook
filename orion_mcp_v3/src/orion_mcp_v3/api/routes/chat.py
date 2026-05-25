@@ -13,6 +13,7 @@ import logging
 import re
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from fastapi import APIRouter
@@ -31,9 +32,11 @@ from orion_mcp_v3.api.models import (
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
+from orion_mcp_v3.broker.query_template_selector import QuerySelectionValidator, QueryTemplateSelector
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
 from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
 from orion_mcp_v3.memory.retrieval_pipeline import MemoryRetrievalPipeline
@@ -159,6 +162,37 @@ def _should_interpret_with_llm(
     )
 
 
+def _plan_with_query_selection(
+    plan: CognitivePlan,
+    selection: QuerySelectionContract,
+) -> CognitivePlan:
+    hints = dict(plan.hints or {})
+    intent_contract = hints.get("intent_contract")
+    if isinstance(intent_contract, Mapping):
+        intent_contract = {**dict(intent_contract), "template_slug": selection.template_slug}
+    else:
+        intent_contract = {
+            "template_slug": selection.template_slug,
+            "metric": selection.measure,
+            "dimension": selection.dimension,
+            "operation": selection.operation,
+        }
+    hints.update(
+        {
+            "template_slug": selection.template_slug,
+            "intent_contract": intent_contract,
+            "selected_metric": selection.measure,
+            "selected_dimension": selection.dimension,
+            "selected_operation": selection.operation,
+            "semantic_reason": "llm_query_selector",
+            "query_selection": selection.as_dict(),
+        }
+    )
+    metrics = (selection.measure,) if selection.measure else plan.metrics
+    entities = (selection.dimension,) if selection.dimension else plan.entities
+    return replace(plan, metrics=metrics, entities=entities, hints=hints)
+
+
 def create_chat_router(
     *,
     session_manager: SessionManager | None = None,
@@ -179,6 +213,8 @@ def create_chat_router(
     capability_catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
     intent_interpreter = AnalyticalIntentInterpreter(provider)
     intent_validator = IntentContractValidator(capability_catalog)
+    query_selector = QueryTemplateSelector(provider)
+    query_selection_validator = QuerySelectionValidator(capability_catalog)
     _fixed_executor = analytics_executor
     _fixed_allowlist = analytics_allowlist
     # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
@@ -303,6 +339,19 @@ def create_chat_router(
                     "regex_signal_count": len(regex_signals.signals),
                 },
             )
+        if cognitive_plan.needs_analytics and not isinstance(provider, NullLLMProvider):
+            query_selection = await query_selector.select(
+                req.message,
+                cognitive_plan=cognitive_plan,
+                capabilities=capability_catalog,
+            )
+            if query_selection is not None:
+                query_selection_validation = query_selection_validator.validate(query_selection)
+                if query_selection_validation.accepted and query_selection_validation.contract is not None:
+                    cognitive_plan = _plan_with_query_selection(
+                        cognitive_plan,
+                        query_selection_validation.contract,
+                    )
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
         context_decision = context_policy.decide(cognitive_plan)
 
