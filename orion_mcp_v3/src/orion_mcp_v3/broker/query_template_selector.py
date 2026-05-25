@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from orion_mcp_v3.broker.query_capability_catalog import QueryCapabilityCatalog
@@ -54,6 +56,57 @@ class QueryTemplateSelector:
         return contract if contract.template_slug else None
 
 
+@dataclass(frozen=True, slots=True)
+class QuerySelectionValidationResult:
+    accepted: bool
+    contract: QuerySelectionContract | None = None
+    rejected_reason: str | None = None
+
+
+class QuerySelectionValidator:
+    """Valida a escolha do seletor contra capabilities declaradas."""
+
+    _DERIVED_OPERATIONS = frozenset({"below_average"})
+
+    def __init__(self, catalog: QueryCapabilityCatalog, *, min_confidence: float = 0.55) -> None:
+        self._catalog = catalog
+        self._min_confidence = min_confidence
+
+    def validate(self, contract: QuerySelectionContract) -> QuerySelectionValidationResult:
+        if contract.confidence < self._min_confidence:
+            return self._reject("confidence_too_low")
+        entry = self._catalog.entry_for_template(contract.template_slug)
+        if entry is None:
+            return self._reject("unsupported_template")
+
+        measure = _resolve_alias(contract.measure, entry.metrics)
+        dimension = _resolve_alias(contract.dimension, entry.dimensions)
+        operation = contract.operation.strip() if contract.operation else None
+
+        if contract.measure is not None and measure is None:
+            return self._reject("unsupported_measure")
+        if contract.dimension is not None and dimension is None:
+            return self._reject("unsupported_dimension")
+        if operation is not None and operation not in entry.operations and operation not in self._DERIVED_OPERATIONS:
+            return self._reject("unsupported_operation")
+
+        return QuerySelectionValidationResult(
+            accepted=True,
+            contract=QuerySelectionContract(
+                template_slug=entry.template_slug,
+                measure=measure,
+                dimension=dimension,
+                operation=operation,
+                confidence=contract.confidence,
+                reason=contract.reason,
+            ),
+        )
+
+    @staticmethod
+    def _reject(reason: str) -> QuerySelectionValidationResult:
+        return QuerySelectionValidationResult(accepted=False, rejected_reason=reason)
+
+
 _SYSTEM_PROMPT = """You are a query template selector.
 Return exactly one JSON object and no prose.
 Never generate SQL.
@@ -90,6 +143,17 @@ def _build_prompt(
         },
     }
     return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _resolve_alias(value: str | None, options: Mapping[str, tuple[str, ...]]) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    for key, synonyms in options.items():
+        values = {key.lower(), *(str(s).lower() for s in synonyms)}
+        if raw in values:
+            return key
+    return None
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:

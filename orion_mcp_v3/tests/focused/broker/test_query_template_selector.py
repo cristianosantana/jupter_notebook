@@ -4,7 +4,8 @@ from collections.abc import Sequence
 
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
-from orion_mcp_v3.broker.query_template_selector import QueryTemplateSelector
+from orion_mcp_v3.broker.query_template_selector import QuerySelectionValidator, QueryTemplateSelector
+from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMResponse, LLMResponseMeta
 
@@ -72,3 +73,39 @@ async def test_query_template_selector_rejects_non_json() -> None:
     )
 
     assert selected is None
+
+
+def test_query_selection_validator_accepts_supported_selection() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            template_slug="performance_vendedor",
+            measure="valor vendido",
+            dimension="vendedores",
+            operation="ranking_desc",
+            confidence=0.9,
+            reason="Pergunta pede vendedores.",
+        )
+    )
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.measure == "vendas"
+    assert result.contract.dimension == "vendedor"
+
+
+def test_query_selection_validator_rejects_wrong_dimension_for_template() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            template_slug="formas_pagamento",
+            measure="total",
+            dimension="vendedor",
+            operation="ranking_desc",
+            confidence=0.9,
+            reason="Dimensão incompatível.",
+        )
+    )
+
+    assert result.accepted is False
+    assert result.rejected_reason == "unsupported_dimension"
