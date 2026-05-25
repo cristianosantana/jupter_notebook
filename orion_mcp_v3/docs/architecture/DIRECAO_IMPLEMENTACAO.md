@@ -7,6 +7,7 @@
 - [`ORION_V3_MASTER_ARCHITECTURE.md`](./ORION_V3_MASTER_ARCHITECTURE.md) — índice mestre (infra × execução × cognição)
 - [`MEMORY_AUGMENTATION_LAYER.md`](./MEMORY_AUGMENTATION_LAYER.md) — regras e modos do subsistema vectorial
 - [`PLANO_EXECUCAO.md`](../execution/PLANO_EXECUCAO.md) — ordem incremental de entregas
+- [`ADR 0001`](../adr/0001-orion-runtime-analitico-cognitivo.md) — Orion como runtime analítico cognitivo
 
 ---
 
@@ -26,6 +27,15 @@ O valor cognitivo está no pipeline **dados → evidência → cognição → LL
 Core:     dados → evidência → cognição → contexto LLM
 Optional: Memory Augmentation (pgvector, chat_turn_embeddings)
 ```
+
+Chat é interface, não arquitectura. O utilizador conversa com o Orion, mas internamente o
+sistema deve organizar cada turno como trabalho cognitivo analítico: pergunta → intenção →
+contrato validado → visão analítica → SQL controlado → evidência → contexto auxiliar →
+LLM narrador.
+
+Memória e chat existem para continuidade, preferências, follow-up e contexto. Eles não
+decidem a verdade factual sobre dados. Em respostas analíticas, a evidência atual tem
+precedência sobre memória conversacional.
 
 ---
 
@@ -56,6 +66,10 @@ Não é construir mais pipeline vectorial. É **disciplina de produto e entregas
 4. **Provenance + drift guard** — âncoras em evidence/digest; regressões na narração.
 5. **Orquestração** — `CognitiveOrchestrator`, fusão, políticas de atenção (evidence acima de memória conversacional).
 6. **Medir antes de expandir vector** — com `retrieve` activo, comparar no trace `memory_layer_vector` vs pipeline analytics (`evidence_builder`, `map_reduce_digest`).
+
+Adicionar capacidade ao Orion significa ampliar o espaço analítico disponível: novas
+métricas, dimensões, operações e visões sobre os mesmos dados. Não significa cadastrar
+perguntas prontas.
 
 ### Não fazer (até decisão arquitectural explícita)
 
@@ -102,7 +116,8 @@ Legado: `ORION_EMBEDDING_ENABLED=true` sem `EMBEDDING_MODE` equivale a `retrieve
 
 ```text
 POST /chat
-  → IntentResolver → CognitivePlan
+  → IntentResolver + AnalyticalIntentInterpreter → contrato validado
+  → CognitivePlan / SemanticQueryPlan
   → MemoryRetrievalPipeline (episódico + lexical; + vector se retrieve)
   → Analytics (se needs_analytics): planner → SQL → evidence → digest
   → CognitiveOrchestrator: fusão + allocator → prompt → LLM
