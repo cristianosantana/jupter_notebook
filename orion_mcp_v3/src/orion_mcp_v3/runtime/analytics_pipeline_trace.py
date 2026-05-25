@@ -155,6 +155,30 @@ def snapshot_cognitive_plan(cp: Any) -> dict[str, Any]:
     }
 
 
+def snapshot_query_cards(cards: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for card in cards or ():
+        if hasattr(card, "as_prompt_dict"):
+            raw = card.as_prompt_dict()
+        elif isinstance(card, Mapping):
+            raw = dict(card)
+        else:
+            continue
+        out.append(
+            {
+                "template_slug": raw.get("template_slug"),
+                "descriptions": raw.get("descriptions"),
+                "metrics": raw.get("metrics"),
+                "dimensions": raw.get("dimensions"),
+                "operations": raw.get("operations"),
+                "default_metric": raw.get("default_metric"),
+                "default_dimension": raw.get("default_dimension"),
+                "grain": raw.get("grain"),
+            }
+        )
+    return out
+
+
 def snapshot_semantic_plan(plan: Any) -> dict[str, Any]:
     hints = plan.hints if hasattr(plan, "hints") and isinstance(plan.hints, Mapping) else {}
     semantic_selection = {

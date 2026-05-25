@@ -53,6 +53,7 @@ from orion_mcp_v3.runtime.analytics_pipeline_trace import (
     snapshot_cognitive_plan,
     snapshot_evidence_block,
     snapshot_orchestration,
+    snapshot_query_cards,
     snapshot_semantic_plan,
 )
 from orion_mcp_v3.runtime.analytical_context_policy import AnalyticalContextIsolationPolicy
@@ -339,7 +340,22 @@ def create_chat_router(
                     "regex_signal_count": len(regex_signals.signals),
                 },
             )
-        if cognitive_plan.needs_analytics and not isinstance(provider, NullLLMProvider):
+        query_select_with_llm = cognitive_plan.needs_analytics and not isinstance(provider, NullLLMProvider)
+        query_selection = None
+        query_selection_rejected_reason = "not_needed"
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="query_select",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "used_llm": query_select_with_llm,
+                    "message_preview": (req.message or "")[:240],
+                    "cognitive_plan": snapshot_cognitive_plan(cognitive_plan),
+                    "query_cards": snapshot_query_cards(capability_catalog.query_cards()),
+                },
+            )
+        if query_select_with_llm:
             query_selection = await query_selector.select(
                 req.message,
                 cognitive_plan=cognitive_plan,
@@ -352,6 +368,26 @@ def create_chat_router(
                         cognitive_plan,
                         query_selection_validation.contract,
                     )
+                    query_selection_rejected_reason = None
+                else:
+                    query_selection_rejected_reason = (
+                        query_selection_validation.rejected_reason or "validator_rejected"
+                    )
+            else:
+                query_selection_rejected_reason = "no_valid_json"
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="query_select",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    "used_llm": query_select_with_llm,
+                    "accepted": query_selection_rejected_reason is None,
+                    "rejected_reason": query_selection_rejected_reason,
+                    "selection": query_selection.as_dict() if query_selection is not None else None,
+                    "cognitive_plan": snapshot_cognitive_plan(cognitive_plan),
+                },
+            )
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
         context_decision = context_policy.decide(cognitive_plan)
 
