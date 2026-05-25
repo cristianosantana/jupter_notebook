@@ -67,14 +67,25 @@ class QueryCapabilityCatalog:
     def operation_keys(self) -> set[str]:
         return {op for entry in self.entries for op in entry.operations}
 
+    def entry_for_template(self, template_slug: str | None) -> QueryCapabilityEntry | None:
+        if template_slug is None:
+            return None
+        for entry in self.entries:
+            if entry.template_slug == template_slug:
+                return entry
+        return None
+
     def supports(
         self,
         *,
+        template_slug: str | None = None,
         metric: str | None = None,
         dimension: str | None = None,
         operation: str | None = None,
     ) -> bool:
         for entry in self.entries:
+            if template_slug is not None and entry.template_slug != template_slug:
+                continue
             if metric is not None and metric not in entry.metrics:
                 continue
             if dimension is not None and dimension not in entry.dimensions:

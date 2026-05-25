@@ -42,16 +42,31 @@ class IntentContractValidator:
         if not _dates_valid(contract):
             return self._reject("invalid_date_range")
 
-        dimension = _resolve_key(contract.dimension, self._dimension_aliases())
-        metric = self._resolve_metric(contract.metric, dimension=dimension)
+        template_slug = contract.template_slug.strip() if contract.template_slug else None
+        if template_slug is not None and self._catalog.entry_for_template(template_slug) is None:
+            return self._reject("unsupported_template")
+
+        dimension = _resolve_key(contract.dimension, self._dimension_aliases(template_slug))
+        metric = self._resolve_metric(contract.metric, dimension=dimension, template_slug=template_slug)
         operation = contract.operation.value
 
         if contract.needs_analytics:
-            if metric is not None and metric not in self._catalog.metric_keys:
+            if metric is not None and not self._catalog.supports(
+                template_slug=template_slug,
+                metric=metric,
+            ):
                 return self._reject("unsupported_metric")
-            if dimension is not None and dimension not in self._catalog.dimension_keys:
+            if dimension is not None and not self._catalog.supports(
+                template_slug=template_slug,
+                dimension=dimension,
+            ):
                 return self._reject("unsupported_dimension")
-            if not self._operation_supported(operation, metric=metric, dimension=dimension):
+            if not self._operation_supported(
+                operation,
+                template_slug=template_slug,
+                metric=metric,
+                dimension=dimension,
+            ):
                 return self._reject("unsupported_operation")
 
         if contract.needs_comparison and not _comparison_has_sources(contract, has_analytical_memory):
@@ -63,6 +78,7 @@ class IntentContractValidator:
             needs_analytics=contract.needs_analytics,
             needs_memory=contract.needs_memory,
             needs_comparison=contract.needs_comparison,
+            template_slug=template_slug,
             metric=metric,
             dimension=dimension,
             date_ranges=contract.date_ranges,
@@ -80,7 +96,13 @@ class IntentContractValidator:
     def _reject(reason: str) -> IntentValidationResult:
         return IntentValidationResult(accepted=False, rejected_reason=reason)
 
-    def _resolve_metric(self, value: str | None, *, dimension: str | None) -> str | None:
+    def _resolve_metric(
+        self,
+        value: str | None,
+        *,
+        dimension: str | None,
+        template_slug: str | None,
+    ) -> str | None:
         if value is None:
             return None
         aliases: dict[str, tuple[str, ...]] = {
@@ -93,6 +115,8 @@ class IntentContractValidator:
         candidates = (raw, *aliases.get(raw, ()))
         for candidate in candidates:
             for entry in self._catalog.entries:
+                if template_slug is not None and entry.template_slug != template_slug:
+                    continue
                 if dimension is not None and dimension not in entry.dimensions:
                     continue
                 for key, synonyms in entry.metrics.items():
@@ -101,13 +125,15 @@ class IntentContractValidator:
                         return key
         return value.strip()
 
-    def _dimension_aliases(self) -> dict[str, str]:
+    def _dimension_aliases(self, template_slug: str | None = None) -> dict[str, str]:
         aliases: dict[str, str] = {
             "seller": "vendedor",
             "dealership": "concessionaria",
             "payment_method": "forma_pagamento",
         }
         for entry in self._catalog.entries:
+            if template_slug is not None and entry.template_slug != template_slug:
+                continue
             for key, synonyms in entry.dimensions.items():
                 aliases[key.lower()] = key
                 for synonym in synonyms:
@@ -118,12 +144,22 @@ class IntentContractValidator:
         self,
         operation: str,
         *,
+        template_slug: str | None,
         metric: str | None,
         dimension: str | None,
     ) -> bool:
         if operation in {AnalyticalOperation.COMPARISON.value, AnalyticalOperation.DELTA.value}:
-            return self._catalog.supports(metric=metric, dimension=dimension)
-        return self._catalog.supports(metric=metric, dimension=dimension, operation=operation)
+            return self._catalog.supports(
+                template_slug=template_slug,
+                metric=metric,
+                dimension=dimension,
+            )
+        return self._catalog.supports(
+            template_slug=template_slug,
+            metric=metric,
+            dimension=dimension,
+            operation=operation,
+        )
 
 
 def _contract_to_plan(contract: AnalyticalIntentContract, heuristic_plan: CognitivePlan) -> CognitivePlan:
@@ -134,6 +170,8 @@ def _contract_to_plan(contract: AnalyticalIntentContract, heuristic_plan: Cognit
         "resolver": "llm_intent_interpreter_v1",
         "intent_contract": contract.as_dict(),
     }
+    if contract.template_slug:
+        hints["template_slug"] = contract.template_slug
     if time_scope:
         date_from, date_to = time_scope.split("/", 1)
         hints.update({"date_from": date_from, "date_to": date_to})

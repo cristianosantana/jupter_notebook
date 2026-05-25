@@ -25,6 +25,7 @@ def test_validator_accepts_comparison_with_two_explicit_periods() -> None:
         needs_analytics=True,
         needs_memory=True,
         needs_comparison=True,
+        template_slug="performance_vendedor",
         metric="sales",
         dimension="seller",
         date_ranges=(
@@ -41,10 +42,12 @@ def test_validator_accepts_comparison_with_two_explicit_periods() -> None:
     assert result.contract is not None
     assert result.contract.metric == "vendas"
     assert result.contract.dimension == "vendedor"
+    assert result.contract.template_slug == "performance_vendedor"
     assert result.cognitive_plan is not None
     assert result.cognitive_plan.intent_type.value == "comparative"
     assert result.cognitive_plan.needs_comparison is True
     assert result.cognitive_plan.time_scope == "2026-03-01/2026-04-30"
+    assert result.cognitive_plan.hints["template_slug"] == "performance_vendedor"
 
 
 def test_validator_rejects_unknown_metric() -> None:
@@ -57,6 +60,46 @@ def test_validator_rejects_unknown_metric() -> None:
         needs_comparison=False,
         metric="lucro_liquido",
         dimension="seller",
+        confidence=0.9,
+    )
+
+    result = _validator().validate(contract, heuristic_plan=heuristic)
+
+    assert result.accepted is False
+    assert result.rejected_reason == "unsupported_metric"
+
+
+def test_validator_rejects_unknown_template() -> None:
+    heuristic = IntentResolver().resolve("qual o faturamento por vendedor?")
+    contract = AnalyticalIntentContract(
+        intent_type=AnalyticalIntentType.ANALYTICAL,
+        operation=AnalyticalOperation.RANKING_DESC,
+        needs_analytics=True,
+        needs_memory=False,
+        needs_comparison=False,
+        template_slug="visao_inexistente",
+        metric="vendas",
+        dimension="vendedor",
+        confidence=0.9,
+    )
+
+    result = _validator().validate(contract, heuristic_plan=heuristic)
+
+    assert result.accepted is False
+    assert result.rejected_reason == "unsupported_template"
+
+
+def test_validator_rejects_metric_outside_selected_template() -> None:
+    heuristic = IntentResolver().resolve("qual pix por vendedor?")
+    contract = AnalyticalIntentContract(
+        intent_type=AnalyticalIntentType.ANALYTICAL,
+        operation=AnalyticalOperation.RANKING_DESC,
+        needs_analytics=True,
+        needs_memory=False,
+        needs_comparison=False,
+        template_slug="performance_vendedor",
+        metric="pix",
+        dimension="vendedor",
         confidence=0.9,
     )
 
