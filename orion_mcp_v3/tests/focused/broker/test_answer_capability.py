@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orion_mcp_v3.broker import ANALYTICS_TEMPLATES, AnalyticsResult
+from orion_mcp_v3.broker import ANALYTICS_TEMPLATES, AnalyticsResult, EvidenceAggregator
 from orion_mcp_v3.broker.answer_projector import build_projected_answer
 from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver
@@ -55,6 +55,24 @@ def test_performance_concessionaria_projects_top_and_bottom_sales() -> None:
     assert projected.top["concessionaria"] == "osaka"
     assert projected.bottom["concessionaria"] == "strada jeep"
     assert "Resposta direta" in projected.summary
+
+
+def test_evidence_aggregator_embeds_direct_answer_before_narration() -> None:
+    rows = [
+        {"vendedor": "ana", "quantidade_os": 10, "vendas": "10000.00", "ticket_medio_os": "1000.00"},
+        {"vendedor": "bia", "quantidade_os": 20, "vendas": "12000.00", "ticket_medio_os": "600.00"},
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [_result("performance_vendedor", rows)],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Qual vendedor tem maior volume de vendas em abril de 2026?",
+    )
+
+    assert evidence.summary.startswith("Resposta direta")
+    assert evidence.metrics["answer_plan"]["measure"] == "quantidade_os"
+    assert "direct_answer" in evidence.supporting_data
+    assert "Resumo estatístico complementar" in evidence.summary
 
 
 def test_performance_vendedor_projects_ticket_not_total_value() -> None:

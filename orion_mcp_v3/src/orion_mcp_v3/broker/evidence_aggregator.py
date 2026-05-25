@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from orion_mcp_v3.broker.answer_projector import build_projected_answer
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder
 from orion_mcp_v3.broker.evidence_series_resolve import resolve_evidence_series_specs
 from orion_mcp_v3.broker.executor import AnalyticsResult
@@ -39,12 +40,15 @@ class EvidenceAggregator:
         id_key: str | None = "id",
         series_specs: Sequence[EvidenceSeriesSpec] | None = None,
         templates: "QueryTemplateRegistry | None" = None,
+        query_text: str | None = None,
     ) -> EvidenceBlock:
         """
         :param series_specs: Uma especificação por resultado (mesma ordem). Se ``None``,
             são derivadas via :func:`~resolve_evidence_series_specs` (recomendado
             passar ``templates`` quando houver ``template_slug`` nos hints).
         :param templates: Registo de templates (ex. :data:`ANALYTICS_TEMPLATES`).
+        :param query_text: Pergunta original. Quando presente, projeta uma resposta direta
+            antes da narração LLM.
         """
         if not results:
             raise ValueError("results must be non-empty")
@@ -67,13 +71,19 @@ class EvidenceAggregator:
 
         if len(results) == 1:
             s0 = specs[0]
-            return self._builder.build(
+            block = self._builder.build(
                 results[0].rows,
                 value_key=s0.value_key,
                 label_key=s0.label_key,
                 time_key=s0.time_key,
                 grain=s0.grain,
                 id_key=s0.id_key if s0.id_key is not None else id_key,
+            )
+            return _with_projected_answer(
+                block,
+                query_text=query_text,
+                results=results,
+                templates=templates,
             )
 
         partials: list[tuple[str, EvidenceBlock]] = []
@@ -164,7 +174,7 @@ class EvidenceAggregator:
         supporting: dict[str, Any] = dict(primary_eb.supporting_data)
         supporting["fanout_by_angle"] = {slug: dict(eb.supporting_data) for slug, eb in partials}
 
-        return EvidenceBlock(
+        block = EvidenceBlock(
             summary=summary,
             insights=insights,
             metrics=metrics,
@@ -174,3 +184,39 @@ class EvidenceAggregator:
             sample_refs=sample_refs,
             supporting_data=supporting,
         )
+        return _with_projected_answer(
+            block,
+            query_text=query_text,
+            results=results,
+            templates=templates,
+        )
+
+
+def _with_projected_answer(
+    block: EvidenceBlock,
+    *,
+    query_text: str | None,
+    results: Sequence[AnalyticsResult],
+    templates: "QueryTemplateRegistry | None",
+) -> EvidenceBlock:
+    if not query_text or templates is None:
+        return block
+    projected = build_projected_answer(query_text, results, templates=templates)
+    if projected is None:
+        return block
+
+    projected_dict = projected.as_dict()
+    complementary_summary = (
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        f"{block.summary}"
+    )
+    return EvidenceBlock(
+        summary=f"{projected.summary}\n\n{complementary_summary}",
+        insights={**dict(block.insights), "direct_answer": projected_dict},
+        metrics={**dict(block.metrics), "answer_plan": projected_dict["plan"]},
+        confidence=block.confidence,
+        coverage=block.coverage,
+        provenance=block.provenance,
+        sample_refs=block.sample_refs,
+        supporting_data={**dict(block.supporting_data), "direct_answer": projected_dict},
+    )
