@@ -93,7 +93,7 @@ def build_fusion_layers(
 ) -> list[tuple[str, list[ContextBlock]]]:
     """Monta camadas para :meth:`ContextFusion.fuse`.
 
-    Ordem: system → user → essência opcional → evidência → digest → memória.
+    Ordem: system → user → evidência → digest → essência opcional → memória.
     O bloco SYSTEM é injetado somente quando ``cognitive_plan`` é fornecido, preservando
     compatibilidade para chamadas diretas de ``build_fusion_layers`` sem plano.
     """
@@ -122,12 +122,12 @@ def build_fusion_layers(
     layers.append(("user", [user_cb]))
     mem = list(memory_blocks) if memory_blocks else []
     ess = list(essence_blocks) if essence_blocks else []
-    if ess:
-        layers.append(("essence", ess))
     if evidence:
         layers.append(("evidence", [_evidence_to_context_block(evidence)]))
     if digest:
         layers.append(("analytics_digest", [_digest_to_context_block(digest)]))
+    if ess:
+        layers.append(("essence", ess))
     if mem:
         layers.append(("memory", mem))
     return layers
