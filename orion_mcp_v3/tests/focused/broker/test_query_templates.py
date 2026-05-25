@@ -10,6 +10,7 @@ from orion_mcp_v3.broker.query_templates import (
     QueryTemplate,
     QueryTemplateRegistry,
 )
+from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_expander import QueryExpander
 from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
@@ -207,6 +208,19 @@ def test_all_templates_registered() -> None:
         "formas_pagamento",
     }
     assert set(ANALYTICS_TEMPLATES.slugs) == expected
+
+
+def test_capability_catalog_exposes_semantic_view_details() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    entry = next(e for e in catalog.entries if e.template_slug == "performance_concessionaria")
+    prompt_entry = entry.as_prompt_dict()
+
+    assert entry.grain == "month"
+    assert entry.time_key == "periodo"
+    assert "qual concessionária fatura mais" in entry.descriptions
+    assert prompt_entry["metrics"]["vendas"]["kind"] == "money"
+    assert prompt_entry["metrics"]["ticket_medio_os"]["additive"] is False
+    assert prompt_entry["dimensions"]["concessionaria"]["label"] == "concessionária"
 
 
 def test_template_sql_contains_placeholders() -> None:

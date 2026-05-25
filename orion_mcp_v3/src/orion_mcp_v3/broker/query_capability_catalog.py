@@ -14,18 +14,32 @@ class QueryCapabilityEntry:
     metrics: Mapping[str, tuple[str, ...]]
     dimensions: Mapping[str, tuple[str, ...]]
     operations: tuple[str, ...]
+    metric_details: Mapping[str, Mapping[str, Any]]
+    dimension_details: Mapping[str, Mapping[str, Any]]
+    descriptions: tuple[str, ...] = ()
+    grain: str | None = None
+    time_key: str | None = None
     default_metric: str | None = None
     default_dimension: str | None = None
 
     def as_prompt_dict(self) -> dict[str, Any]:
         return {
             "template_slug": self.template_slug,
+            "descriptions": list(self.descriptions),
+            "grain": self.grain,
+            "time_key": self.time_key,
             "metrics": {
-                key: {"synonyms": list(values)}
+                key: {
+                    **dict(self.metric_details.get(key, {})),
+                    "synonyms": list(values),
+                }
                 for key, values in sorted(self.metrics.items())
             },
             "dimensions": {
-                key: {"synonyms": list(values)}
+                key: {
+                    **dict(self.dimension_details.get(key, {})),
+                    "synonyms": list(values),
+                }
                 for key, values in sorted(self.dimensions.items())
             },
             "operations": list(self.operations),
@@ -82,8 +96,25 @@ def build_query_capability_catalog(registry: QueryTemplateRegistry) -> QueryCapa
             key: _dedupe((measure.label, measure.column, *measure.synonyms, key))
             for key, measure in capability.measures.items()
         }
+        metric_details = {
+            key: {
+                "label": measure.label,
+                "column": measure.column,
+                "kind": measure.kind,
+                "additive": measure.additive,
+                "sortable": measure.sortable,
+            }
+            for key, measure in capability.measures.items()
+        }
         dimensions = {
             key: _dedupe((dimension.label, dimension.column, *dimension.synonyms, key))
+            for key, dimension in capability.dimensions.items()
+        }
+        dimension_details = {
+            key: {
+                "label": dimension.label,
+                "column": dimension.column,
+            }
             for key, dimension in capability.dimensions.items()
         }
         entries.append(
@@ -92,6 +123,11 @@ def build_query_capability_catalog(registry: QueryTemplateRegistry) -> QueryCapa
                 metrics=metrics,
                 dimensions=dimensions,
                 operations=tuple(capability.supported_operations),
+                metric_details=metric_details,
+                dimension_details=dimension_details,
+                descriptions=tuple(template.answers),
+                grain=template.grain,
+                time_key=template.time_key,
                 default_metric=capability.default_measure,
                 default_dimension=capability.default_dimension,
             )
