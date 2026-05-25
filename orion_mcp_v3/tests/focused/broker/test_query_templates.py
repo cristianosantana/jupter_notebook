@@ -253,6 +253,21 @@ def test_capability_catalog_exposes_semantic_view_details() -> None:
     assert prompt_entry["dimensions"]["concessionaria"]["label"] == "concessionária"
 
 
+def test_capability_catalog_builds_query_cards_for_selector() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    cards = {card.template_slug: card for card in catalog.query_cards()}
+
+    vendedor = cards["performance_vendedor"]
+    formas = cards["formas_pagamento"]
+
+    assert "vendedor" in vendedor.dimensions
+    assert "vendas" in vendedor.metrics
+    assert any("ranking de vendedores" in item for item in vendedor.descriptions)
+    assert "periodo" in formas.dimensions
+    assert "pix" in formas.metrics
+    assert any("forma de pagamento" in item for item in formas.descriptions)
+
+
 def test_template_sql_contains_placeholders() -> None:
     for slug in ANALYTICS_TEMPLATES.slugs:
         tpl = ANALYTICS_TEMPLATES.get(slug)

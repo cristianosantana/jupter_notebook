@@ -9,6 +9,34 @@ from orion_mcp_v3.broker.query_templates import QueryTemplateRegistry
 
 
 @dataclass(frozen=True, slots=True)
+class QueryCard:
+    """Cartão semântico compacto usado para seleção de template."""
+
+    template_slug: str
+    descriptions: tuple[str, ...]
+    metrics: tuple[str, ...]
+    dimensions: tuple[str, ...]
+    operations: tuple[str, ...]
+    default_metric: str | None
+    default_dimension: str | None
+    grain: str | None = None
+    time_key: str | None = None
+
+    def as_prompt_dict(self) -> dict[str, Any]:
+        return {
+            "template_slug": self.template_slug,
+            "descriptions": list(self.descriptions),
+            "metrics": list(self.metrics),
+            "dimensions": list(self.dimensions),
+            "operations": list(self.operations),
+            "default_metric": self.default_metric,
+            "default_dimension": self.default_dimension,
+            "grain": self.grain,
+            "time_key": self.time_key,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class QueryCapabilityEntry:
     template_slug: str
     metrics: Mapping[str, tuple[str, ...]]
@@ -47,6 +75,19 @@ class QueryCapabilityEntry:
             "default_dimension": self.default_dimension,
         }
 
+    def as_query_card(self) -> QueryCard:
+        return QueryCard(
+            template_slug=self.template_slug,
+            descriptions=self.descriptions,
+            metrics=tuple(sorted(self.metrics)),
+            dimensions=tuple(sorted(self.dimensions)),
+            operations=tuple(self.operations),
+            default_metric=self.default_metric,
+            default_dimension=self.default_dimension,
+            grain=self.grain,
+            time_key=self.time_key,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class QueryCapabilityCatalog:
@@ -54,6 +95,12 @@ class QueryCapabilityCatalog:
 
     def as_prompt_dict(self) -> list[dict[str, Any]]:
         return [entry.as_prompt_dict() for entry in self.entries]
+
+    def query_cards(self) -> tuple[QueryCard, ...]:
+        return tuple(entry.as_query_card() for entry in self.entries)
+
+    def query_cards_prompt(self) -> list[dict[str, Any]]:
+        return [card.as_prompt_dict() for card in self.query_cards()]
 
     @property
     def metric_keys(self) -> set[str]:
