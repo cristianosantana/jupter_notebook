@@ -184,6 +184,36 @@ def test_expander_with_registry() -> None:
     assert plans[0].intent_slug.startswith("template.")
 
 
+def test_expander_prefers_validated_template_from_intent_contract() -> None:
+    cp = _analytical_plan(
+        metrics=("vendas",),
+        entities=("vendedor",),
+        hints={
+            "template_slug": "performance_vendedor",
+            "intent_contract": {
+                "template_slug": "performance_vendedor",
+                "metric": "vendas",
+                "dimension": "vendedor",
+                "operation": "ranking_desc",
+            },
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="qual vendedor vendeu mais?",
+    )
+
+    assert len(plans) == 1
+    assert plans[0].intent_slug == "template.performance_vendedor"
+    assert plans[0].hints["template_slug"] == "performance_vendedor"
+    assert plans[0].hints["selected_metric"] == "vendas"
+    assert plans[0].hints["selected_dimension"] == "vendedor"
+    assert plans[0].hints["selected_operation"] == "ranking_desc"
+    assert plans[0].hints["semantic_reason"] == "validated_intent_contract"
+
+
 def test_expander_without_registry_keeps_compiled_path() -> None:
     cp = _analytical_plan(
         metrics=("faturamento",),
