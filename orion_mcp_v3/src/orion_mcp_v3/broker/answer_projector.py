@@ -61,6 +61,8 @@ def _row_label(row: Mapping[str, Any], dimension: DimensionCapability | None) ->
 
 def _operation_from_query(query_text: str) -> str:
     q = _norm(query_text)
+    if re.search(r"\babaixo da media\b|\bmenor(?:es)? que a media\b", q):
+        return "below_average"
     has_top = bool(re.search(r"\b(maior|melhor|top|mais|domina|ranking)\b", q))
     has_bottom = bool(re.search(r"\b(menor|pior|menos|baixo|menores)\b", q))
     if has_top and has_bottom:
@@ -69,7 +71,7 @@ def _operation_from_query(query_text: str) -> str:
         return "ranking_asc"
     if has_top:
         return "ranking_desc"
-    if re.search(r"\b(cada|por|liste|lista|mostre)\b", q):
+    if re.search(r"\b(cada|por|liste|lista|mostre|tod[oa]s?)\b", q):
         return "list"
     return "ranking_desc"
 
@@ -145,7 +147,7 @@ def infer_answer_plan(
             dimension_key = capability.default_dimension
 
     operation = _operation_from_query(query_text)
-    if operation not in capability.supported_operations:
+    if operation != "below_average" and operation not in capability.supported_operations:
         operation = "ranking_desc" if "ranking_desc" in capability.supported_operations else capability.supported_operations[0]
 
     return AnswerPlan(
@@ -155,6 +157,54 @@ def infer_answer_plan(
         operation=operation,
         reason="capability_match",
     )
+
+
+def _answer_plan_from_hints(
+    hints: Mapping[str, Any],
+    *,
+    query_text: str,
+    template_slug: str,
+    capability: AnswerCapability,
+) -> AnswerPlan | None:
+    measure = _hint_key(hints.get("selected_metric"), capability.measures)
+    dimension = _hint_key(hints.get("selected_dimension"), capability.dimensions)
+    operation_raw = hints.get("selected_operation")
+    operation = str(operation_raw).strip() if operation_raw is not None else ""
+    if measure is None and dimension is None and not operation:
+        return None
+    if measure is None:
+        measure = capability.default_measure
+    if dimension is None:
+        dimension = capability.default_dimension
+    derived_operation = _operation_from_query(query_text)
+    if derived_operation == "below_average":
+        selected_operation = derived_operation
+    elif operation == "below_average" or operation in capability.supported_operations:
+        selected_operation = operation
+    else:
+        selected_operation = (
+            "ranking_desc" if "ranking_desc" in capability.supported_operations else capability.supported_operations[0]
+        )
+    return AnswerPlan(
+        template_slug=template_slug,
+        measure=measure,
+        dimension=dimension,
+        operation=selected_operation,
+        reason="validated_semantic_hints",
+    )
+
+
+def _hint_key(value: Any, allowed: Mapping[str, Any]) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if raw in allowed:
+        return raw
+    raw_lower = raw.lower()
+    for key in allowed:
+        if key.lower() == raw_lower:
+            return key
+    return None
 
 
 def _aggregate_rows(
@@ -221,7 +271,29 @@ def project_answer(
     top_label = _row_label(top, dimension) if dimension is not None else "maior valor"
     top_value = _format_value(top.get(measure.column), measure.kind)
     parts: list[str] = []
-    if plan.operation == "top_and_bottom":
+    if plan.operation == "below_average":
+        nums = [_to_float(r.get(measure.column)) for r in projected]
+        numeric_values = [n for n in nums if n is not None]
+        mean = sum(numeric_values) / len(numeric_values)
+        below = tuple(
+            r
+            for r in sorted(projected, key=lambda item: _to_float(item.get(measure.column)) or 0.0)
+            if (_to_float(r.get(measure.column)) or 0.0) < mean
+        )
+        lines = [
+            f"Resposta direta: {dim_label}s com {measure.label} abaixo da média "
+            f"({_format_value(mean, measure.kind)}):"
+        ]
+        for i, row in enumerate(below[: max(1, limit)], start=1):
+            label = _row_label(row, dimension)
+            value = _format_value(row.get(measure.column), measure.kind)
+            lines.append(f"{i}. {label}: {value}")
+        if not below:
+            lines.append("Nenhum registro abaixo da média na evidência disponível.")
+        parts.append("\n".join(lines))
+        selected = below
+        top = below[0] if below else top
+    elif plan.operation == "top_and_bottom":
         bottom_label = _row_label(bottom, dimension) if dimension is not None else "menor valor"
         bottom_value = _format_value(bottom.get(measure.column), measure.kind)
         parts.append(
@@ -267,7 +339,14 @@ def build_projected_answer(
         capability = getattr(template, "capability", None)
         if template is None or capability is None:
             continue
-        plan = infer_answer_plan(query_text, template_slug=slug, capability=capability)
+        plan = _answer_plan_from_hints(
+            hints,
+            query_text=query_text,
+            template_slug=slug,
+            capability=capability,
+        )
+        if plan is None:
+            plan = infer_answer_plan(query_text, template_slug=slug, capability=capability)
         measure = capability.measures.get(plan.measure)
         dimension = capability.dimensions.get(plan.dimension) if plan.dimension else None
         score = 0

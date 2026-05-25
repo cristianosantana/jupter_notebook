@@ -54,9 +54,16 @@ def resolve_evidence_series_specs(
         if templates is not None and isinstance(tpl_slug, str) and tpl_slug:
             tpl = templates.get(tpl_slug)
         if tpl is not None:
+            value_key = tpl.value_key
+            selected_metric = hints.get("selected_metric")
+            capability = getattr(tpl, "capability", None)
+            if isinstance(selected_metric, str) and capability is not None:
+                measure = capability.measures.get(selected_metric)
+                if measure is not None:
+                    value_key = measure.column
             out.append(
                 EvidenceSeriesSpec(
-                    value_key=tpl.value_key,
+                    value_key=value_key,
                     time_key=tpl.time_key,
                     grain=tpl.grain,
                     id_key=default_id_key,

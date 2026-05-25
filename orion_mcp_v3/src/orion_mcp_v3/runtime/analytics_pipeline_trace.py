@@ -156,9 +156,16 @@ def snapshot_cognitive_plan(cp: Any) -> dict[str, Any]:
 
 
 def snapshot_semantic_plan(plan: Any) -> dict[str, Any]:
-    tpl = plan.hints.get("_template") if hasattr(plan, "hints") else None
+    hints = plan.hints if hasattr(plan, "hints") and isinstance(plan.hints, Mapping) else {}
+    semantic_selection = {
+        "selected_metric": hints.get("selected_metric"),
+        "selected_dimension": hints.get("selected_dimension"),
+        "selected_operation": hints.get("selected_operation"),
+        "semantic_reason": hints.get("semantic_reason"),
+    }
+    tpl = hints.get("_template")
     if tpl is not None:
-        params = plan.hints.get("template_params") or {}
+        params = hints.get("template_params") or {}
         keys = sorted(str(k) for k in params.keys())
         return {
             "intent_slug": plan.intent_slug,
@@ -168,12 +175,14 @@ def snapshot_semantic_plan(plan: Any) -> dict[str, Any]:
             "template_time_key": getattr(tpl, "time_key", None),
             "template_grain": getattr(tpl, "grain", None),
             "param_keys": keys,
+            **semantic_selection,
         }
-    hk = sorted(str(k) for k in (plan.hints or {}).keys()) if hasattr(plan, "hints") else []
+    hk = sorted(str(k) for k in hints.keys())
     return {
         "intent_slug": plan.intent_slug,
         "modo": "compile",
         "hint_keys": hk[:32],
+        **semantic_selection,
     }
 
 
@@ -195,6 +204,9 @@ def snapshot_analytics_result(res: Any) -> dict[str, Any]:
     return {
         "intent_slug": getattr(plan, "intent_slug", None),
         "template_slug": hints.get("template_slug") if isinstance(hints, Mapping) else None,
+        "selected_metric": hints.get("selected_metric") if isinstance(hints, Mapping) else None,
+        "selected_dimension": hints.get("selected_dimension") if isinstance(hints, Mapping) else None,
+        "selected_operation": hints.get("selected_operation") if isinstance(hints, Mapping) else None,
         "row_count": getattr(res, "row_count", len(rows)),
         "sql_chars": len(sql),
         "sql_preview": _truncate(sql, _MAX_SQL),
@@ -208,12 +220,14 @@ def snapshot_evidence_block(eb: Any | None) -> dict[str, Any]:
         return {"presente": False}
     summary = getattr(eb, "summary", "") or ""
     metrics = getattr(eb, "metrics", {}) or {}
+    answer_plan = metrics.get("answer_plan") if isinstance(metrics, Mapping) else None
     return {
         "presente": True,
         "confidence": getattr(eb, "confidence", None),
         "summary_chars": len(summary),
         "summary_preview": _truncate(summary, 500),
         "metrics_value_key": metrics.get("value_key") if isinstance(metrics, Mapping) else None,
+        "answer_plan": answer_plan if isinstance(answer_plan, Mapping) else None,
         "input_rows": metrics.get("input_rows") if isinstance(metrics, Mapping) else None,
     }
 

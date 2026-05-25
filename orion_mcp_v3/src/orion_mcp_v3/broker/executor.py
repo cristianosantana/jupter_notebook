@@ -5,7 +5,7 @@ Orquestrador: texto → Planner → compilador SQL seguro → execução MySQL (
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from orion_mcp_v3.broker.planner import build_query_plan
@@ -78,15 +78,27 @@ class AnalyticsExecutor:
         self,
         template: QueryTemplate,
         params: dict[str, Any],
+        *,
+        plan: SemanticQueryPlan | None = None,
     ) -> AnalyticsResult:
         """Executa um QueryTemplate parametrizado directamente (sem compilador)."""
         param_values = tuple(params[k] for k in template.parameters)
         rows = await self._mysql.select(template.sql, params=param_values)
-        plan = SemanticQueryPlan(
-            intent_slug=f"template.{template.slug}",
-            strategy=RetrievalStrategy.BROKER_FANOUT,
-            hints={"template_slug": template.slug, "template_params": params},
-        )
+        if plan is None:
+            plan = SemanticQueryPlan(
+                intent_slug=f"template.{template.slug}",
+                strategy=RetrievalStrategy.BROKER_FANOUT,
+                hints={"template_slug": template.slug, "template_params": params},
+            )
+        else:
+            plan = replace(
+                plan,
+                hints={
+                    **dict(plan.hints),
+                    "template_slug": template.slug,
+                    "template_params": params,
+                },
+            )
         return AnalyticsResult(
             plan=plan,
             sql=template.sql,

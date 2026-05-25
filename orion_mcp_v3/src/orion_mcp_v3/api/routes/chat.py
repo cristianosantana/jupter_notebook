@@ -613,7 +613,7 @@ def create_chat_router(
             tpl = plan.hints.get("_template")
             if tpl is not None:
                 params = plan.hints.get("template_params", {})
-                return await exec_.execute_template(tpl, params)
+                return await exec_.execute_template(tpl, params, plan=plan)
             return await exec_.execute_plan(plan)
 
         if trace_enabled:

@@ -40,6 +40,31 @@ def _result(slug: str, rows: list[dict]) -> AnalyticsResult:  # type: ignore[typ
     )
 
 
+def _selected_result(
+    *,
+    metric: str,
+    operation: str,
+    rows: list[dict],  # type: ignore[type-arg]
+    dimension: str = "concessionaria",
+) -> AnalyticsResult:
+    return AnalyticsResult(
+        plan=SemanticQueryPlan(
+            intent_slug="template.performance_concessionaria",
+            strategy=RetrievalStrategy.BROKER_FANOUT,
+            hints={
+                "template_slug": "performance_concessionaria",
+                "template_params": {},
+                "selected_metric": metric,
+                "selected_dimension": dimension,
+                "selected_operation": operation,
+            },
+        ),
+        sql="SELECT ...",
+        rows=rows,
+        row_count=len(rows),
+    )
+
+
 def test_new_question_flows_through_existing_semantic_view() -> None:
     cp = _analytical_plan(
         metrics=("recebido",),
@@ -65,6 +90,62 @@ def test_new_question_flows_through_existing_semantic_view() -> None:
     assert plans[0].hints["template_slug"] == "performance_concessionaria"
     assert plans[0].hints["selected_metric"] == "recebido"
     assert plans[0].hints["semantic_reason"] == "validated_intent_contract"
+
+
+def test_evidence_preserves_validated_list_metric_from_semantic_plan() -> None:
+    rows = [
+        {"concessionaria": "porsche", "vendas": "167440.00", "recebido": "165370.00"},
+        {"concessionaria": "gwm bamaq", "vendas": "159190.00", "recebido": "147750.00"},
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [_selected_result(metric="vendas", operation="list", rows=rows)],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Quanto cada concessionária faturou de março de 2026?",
+    )
+
+    assert evidence.metrics["answer_plan"]["measure"] == "vendas"
+    assert evidence.metrics["answer_plan"]["operation"] == "list"
+    assert "vendas por concessionária" in evidence.summary
+    assert "porsche: R$ 167.440,00" in evidence.summary
+    assert "recebido por concessionária" not in evidence.summary
+
+
+def test_evidence_series_uses_selected_metric_for_complementary_summary() -> None:
+    rows = [
+        {"concessionaria": "porsche", "vendas": "167440.00", "recebido": "165370.00"},
+        {"concessionaria": "gwm bamaq", "vendas": "159190.00", "recebido": "147750.00"},
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [_selected_result(metric="recebido", operation="list", rows=rows)],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="gostaria de saber o recebimento de todas as concessionarias nesse periodo",
+    )
+
+    assert evidence.metrics["value_key"] == "recebido"
+    assert "Ranking por `recebido`" in evidence.summary
+    assert "Ranking por `vendas`" not in evidence.summary
+
+
+def test_below_average_question_lists_all_below_average_rows() -> None:
+    rows = [
+        {"concessionaria": "porsche", "vendas": "2000.00"},
+        {"concessionaria": "gwm bamaq", "vendas": "600.00"},
+        {"concessionaria": "euroville volvo jf", "vendas": "100.00"},
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [_selected_result(metric="vendas", operation="ranking_asc", rows=rows)],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="quais concessionarias merecem atenção por causa de vendas abaixo da média?",
+    )
+
+    assert evidence.metrics["answer_plan"]["operation"] == "below_average"
+    assert "abaixo da média" in evidence.summary
+    assert "gwm bamaq" in evidence.summary
+    assert "euroville volvo jf" in evidence.summary
+    assert "menor vendas por concessionária" not in evidence.summary
 
 
 def test_contract_validator_blocks_operation_outside_selected_view() -> None:
