@@ -120,8 +120,10 @@ class AnalyticalIntentInterpreter:
 _SYSTEM_PROMPT = """You are an analytical intent interpreter.
 Return exactly one JSON object and no prose.
 Never generate SQL.
+Never answer the user and never narrate analytical results.
 Use regex signals only as hints. Prefer conversation context and declared capabilities when they conflict.
 Only use enum/capability values available in the prompt.
+Select template_slug only from declared_capabilities when a single analytical view is clearly appropriate.
 """
 
 
@@ -181,6 +183,7 @@ def _build_prompt(
             "needs_analytics": "boolean",
             "needs_memory": "boolean",
             "needs_comparison": "boolean",
+            "template_slug": "string|null",
             "metric": "string|null",
             "dimension": "string|null",
             "date_ranges": [

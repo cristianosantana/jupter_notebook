@@ -38,6 +38,7 @@ async def test_interpreter_returns_contract_from_json() -> None:
           "needs_analytics": true,
           "needs_memory": true,
           "needs_comparison": true,
+          "template_slug": "performance_vendedor",
           "metric": "sales",
           "dimension": "seller",
           "date_ranges": [
@@ -65,6 +66,7 @@ async def test_interpreter_returns_contract_from_json() -> None:
     assert contract is not None
     assert contract.intent_type.value == "comparative"
     assert contract.needs_comparison is True
+    assert contract.template_slug == "performance_vendedor"
 
 
 async def test_interpreter_returns_none_for_non_json() -> None:

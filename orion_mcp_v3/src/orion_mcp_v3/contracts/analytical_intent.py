@@ -64,6 +64,7 @@ class AnalyticalIntentContract:
     needs_analytics: bool
     needs_memory: bool
     needs_comparison: bool
+    template_slug: str | None = None
     metric: str | None = None
     dimension: str | None = None
     date_ranges: tuple[AnalyticalDateRange, ...] = ()
@@ -78,6 +79,7 @@ class AnalyticalIntentContract:
             "needs_analytics": self.needs_analytics,
             "needs_memory": self.needs_memory,
             "needs_comparison": self.needs_comparison,
+            "template_slug": self.template_slug,
             "metric": self.metric,
             "dimension": self.dimension,
             "date_ranges": [r.as_dict() for r in self.date_ranges],
@@ -97,6 +99,7 @@ class AnalyticalIntentContract:
             needs_analytics=bool(raw.get("needs_analytics")),
             needs_memory=bool(raw.get("needs_memory")),
             needs_comparison=bool(raw.get("needs_comparison")),
+            template_slug=_optional_str(raw.get("template_slug")),
             metric=_optional_str(raw.get("metric")),
             dimension=_optional_str(raw.get("dimension")),
             date_ranges=tuple(
