@@ -20,36 +20,17 @@ from orion_mcp_v3.protocols.llm import (
     LLMResponseMeta,
     NullLLMProvider,
 )
+from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrationResult
 
 _LOG = logging.getLogger(__name__)
 
 
-# ── Salvaguardas anti-alucinação ─────────────────────────────────────
-
-_SYSTEM_PREAMBLE = (
-    "Você é um analista de dados preciso. "
-    "Responda APENAS com base nos dados e evidências fornecidos no contexto. "
-    "Regras obrigatórias:\n"
-    "1. Não invente números, nomes ou métricas que não estejam no contexto.\n"
-    "2. Use frases como «com base no resumo estatístico fornecido…», "
-    "«nos dados amostrados…», «de acordo com a evidência disponível…».\n"
-    "3. Se a cobertura dos dados for parcial, diga explicitamente: "
-    "«sem acesso à totalidade dos registos, esta análise cobre X de Y».\n"
-    "4. Cite o período, volume e método de agregação quando disponíveis.\n"
-    "5. Se não houver dados suficientes para responder, diga claramente "
-    "que a informação é insuficiente — NUNCA preencha lacunas com suposições.\n"
-)
-
-_COVERAGE_TEMPLATE = (
-    "\n\n[COBERTURA] Volume de dados: {volume}. "
-    "Confiança do digest: {confidence}. "
-    "Método de agregação: {aggregation_logic}."
-)
-
-_EVIDENCE_TEMPLATE = (
-    "\n\n[EVIDÊNCIA] {summary}"
-)
+_PROMPTS = get_prompt_registry()
+_SYSTEM_PREAMBLE = _PROMPTS.get_text("narrator.base")
+_COVERAGE_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "coverage_template")
+_EVIDENCE_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "evidence_template")
+_DIRECT_ANSWER_LITERAL_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "direct_answer_literal")
 
 
 def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
@@ -73,6 +54,22 @@ def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
     return "\n".join(lines) if lines else ""
 
 
+def _direct_answer_requires_literal_preservation(result: CognitiveOrchestrationResult) -> bool:
+    for b in result.packed_blocks:
+        direct = b.metadata.get("direct_answer")
+        if not isinstance(direct, Mapping):
+            continue
+        plan = direct.get("plan")
+        if not isinstance(plan, Mapping):
+            continue
+        scope = plan.get("result_scope")
+        if isinstance(scope, Mapping) and scope.get("mode") == "all":
+            return True
+        if plan.get("operation") == "list":
+            return True
+    return False
+
+
 def _build_narrator_messages(
     result: CognitiveOrchestrationResult,
     *,
@@ -83,6 +80,8 @@ def _build_narrator_messages(
     preamble = system_preamble or _SYSTEM_PREAMBLE
     coverage = _extract_coverage_note(result)
     system_text = preamble.strip()
+    if _direct_answer_requires_literal_preservation(result):
+        system_text += _DIRECT_ANSWER_LITERAL_TEMPLATE
     if coverage:
         system_text += "\n" + coverage.strip()
     if extra_instructions:
@@ -157,6 +156,8 @@ class CognitiveNarrator:
                 b.metadata.get("fusion_kind") == "evidence" for b in result.packed_blocks
             ) else "no_evidence",
         ]
+        if _direct_answer_requires_literal_preservation(result):
+            safeguards.append("direct_answer_literal_preservation")
 
         return NarrationResult(
             narration=llm_resp.text,

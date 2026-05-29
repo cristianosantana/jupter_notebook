@@ -34,6 +34,7 @@ from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
 from orion_mcp_v3.broker.query_template_selector import QuerySelectionValidator, QueryTemplateSelector
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
+from orion_mcp_v3.contracts.answer_presentation import AnswerPresentationContract
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
@@ -63,12 +64,17 @@ from orion_mcp_v3.runtime.analytical_intent_interpreter import (
     memory_context_from_messages,
 )
 from orion_mcp_v3.runtime.analytical_intent_validator import IntentContractValidator
+from orion_mcp_v3.runtime.answer_presentation_interpreter import (
+    AnswerPresentationInterpreter,
+    AnswerPresentationValidator,
+)
 from orion_mcp_v3.runtime.heuristic_signal_catalog import (
     HeuristicSignalCatalog,
     extract_heuristic_signals,
 )
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver, map_attention_profile_to_policy
 from orion_mcp_v3.runtime.narrator import CognitiveNarrator
+from orion_mcp_v3.runtime.period_adequacy import resolve_period_adequacy
 from orion_mcp_v3.runtime.session_manager import SessionManager
 
 _LOG = logging.getLogger("orion.api.chat")
@@ -141,6 +147,29 @@ def _resolve_policy(name: str) -> AttentionPolicy:
         return AttentionPolicy.BALANCED
 
 
+def _period_context_missing_reply() -> str:
+    return (
+        "Preciso que você informe o período da análise para responder com segurança. "
+        "Não encontrei um período analítico anterior confiável para herdar."
+    )
+
+
+def _direct_answer_literal_preservation_enabled(evidence: EvidenceBlock | None) -> bool:
+    if evidence is None:
+        return False
+    direct = evidence.supporting_data.get("direct_answer") if evidence.supporting_data else None
+    if not isinstance(direct, Mapping):
+        return False
+    plan = direct.get("plan")
+    if not isinstance(plan, Mapping):
+        return False
+    scope = plan.get("result_scope")
+    return (
+        (isinstance(scope, Mapping) and scope.get("mode") == "all")
+        or plan.get("operation") == "list"
+    )
+
+
 def _should_interpret_with_llm(
     plan: CognitivePlan,
     *,
@@ -170,13 +199,18 @@ def _plan_with_query_selection(
     hints = dict(plan.hints or {})
     intent_contract = hints.get("intent_contract")
     if isinstance(intent_contract, Mapping):
-        intent_contract = {**dict(intent_contract), "template_slug": selection.template_slug}
+        intent_contract = {
+            **dict(intent_contract),
+            "template_slug": selection.template_slug,
+            "entity_filters": [dict(item) for item in selection.entity_filters],
+        }
     else:
         intent_contract = {
             "template_slug": selection.template_slug,
             "metric": selection.measure,
             "dimension": selection.dimension,
             "operation": selection.operation,
+            "entity_filters": [dict(item) for item in selection.entity_filters],
         }
     hints.update(
         {
@@ -185,6 +219,7 @@ def _plan_with_query_selection(
             "selected_metric": selection.measure,
             "selected_dimension": selection.dimension,
             "selected_operation": selection.operation,
+            "entity_filters": selection.entity_filters,
             "semantic_reason": "llm_query_selector",
             "query_selection": selection.as_dict(),
         }
@@ -192,6 +227,21 @@ def _plan_with_query_selection(
     metrics = (selection.measure,) if selection.measure else plan.metrics
     entities = (selection.dimension,) if selection.dimension else plan.entities
     return replace(plan, metrics=metrics, entities=entities, hints=hints)
+
+
+def _plan_with_answer_presentation(
+    plan: CognitivePlan,
+    presentation: AnswerPresentationContract,
+) -> CognitivePlan:
+    hints = dict(plan.hints or {})
+    hints.update(
+        {
+            "result_scope": presentation.result_scope,
+            "sort": presentation.sort,
+            "answer_presentation": presentation.as_dict(),
+        }
+    )
+    return replace(plan, hints=hints)
 
 
 def create_chat_router(
@@ -216,6 +266,8 @@ def create_chat_router(
     intent_validator = IntentContractValidator(capability_catalog)
     query_selector = QueryTemplateSelector(provider)
     query_selection_validator = QuerySelectionValidator(capability_catalog)
+    presentation_interpreter = AnswerPresentationInterpreter(provider)
+    presentation_validator = AnswerPresentationValidator(capability_catalog)
     _fixed_executor = analytics_executor
     _fixed_allowlist = analytics_allowlist
     # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
@@ -342,6 +394,7 @@ def create_chat_router(
             )
         query_select_with_llm = cognitive_plan.needs_analytics and not isinstance(provider, NullLLMProvider)
         query_selection = None
+        accepted_query_selection = None
         query_selection_rejected_reason = "not_needed"
         if trace_pipe:
             log_pipeline_event(
@@ -364,9 +417,10 @@ def create_chat_router(
             if query_selection is not None:
                 query_selection_validation = query_selection_validator.validate(query_selection)
                 if query_selection_validation.accepted and query_selection_validation.contract is not None:
+                    accepted_query_selection = query_selection_validation.contract
                     cognitive_plan = _plan_with_query_selection(
                         cognitive_plan,
-                        query_selection_validation.contract,
+                        accepted_query_selection,
                     )
                     query_selection_rejected_reason = None
                 else:
@@ -388,6 +442,89 @@ def create_chat_router(
                     "cognitive_plan": snapshot_cognitive_plan(cognitive_plan),
                 },
             )
+        presentation_with_llm = accepted_query_selection is not None and not isinstance(provider, NullLLMProvider)
+        answer_presentation = None
+        presentation_rejected_reason = "not_needed"
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="answer_present",
+                fase="pre",
+                conversation_id=cid,
+                dados={
+                    "used_llm": presentation_with_llm,
+                    "query_selection": accepted_query_selection.as_dict()
+                    if accepted_query_selection is not None
+                    else None,
+                },
+            )
+        if presentation_with_llm and accepted_query_selection is not None:
+            answer_presentation = await presentation_interpreter.interpret(
+                req.message,
+                cognitive_plan=cognitive_plan,
+                query_selection=accepted_query_selection,
+                capabilities=capability_catalog,
+            )
+            if answer_presentation is not None:
+                presentation_validation = presentation_validator.validate(
+                    answer_presentation,
+                    query_selection=accepted_query_selection,
+                )
+                if presentation_validation.accepted and presentation_validation.contract is not None:
+                    cognitive_plan = _plan_with_answer_presentation(
+                        cognitive_plan,
+                        presentation_validation.contract,
+                    )
+                    presentation_rejected_reason = None
+                else:
+                    presentation_rejected_reason = (
+                        presentation_validation.rejected_reason or "validator_rejected"
+                    )
+            else:
+                presentation_rejected_reason = "no_valid_json"
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="answer_present",
+                fase="post",
+                conversation_id=cid,
+                dados={
+                    "used_llm": presentation_with_llm,
+                    "accepted": presentation_rejected_reason is None,
+                    "rejected_reason": presentation_rejected_reason,
+                    "presentation": answer_presentation.as_dict()
+                    if answer_presentation is not None
+                    else None,
+                    "cognitive_plan": snapshot_cognitive_plan(cognitive_plan),
+                },
+            )
+        period_decision = resolve_period_adequacy(
+            req.message,
+            cognitive_plan,
+            last_evidence=session.extra.get("last_analytical_evidence"),
+        )
+        cognitive_plan = period_decision.plan
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="period_gate",
+                fase="post",
+                conversation_id=cid,
+                dados=period_decision.as_trace(),
+            )
+        if period_decision.should_block:
+            reply = _period_context_missing_reply()
+            await sm.record_assistant_message(session, reply)
+            sm.update_phase(session, CognitivePhase.IDLE)
+            elapsed = (time.monotonic() - t0) * 1000.0
+            meta = ChatResponseMeta(
+                conversation_id=session.conversation_id,
+                model="period_gate",
+                finish_reason=period_decision.blocked_reason or "blocked",
+                latency_ms=elapsed,
+                usage=UsageInfo(),
+                safeguards=["period_context_required"],
+                cognitive_intent=cognitive_plan.intent_type.value,
+                coverage_note="",
+            )
+            return ChatResponse(reply=reply, meta=meta)
         resolved_policy = map_attention_profile_to_policy(cognitive_plan.attention_profile)
         context_decision = context_policy.decide(cognitive_plan)
 
@@ -562,7 +699,10 @@ def create_chat_router(
                 etapa="narrate",
                 fase="pre",
                 conversation_id=cid,
-                dados={"orch_prompt_chars": len(orch_result.prompt_text or "")},
+                dados={
+                    "orch_prompt_chars": len(orch_result.prompt_text or ""),
+                    "direct_answer_literal_preservation": _direct_answer_literal_preservation_enabled(evidence),
+                },
             )
 
         narration = await narr.narrate(orch_result)

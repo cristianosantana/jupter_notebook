@@ -11,6 +11,7 @@ from orion_mcp_v3.broker.query_capability_catalog import QueryCapabilityCatalog
 from orion_mcp_v3.contracts.analytical_intent import AnalyticalIntentContract
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.memory.repositories.conversation_state import ConversationMessage
+from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider
 from orion_mcp_v3.runtime.heuristic_signal_catalog import HeuristicSignalCatalog
 
@@ -117,14 +118,7 @@ class AnalyticalIntentInterpreter:
             return None
 
 
-_SYSTEM_PROMPT = """You are an analytical intent interpreter.
-Return exactly one JSON object and no prose.
-Never generate SQL.
-Never answer the user and never narrate analytical results.
-Use regex signals only as hints. Prefer conversation context and declared capabilities when they conflict.
-Only use enum/capability values available in the prompt.
-Select template_slug only from declared_capabilities when a single analytical view is clearly appropriate.
-"""
+_SYSTEM_PROMPT = get_prompt_registry().get_text("analytical_intent.system")
 
 
 def _build_prompt(
@@ -191,6 +185,9 @@ def _build_prompt(
             ],
             "source_periods": "string",
             "inherits_from_previous": ["metric|dimension|operation|period"],
+            "entity_filters": [
+                {"dimension": "capability dimension", "value": "specific entity value", "match": "contains|exact"}
+            ],
             "confidence": "number 0..1",
         },
     }

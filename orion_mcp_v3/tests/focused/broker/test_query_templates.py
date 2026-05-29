@@ -236,8 +236,28 @@ def test_all_templates_registered() -> None:
         "performance_concessionaria",
         "performance_vendedor",
         "formas_pagamento",
+        "itens_vendidos",
     }
     assert set(ANALYTICS_TEMPLATES.slugs) == expected
+
+
+def test_itens_vendidos_template_contract() -> None:
+    tpl = ANALYTICS_TEMPLATES.get("itens_vendidos")
+    assert tpl is not None
+
+    cp = _analytical_plan(time_scope="2026-03-01/2026-04-30")
+    params = ANALYTICS_TEMPLATES.resolve_params(tpl, cp)
+
+    assert tpl.sql.count("%s") == len(tpl.parameters)
+    assert tpl.parameters == ("date_from", "date_to", "date_from", "date_to")
+    assert params == {"date_from": "2026-03-01", "date_to": "2026-04-30"}
+    assert tpl.value_key == "vendas"
+    assert tpl.time_key == "periodo"
+    assert tpl.grain == "month"
+    assert tpl.label_key == "item"
+    assert "AVG(ticket_medio_item)" not in tpl.sql
+    assert "SUM(vendas) / SUM(quantidade_vendida)" in tpl.sql
+    assert "DATE_FORMAT(os.created_at, '%%Y-%%m')" in tpl.sql
 
 
 def test_capability_catalog_exposes_semantic_view_details() -> None:
@@ -259,6 +279,7 @@ def test_capability_catalog_builds_query_cards_for_selector() -> None:
 
     vendedor = cards["performance_vendedor"]
     formas = cards["formas_pagamento"]
+    itens = cards["itens_vendidos"]
 
     assert "vendedor" in vendedor.dimensions
     assert "vendas" in vendedor.metrics
@@ -266,6 +287,14 @@ def test_capability_catalog_builds_query_cards_for_selector() -> None:
     assert "periodo" in formas.dimensions
     assert "pix" in formas.metrics
     assert any("forma de pagamento" in item for item in formas.descriptions)
+    assert itens.default_metric == "vendas"
+    assert itens.default_dimension == "item"
+    assert itens.grain == "month"
+    assert itens.time_key == "periodo"
+    assert "item" in itens.dimensions
+    assert "categoria" in itens.dimensions
+    assert "ticket_medio_item" in itens.metrics
+    assert any("itens" in item for item in itens.descriptions)
 
 
 def test_template_sql_contains_placeholders() -> None:

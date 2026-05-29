@@ -14,6 +14,7 @@ class QuerySelectionContract:
     measure: str | None = None
     dimension: str | None = None
     operation: str | None = None
+    entity_filters: tuple[dict[str, str], ...] = ()
     confidence: float = 0.0
     reason: str = ""
 
@@ -23,6 +24,7 @@ class QuerySelectionContract:
             "measure": self.measure,
             "dimension": self.dimension,
             "operation": self.operation,
+            "entity_filters": [dict(item) for item in self.entity_filters],
             "confidence": self.confidence,
             "reason": self.reason,
         }
@@ -34,6 +36,7 @@ class QuerySelectionContract:
             measure=_optional_str(raw.get("measure")),
             dimension=_optional_str(raw.get("dimension")),
             operation=_optional_str(raw.get("operation")),
+            entity_filters=_entity_filters(raw.get("entity_filters")),
             confidence=max(0.0, min(1.0, float(raw.get("confidence") or 0.0))),
             reason=str(raw.get("reason") or "").strip(),
         )
@@ -44,3 +47,19 @@ def _optional_str(value: Any) -> str | None:
         return None
     out = str(value).strip()
     return out or None
+
+
+def _entity_filters(value: Any) -> tuple[dict[str, str], ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    out: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        dimension = _optional_str(item.get("dimension"))
+        filter_value = _optional_str(item.get("value"))
+        if dimension is None or filter_value is None:
+            continue
+        match = str(item.get("match") or "contains").strip().lower() or "contains"
+        out.append({"dimension": dimension, "value": filter_value, "match": match})
+    return tuple(out)

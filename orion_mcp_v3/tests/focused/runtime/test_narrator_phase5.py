@@ -225,6 +225,49 @@ def test_narrator_with_evidence_coverage() -> None:
     assert nr.narration
 
 
+def test_narrator_preserves_complete_direct_answer_instruction() -> None:
+    from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+    from orion_mcp_v3.runtime.provenance import CoverageInfo
+
+    evidence = EvidenceBlock(
+        summary="Resposta direta: ticket médio por item:\n1. ppf: R$ 1.000,00",
+        insights={},
+        metrics={
+            "answer_plan": {
+                "template_slug": "itens_vendidos",
+                "measure": "ticket_medio_item",
+                "dimension": "item",
+                "operation": "list",
+                "result_scope": {"mode": "all", "limit": None},
+            }
+        },
+        supporting_data={
+            "direct_answer": {
+                "plan": {
+                    "operation": "list",
+                    "result_scope": {"mode": "all", "limit": None},
+                },
+                "summary": "Resposta direta: ticket médio por item:\n1. ppf: R$ 1.000,00",
+            }
+        },
+        confidence=0.95,
+        coverage=CoverageInfo(labels={"rows_in": 1}, notes="evidence"),
+    )
+
+    result = CognitiveOrchestrator().finalize_prompt(
+        "Qual o ticket médio por item do período?",
+        policy=AttentionPolicy.ANALYTICAL,
+        evidence=evidence,
+        max_tokens=1024,
+    )
+    nr = asyncio.run(CognitiveNarrator(NullLLMProvider()).narrate(result))
+    sys_msg = nr.messages_sent[0].content
+
+    assert "preserve literalmente a seção `Resposta direta:`" in sys_msg
+    assert "não produza visão geral" in sys_msg
+    assert "direct_answer_literal_preservation" in nr.safeguards_applied
+
+
 def test_narration_result_fields() -> None:
     result = _make_orchestration_result()
     narrator = CognitiveNarrator(NullLLMProvider())

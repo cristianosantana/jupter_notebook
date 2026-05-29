@@ -22,6 +22,7 @@ class EvidenceSeriesSpec:
     """
 
     value_key: str
+    value_kind: str = "money"
     time_key: str | None = None
     grain: str = "month"
     id_key: str | None = "id"

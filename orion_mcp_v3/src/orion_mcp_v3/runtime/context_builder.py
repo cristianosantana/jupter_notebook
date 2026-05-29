@@ -8,8 +8,13 @@ import json
 from typing import Any
 
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
+from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.runtime.attention_policy import AttentionPolicy
 from orion_mcp_v3.runtime.budget_allocator import allocate
+
+_PROMPTS = get_prompt_registry()
+_SYSTEM_TEMPLATE = _PROMPTS.get_text("analytical_context_builder.system")
+_USER_ID_TEMPLATE = _PROMPTS.get_fragment("analytical_context_builder.system", "user_id")
 
 
 class AnalyticalContextBuilder:
@@ -35,14 +40,9 @@ class AnalyticalContextBuilder:
         schema = pipeline_output.get("schema", {})
         row_count = pipeline_output.get("row_count", 0)
 
-        system_lines = [
-            "You are an analytics narrator.",
-            f"Data schema: {schema}",
-            f"Row count: {row_count}",
-            "Do NOT compute; summarize the provided data.",
-        ]
+        system_lines = [_SYSTEM_TEMPLATE.format(schema=schema, row_count=row_count)]
         if user_id:
-            system_lines.append(f"User id: {user_id}")
+            system_lines.append(_USER_ID_TEMPLATE.format(user_id=user_id))
         system_text = "\n".join(system_lines)
 
         blocks: list[ContextBlock] = [

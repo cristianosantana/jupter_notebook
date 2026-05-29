@@ -63,6 +63,34 @@ async def test_query_template_selector_returns_contract_from_json() -> None:
     assert "query_cards" in provider.last_messages[-1].content
 
 
+async def test_query_template_selector_returns_entity_filters_from_json() -> None:
+    provider = FakeSelectorProvider(
+        """
+        {
+          "template_slug": "itens_vendidos",
+          "measure": "quantidade_vendida",
+          "dimension": "item",
+          "operation": "list",
+          "entity_filters": [
+            {"dimension": "item", "value": "PPF", "match": "contains"}
+          ],
+          "confidence": 0.93,
+          "reason": "A pergunta pede um item específico."
+        }
+        """
+    )
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    selected = await QueryTemplateSelector(provider).select(
+        "quero saber quanto foi vendido de PPF nesse periodo?",
+        cognitive_plan=CognitivePlan(intent_type=IntentType.ANALYTICAL, needs_analytics=True),
+        capabilities=catalog,
+    )
+
+    assert selected is not None
+    assert selected.entity_filters == ({"dimension": "item", "value": "PPF", "match": "contains"},)
+    assert "entity_filters" in provider.last_messages[-1].content
+
+
 async def test_query_template_selector_rejects_non_json() -> None:
     provider = FakeSelectorProvider("use performance_vendedor")
     catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
@@ -93,6 +121,63 @@ def test_query_selection_validator_accepts_supported_selection() -> None:
     assert result.contract is not None
     assert result.contract.measure == "vendas"
     assert result.contract.dimension == "vendedor"
+
+
+def test_query_selection_validator_accepts_itens_vendidos_synonyms() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            template_slug="itens_vendidos",
+            measure="ticket médio por item",
+            dimension="itens",
+            operation="ranking_desc",
+            confidence=0.9,
+            reason="Pergunta pede ticket por item vendido.",
+        )
+    )
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.measure == "ticket_medio_item"
+    assert result.contract.dimension == "item"
+
+
+def test_query_selection_validator_normalizes_entity_filter_dimension() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            template_slug="itens_vendidos",
+            measure="quantidade vendida",
+            dimension="itens",
+            operation="list",
+            entity_filters=({"dimension": "itens", "value": "PPF", "match": "exact"},),
+            confidence=0.9,
+            reason="Pergunta pede item específico.",
+        )
+    )
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.entity_filters == ({"dimension": "item", "value": "PPF", "match": "contains"},)
+
+
+def test_query_selection_validator_drops_temporal_entity_filter() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            template_slug="itens_vendidos",
+            measure="quantidade vendida",
+            dimension="item",
+            operation="ranking_desc",
+            entity_filters=({"dimension": "periodo", "value": "2025-12", "match": "exact"},),
+            confidence=0.9,
+            reason="Filtro temporal estruturado.",
+        )
+    )
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.entity_filters == ()
 
 
 def test_query_selection_validator_rejects_wrong_dimension_for_template() -> None:
@@ -148,6 +233,20 @@ async def test_selector_regression_pagamento_question_selects_formas_pagamento()
     assert selected.template_slug == "formas_pagamento"
 
 
+async def test_selector_selects_itens_vendidos_for_items_question() -> None:
+    selected = await _select_fake(
+        question="quais itens/produtos/serviços mais venderam?",
+        response_template="itens_vendidos",
+        measure="vendas",
+        dimension="item",
+    )
+
+    assert selected is not None
+    assert selected.template_slug == "itens_vendidos"
+    assert selected.measure == "vendas"
+    assert selected.dimension == "item"
+
+
 def test_selector_regression_invalid_template_falls_back_to_registry_match() -> None:
     catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
     invalid = QuerySelectionValidator(catalog).validate(
@@ -177,6 +276,71 @@ def test_selector_regression_invalid_template_falls_back_to_registry_match() -> 
     assert plans
     assert plans[0].intent_slug == "template.formas_pagamento"
     assert plans[0].hints["semantic_reason"] == "registry_match"
+
+
+def test_registry_match_selects_itens_vendidos_for_items_question() -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=(),
+        entities=(),
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="quais itens mais faturaram em abril?",
+    )
+
+    assert plans
+    assert plans[0].intent_slug == "template.itens_vendidos"
+    assert plans[0].hints["template_slug"] == "itens_vendidos"
+
+
+def test_registry_match_keeps_vendedor_when_service_is_secondary_term() -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=(),
+        entities=("vendedor",),
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="quais vendedores venderam mais serviços em abril?",
+    )
+
+    assert plans
+    assert plans[0].intent_slug == "template.performance_vendedor"
+
+
+def test_expander_propagates_entity_filters_from_intent_contract() -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=("quantidade_vendida",),
+        entities=("item",),
+        hints={
+            "template_slug": "itens_vendidos",
+            "intent_contract": {
+                "template_slug": "itens_vendidos",
+                "metric": "quantidade_vendida",
+                "dimension": "item",
+                "operation": "list",
+                "entity_filters": [{"dimension": "item", "value": "PPF", "match": "contains"}],
+            },
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="quero saber quanto foi vendido de PPF nesse periodo?",
+    )
+
+    assert plans
+    assert plans[0].hints["entity_filters"] == ({"dimension": "item", "value": "PPF", "match": "contains"},)
 
 
 async def _select_fake(

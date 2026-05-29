@@ -89,6 +89,16 @@ def _format_br_percent(pct: float) -> str:
     return f"{pct:.1f}".replace(".", ",") + "%"
 
 
+def _format_metric_value(value: float, kind: str) -> str:
+    if kind == "money":
+        return _format_br_currency(value)
+    if kind == "percent":
+        return f"{value:.2f}%".replace(".", ",")
+    if kind == "count":
+        return f"{value:,.0f}".replace(",", ".")
+    return f"{value:.2f}".replace(".", ",")
+
+
 class EvidenceBuilder:
     """
     Constrói :class:`EvidenceBlock` a partir de linhas tabulares (ex.: saída MySQL).
@@ -119,6 +129,7 @@ class EvidenceBuilder:
         grain: str = "month",
         id_key: str | None = "id",
         ranking_top_n: int = 5,
+        value_kind: str = "money",
     ) -> EvidenceBlock:
         vals = _float_values(rows, value_key)
         n = len(vals)
@@ -203,7 +214,7 @@ class EvidenceBuilder:
         if period_coverage is not None:
             insights["period_coverage"] = period_coverage
 
-        summary = self._compose_summary_pt(insights, value_key=value_key)
+        summary = self._compose_summary_pt(insights, value_key=value_key, value_kind=value_kind)
 
         labels = {
             "rows_in": row_total,
@@ -239,6 +250,7 @@ class EvidenceBuilder:
 
         metrics: dict[str, Any] = {
             "value_key": value_key,
+            "value_kind": value_kind,
             "label_key": label_key,
             "time_key": time_key,
             "grain": grain if time_key else None,
@@ -445,7 +457,7 @@ class EvidenceBuilder:
             "status": "ok",
         }
 
-    def _compose_summary_pt(self, insights: Mapping[str, Any], *, value_key: str) -> str:
+    def _compose_summary_pt(self, insights: Mapping[str, Any], *, value_key: str, value_kind: str) -> str:
         base = insights["baseline"]
         var = insights["variation"]
         tr = insights["trends"]
@@ -466,7 +478,7 @@ class EvidenceBuilder:
                 sp = float(item.get("share_pct") or 0.0)
                 rk = int(item.get("rank") or 0)
                 lines.append(
-                    f"  {rk}. {lab}  {_format_br_currency(val)}  ({_format_br_percent(sp)})",
+                    f"  {rk}. {lab}  {_format_metric_value(val, value_kind)}  ({_format_br_percent(sp)})",
                 )
             n_extra = int(insights.get("ranking_omitted_count") or 0)
             if n_extra > 0:
@@ -495,8 +507,12 @@ class EvidenceBuilder:
             parts.append(f"Período dos dados: {d0} a {d1} ({span} dias).")
 
         if base.get("count"):
+            mean = base.get("mean")
+            median = base.get("median")
+            mean_s = _format_metric_value(float(mean), value_kind) if mean is not None else "n/d"
+            median_s = _format_metric_value(float(median), value_kind) if median is not None else "n/d"
             parts.append(
-                f"Métrica `{value_key}`: média {base.get('mean')!s}, mediana {base.get('median')!s} (n={base.get('count')}).",
+                f"Métrica `{value_key}`: média {mean_s}, mediana {median_s} (n={base.get('count')}).",
             )
         else:
             parts.append(f"Sem valores numéricos para `{value_key}`.")

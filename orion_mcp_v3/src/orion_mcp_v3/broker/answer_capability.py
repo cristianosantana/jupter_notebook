@@ -46,6 +46,9 @@ class AnswerPlan:
     measure: str
     dimension: str | None
     operation: str
+    entity_filters: tuple[Mapping[str, str], ...] = ()
+    result_scope: Mapping[str, Any] | None = None
+    sort: Mapping[str, str] | None = None
     reason: str = ""
 
 
@@ -66,6 +69,9 @@ class ProjectedAnswer:
                 "measure": self.plan.measure,
                 "dimension": self.plan.dimension,
                 "operation": self.plan.operation,
+                "entity_filters": [dict(item) for item in self.plan.entity_filters],
+                "result_scope": dict(self.plan.result_scope) if self.plan.result_scope is not None else None,
+                "sort": dict(self.plan.sort) if self.plan.sort is not None else None,
                 "reason": self.plan.reason,
             },
             "summary": self.summary,

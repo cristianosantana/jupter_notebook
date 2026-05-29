@@ -131,3 +131,28 @@ def test_validator_rejects_comparison_without_period_or_memory_source() -> None:
 
     assert result.accepted is False
     assert result.rejected_reason == "comparison_without_sources"
+
+
+def test_validator_drops_temporal_entity_filter() -> None:
+    heuristic = IntentResolver().resolve("qual a quantidade de PPF em dezembro de 2025?")
+    contract = AnalyticalIntentContract(
+        intent_type=AnalyticalIntentType.ANALYTICAL,
+        operation=AnalyticalOperation.LIST,
+        needs_analytics=True,
+        needs_memory=False,
+        needs_comparison=False,
+        template_slug="itens_vendidos",
+        metric="quantidade vendida",
+        dimension="item",
+        entity_filters=(
+            {"dimension": "item", "value": "PPF", "match": "exact"},
+            {"dimension": "periodo", "value": "2025-12", "match": "exact"},
+        ),
+        confidence=0.9,
+    )
+
+    result = _validator().validate(contract, heuristic_plan=heuristic)
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.entity_filters == ({"dimension": "item", "value": "PPF", "match": "contains"},)

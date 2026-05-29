@@ -1,0 +1,7 @@
+prompts:
+  - narrator.yaml
+  - analytical_intent.yaml
+  - answer_presentation.yaml
+  - query_template_selector.yaml
+  - analytical_system.yaml
+  - analytical_context_builder.yaml
