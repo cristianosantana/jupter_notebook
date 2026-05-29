@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from orion_mcp_v3.broker.answer_projector import build_projected_answer
+from orion_mcp_v3.broker.answer_projector import build_projected_answer, filter_rows_for_entity_filters
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder
 from orion_mcp_v3.broker.evidence_series_resolve import resolve_evidence_series_specs
 from orion_mcp_v3.broker.executor import AnalyticsResult
@@ -71,9 +71,11 @@ class EvidenceAggregator:
 
         if len(results) == 1:
             s0 = specs[0]
+            rows = _rows_filtered_by_entity(results[0], templates=templates)
             block = self._builder.build(
-                results[0].rows,
+                rows,
                 value_key=s0.value_key,
+                value_kind=s0.value_kind,
                 label_key=s0.label_key,
                 time_key=s0.time_key,
                 grain=s0.grain,
@@ -89,9 +91,11 @@ class EvidenceAggregator:
         partials: list[tuple[str, EvidenceBlock]] = []
         for r, spec in zip(results, specs):
             kid = spec.id_key if spec.id_key is not None else id_key
+            rows = _rows_filtered_by_entity(r, templates=templates)
             eb = self._builder.build(
-                r.rows,
+                rows,
                 value_key=spec.value_key,
+                value_kind=spec.value_kind,
                 label_key=spec.label_key,
                 time_key=spec.time_key,
                 grain=spec.grain,
@@ -140,6 +144,7 @@ class EvidenceAggregator:
                     if isinstance(r.plan.hints, Mapping)
                     else None,
                     "value_key": spec.value_key,
+                    "value_kind": spec.value_kind,
                     "time_key": spec.time_key,
                     "grain": spec.grain,
                     "rows": r.row_count,
@@ -206,17 +211,62 @@ def _with_projected_answer(
         return block
 
     projected_dict = projected.as_dict()
+    suppress_complementary = _should_suppress_complementary(projected_dict)
     complementary_summary = (
         "Resumo estatístico complementar (não substitui a resposta direta):\n"
         f"{block.summary}"
     )
+    summary = (
+        projected.summary
+        if suppress_complementary
+        else f"{projected.summary}\n\n{complementary_summary}"
+    )
+    metrics = {**dict(block.metrics), "answer_plan": projected_dict["plan"]}
+    if suppress_complementary:
+        metrics["complementary_summary_suppressed"] = True
     return EvidenceBlock(
-        summary=f"{projected.summary}\n\n{complementary_summary}",
+        summary=summary,
         insights={**dict(block.insights), "direct_answer": projected_dict},
-        metrics={**dict(block.metrics), "answer_plan": projected_dict["plan"]},
+        metrics=metrics,
         confidence=block.confidence,
         coverage=block.coverage,
         provenance=block.provenance,
         sample_refs=block.sample_refs,
         supporting_data={**dict(block.supporting_data), "direct_answer": projected_dict},
+    )
+
+
+def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
+    plan = projected.get("plan")
+    if not isinstance(plan, Mapping):
+        return False
+    scope = plan.get("result_scope")
+    mode = scope.get("mode") if isinstance(scope, Mapping) else None
+    measure = str(plan.get("measure") or "")
+    operation = str(plan.get("operation") or "")
+    if mode == "all" and operation == "list":
+        return True
+    return measure in {"ticket_medio_item", "ticket_medio_os"} and operation == "list"
+
+
+def _rows_filtered_by_entity(
+    result: AnalyticsResult,
+    *,
+    templates: "QueryTemplateRegistry | None",
+) -> tuple[Mapping[str, Any], ...]:
+    hints = result.plan.hints if isinstance(result.plan.hints, Mapping) else {}
+    filters = hints.get("entity_filters")
+    if not isinstance(filters, (list, tuple)) or templates is None:
+        return tuple(result.rows)
+    slug = hints.get("template_slug")
+    if not isinstance(slug, str):
+        return tuple(result.rows)
+    template = templates.get(slug)
+    capability = getattr(template, "capability", None)
+    if capability is None:
+        return tuple(result.rows)
+    return filter_rows_for_entity_filters(
+        result.rows,
+        entity_filters=filters,
+        capability=capability,
     )

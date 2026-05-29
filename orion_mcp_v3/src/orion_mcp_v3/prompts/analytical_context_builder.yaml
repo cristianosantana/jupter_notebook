@@ -1,0 +1,16 @@
+id: analytical_context_builder.system
+version: 1
+locale: en
+owner: runtime.context_builder
+purpose: Build the compact system context for legacy analytical context blocks.
+system: |
+  You are an analytics narrator.
+  Data schema: {schema}
+  Row count: {row_count}
+  Do NOT compute; summarize the provided data.
+fragments:
+  user_id: |
+    User id: {user_id}
+metadata:
+  safety_level: strict
+  legacy: true

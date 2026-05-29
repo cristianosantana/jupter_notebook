@@ -49,6 +49,10 @@ class IntentContractValidator:
         dimension = _resolve_key(contract.dimension, self._dimension_aliases(template_slug))
         metric = self._resolve_metric(contract.metric, dimension=dimension, template_slug=template_slug)
         operation = contract.operation.value
+        entity_filters = _normalize_entity_filters(
+            contract.entity_filters,
+            self._dimension_aliases(template_slug),
+        )
 
         if contract.needs_analytics:
             if metric is not None and not self._catalog.supports(
@@ -68,7 +72,6 @@ class IntentContractValidator:
                 dimension=dimension,
             ):
                 return self._reject("unsupported_operation")
-
         if contract.needs_comparison and not _comparison_has_sources(contract, has_analytical_memory):
             return self._reject("comparison_without_sources")
 
@@ -84,6 +87,7 @@ class IntentContractValidator:
             date_ranges=contract.date_ranges,
             source_periods=contract.source_periods,
             inherits_from_previous=contract.inherits_from_previous,
+            entity_filters=entity_filters,
             confidence=contract.confidence,
         )
         return IntentValidationResult(
@@ -172,6 +176,8 @@ def _contract_to_plan(contract: AnalyticalIntentContract, heuristic_plan: Cognit
     }
     if contract.template_slug:
         hints["template_slug"] = contract.template_slug
+    if contract.entity_filters:
+        hints["entity_filters"] = contract.entity_filters
     if time_scope:
         date_from, date_to = time_scope.split("/", 1)
         hints.update({"date_from": date_from, "date_to": date_to})
@@ -253,6 +259,41 @@ def _parse_date(raw: str) -> date | None:
         return date.fromisoformat(raw)
     except ValueError:
         return None
+
+
+def _normalize_entity_filters(
+    filters: tuple[dict[str, str], ...],
+    aliases: dict[str, str],
+) -> tuple[dict[str, str], ...]:
+    out: list[dict[str, str]] = []
+    for item in filters:
+        dimension = _resolve_key(item.get("dimension"), aliases)
+        value = str(item.get("value") or "").strip()
+        if dimension is None or not value:
+            continue
+        if dimension in _TEMPORAL_FILTER_DIMENSIONS:
+            continue
+        match = _normalize_filter_match(
+            dimension=dimension,
+            value=value,
+            match=str(item.get("match") or "contains"),
+        )
+        out.append({"dimension": dimension, "value": value, "match": match})
+    return tuple(out)
+
+
+def _normalize_filter_match(*, dimension: str, value: str, match: str) -> str:
+    normalized = match.strip().lower()
+    if normalized not in {"contains", "exact"}:
+        normalized = "contains"
+    if normalized != "exact":
+        return normalized
+    if dimension in {"periodo", "data_pagamento"} and re.fullmatch(r"20\d{2}(?:-\d{2})?(?:-\d{2})?", value):
+        return "exact"
+    return "contains"
+
+
+_TEMPORAL_FILTER_DIMENSIONS = frozenset({"periodo", "data_pagamento"})
 
 
 def _comparison_has_sources(contract: AnalyticalIntentContract, has_analytical_memory: bool) -> bool:

@@ -55,15 +55,23 @@ def resolve_evidence_series_specs(
             tpl = templates.get(tpl_slug)
         if tpl is not None:
             value_key = tpl.value_key
+            value_kind = "money"
             selected_metric = hints.get("selected_metric")
             capability = getattr(tpl, "capability", None)
             if isinstance(selected_metric, str) and capability is not None:
                 measure = capability.measures.get(selected_metric)
                 if measure is not None:
                     value_key = measure.column
+                    value_kind = measure.kind
+            elif capability is not None:
+                for measure in capability.measures.values():
+                    if measure.column == value_key:
+                        value_kind = measure.kind
+                        break
             out.append(
                 EvidenceSeriesSpec(
                     value_key=value_key,
+                    value_kind=value_kind,
                     time_key=tpl.time_key,
                     grain=tpl.grain,
                     id_key=default_id_key,
@@ -77,6 +85,7 @@ def resolve_evidence_series_specs(
         out.append(
             EvidenceSeriesSpec(
                 value_key=vk,
+                value_kind="money",
                 time_key=default_time_key,
                 grain=default_grain,
                 id_key=default_id_key,

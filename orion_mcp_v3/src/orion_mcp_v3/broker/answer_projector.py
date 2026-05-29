@@ -59,6 +59,112 @@ def _row_label(row: Mapping[str, Any], dimension: DimensionCapability | None) ->
     return str(row.get(dimension.column, "n/d"))
 
 
+def _entity_filters_from_hints(
+    hints: Mapping[str, Any],
+    capability: AnswerCapability,
+) -> tuple[Mapping[str, str], ...]:
+    raw = hints.get("entity_filters")
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    out: list[Mapping[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        dimension = _hint_key(item.get("dimension"), capability.dimensions)
+        value = str(item.get("value") or "").strip()
+        if dimension is None or not value:
+            continue
+        if dimension in _TEMPORAL_FILTER_DIMENSIONS:
+            continue
+        match = _normalize_filter_match(
+            dimension=dimension,
+            value=value,
+            match=str(item.get("match") or "contains"),
+        )
+        out.append({"dimension": dimension, "value": value, "match": match})
+    return tuple(out)
+
+
+def _result_scope_from_hints(hints: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    raw = hints.get("result_scope")
+    if not isinstance(raw, Mapping):
+        return None
+    mode = str(raw.get("mode") or "").strip().lower()
+    if mode not in {"all", "top_n", "bottom_n", "sample"}:
+        return None
+    limit_raw = raw.get("limit")
+    limit: int | None = None
+    if limit_raw not in (None, ""):
+        try:
+            limit = max(1, int(limit_raw))
+        except (TypeError, ValueError):
+            limit = None
+    return {"mode": mode, "limit": limit}
+
+
+def _sort_from_hints(hints: Mapping[str, Any], capability: AnswerCapability) -> Mapping[str, str] | None:
+    raw = hints.get("sort")
+    if not isinstance(raw, Mapping):
+        return None
+    field = _hint_key(raw.get("field"), capability.measures) or _hint_key(raw.get("field"), capability.dimensions)
+    direction = str(raw.get("direction") or "desc").strip().lower()
+    if direction not in {"asc", "desc"}:
+        direction = "desc"
+    return {"field": field or "", "direction": direction}
+
+
+def _normalize_filter_match(*, dimension: str, value: str, match: str) -> str:
+    normalized = match.strip().lower()
+    if normalized not in {"contains", "exact"}:
+        normalized = "contains"
+    if normalized != "exact":
+        return normalized
+    if dimension in {"periodo", "data_pagamento"} and re.fullmatch(r"20\d{2}(?:-\d{2})?(?:-\d{2})?", value):
+        return "exact"
+    return "contains"
+
+
+_TEMPORAL_FILTER_DIMENSIONS = frozenset({"periodo", "data_pagamento"})
+
+
+def filter_rows_for_entity_filters(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    entity_filters: Sequence[Mapping[str, str]],
+    capability: AnswerCapability,
+) -> tuple[Mapping[str, Any], ...]:
+    """Aplica filtros semânticos de entidade em rows já retornadas por um template."""
+    if not entity_filters:
+        return tuple(rows)
+    filtered: list[Mapping[str, Any]] = []
+    for row in rows:
+        keep = True
+        for item in entity_filters:
+            dimension = capability.dimensions.get(str(item.get("dimension") or ""))
+            if dimension is None:
+                continue
+            if dimension.column in _TEMPORAL_FILTER_DIMENSIONS:
+                continue
+            row_value = _norm(str(row.get(dimension.column, "")))
+            filter_value = _norm(str(item.get("value") or ""))
+            if not filter_value:
+                continue
+            match = _normalize_filter_match(
+                dimension=str(item.get("dimension") or ""),
+                value=str(item.get("value") or ""),
+                match=str(item.get("match") or "contains"),
+            )
+            if match == "exact":
+                keep = row_value == filter_value
+            else:
+                keep = filter_value in row_value
+            if not keep:
+                break
+        if keep:
+            filtered.append(row)
+    return tuple(filtered)
+
+
 def _operation_from_query(query_text: str) -> str:
     q = _norm(query_text)
     if re.search(r"\babaixo da media\b|\bmenor(?:es)? que a media\b", q):
@@ -84,20 +190,32 @@ def _score_measure(measure: MeasureCapability, query_text: str) -> int:
         t = _norm(term)
         if t and t in q:
             score += 8 if t == _norm(measure.label) else 5
-    if measure.column in {"ticket_medio", "ticket_medio_os"} and "ticket" in q:
+    if measure.column in {"ticket_medio", "ticket_medio_item", "ticket_medio_os"} and "ticket" in q:
         score += 20
+    if measure.column == "ticket_medio_item" and "item" in q:
+        score += 12
     if measure.column in {
         "total_vendas",
         "total_os",
         "qtd_recebimentos",
         "total_recebimentos",
         "quantidade_os",
+        "quantidade_vendida",
     }:
         if "volume" in q or "quantidade" in q or "qtd" in q:
             score += 18
+    if measure.column == "quantidade_vendida" and (
+        ("volume" in q or "quantidade" in q or "qtd" in q)
+        and ("item" in q or "itens" in q or "produto" in q or "servico" in q)
+    ):
+        score += 10
     if measure.column in {"faturamento", "valor_total", "valor_total_recebido", "total_recebido"}:
         if any(t in q for t in ("faturamento", "faturou", "receita", "valor", "recebido")):
             score += 16
+    if measure.column == "percentual_faturamento" and any(
+        t in q for t in ("percentual", "participacao", "share", "curva abc")
+    ):
+        score += 24
     if measure.column == "maior_recebimento" and "maior recebimento" in q:
         score += 24
     if measure.column == "menor_recebimento" and "menor recebimento" in q:
@@ -155,6 +273,7 @@ def infer_answer_plan(
         measure=measure_key,
         dimension=dimension_key,
         operation=operation,
+        entity_filters=(),
         reason="capability_match",
     )
 
@@ -177,7 +296,11 @@ def _answer_plan_from_hints(
     if dimension is None:
         dimension = capability.default_dimension
     derived_operation = _operation_from_query(query_text)
-    if derived_operation == "below_average":
+    result_scope = _result_scope_from_hints(hints)
+    sort = _sort_from_hints(hints, capability)
+    if isinstance(result_scope, Mapping) and result_scope.get("mode") == "all":
+        selected_operation = "list"
+    elif derived_operation == "below_average":
         selected_operation = derived_operation
     elif operation == "below_average" or operation in capability.supported_operations:
         selected_operation = operation
@@ -190,6 +313,9 @@ def _answer_plan_from_hints(
         measure=measure,
         dimension=dimension,
         operation=selected_operation,
+        entity_filters=_entity_filters_from_hints(hints, capability),
+        result_scope=result_scope,
+        sort=sort,
         reason="validated_semantic_hints",
     )
 
@@ -249,23 +375,46 @@ def project_answer(
     *,
     plan: AnswerPlan,
     capability: AnswerCapability,
-    limit: int = 10,
+    limit: int | None = 10,
 ) -> ProjectedAnswer | None:
     """Projeta rows SQL em ranking/lista/top-bottom usando a coluna certa."""
     measure = capability.measures.get(plan.measure)
     if measure is None:
         return None
     dimension = capability.dimensions.get(plan.dimension) if plan.dimension else None
-    projected = _aggregate_rows(rows, measure=measure, dimension=dimension)
+    filtered_rows = filter_rows_for_entity_filters(
+        rows,
+        entity_filters=plan.entity_filters,
+        capability=capability,
+    )
+    projected = _aggregate_rows(filtered_rows, measure=measure, dimension=dimension)
     projected = [r for r in projected if _to_float(r.get(measure.column)) is not None]
     if not projected:
         return None
 
-    reverse = plan.operation != "ranking_asc"
-    ordered = sorted(projected, key=lambda r: _to_float(r.get(measure.column)) or 0.0, reverse=reverse)
+    sort_field = str((plan.sort or {}).get("field") or "")
+    sort_direction = str((plan.sort or {}).get("direction") or "").lower()
+    if not sort_direction:
+        sort_direction = "asc" if plan.operation == "ranking_asc" else "desc"
+    sort_measure = capability.measures.get(sort_field)
+    sort_dimension = capability.dimensions.get(sort_field)
+    sort_column = (
+        sort_measure.column
+        if sort_measure is not None
+        else sort_dimension.column
+        if sort_dimension is not None
+        else measure.column
+    )
+    reverse = sort_direction != "asc"
+    ordered = sorted(
+        projected,
+        key=lambda r: _sort_value(r.get(sort_column)),
+        reverse=reverse,
+    )
     top = ordered[0]
     bottom = sorted(projected, key=lambda r: _to_float(r.get(measure.column)) or 0.0)[0]
-    selected = tuple(ordered[: max(1, limit)])
+    selected_limit = _selected_limit(plan=plan, row_count=len(ordered), default_limit=limit)
+    selected = tuple(ordered[:selected_limit])
 
     dim_label = dimension.label if dimension is not None else "registro"
     top_label = _row_label(top, dimension) if dimension is not None else "maior valor"
@@ -319,6 +468,29 @@ def project_answer(
         top=top,
         bottom=bottom if plan.operation == "top_and_bottom" else None,
     )
+
+
+def _selected_limit(*, plan: AnswerPlan, row_count: int, default_limit: int | None) -> int:
+    scope = plan.result_scope if isinstance(plan.result_scope, Mapping) else None
+    mode = str(scope.get("mode") or "").lower() if scope is not None else ""
+    raw_limit = scope.get("limit") if scope is not None else None
+    if mode == "all" or plan.operation == "list":
+        return row_count
+    if raw_limit not in (None, ""):
+        try:
+            return min(row_count, max(1, int(raw_limit)))
+        except (TypeError, ValueError):
+            pass
+    if default_limit is None:
+        return row_count
+    return min(row_count, max(1, default_limit))
+
+
+def _sort_value(value: Any) -> tuple[int, float | str]:
+    n = _to_float(value)
+    if n is not None:
+        return (0, n)
+    return (1, _norm(str(value)))
 
 
 def build_projected_answer(

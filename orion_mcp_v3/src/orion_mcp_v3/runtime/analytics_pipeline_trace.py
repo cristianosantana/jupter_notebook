@@ -143,14 +143,21 @@ def snapshot_cognitive_plan(cp: Any) -> dict[str, Any]:
         return {"tipo": type(cp).__name__}
     hints = cp.hints or {}
     sig = hints.get("signals") if isinstance(hints, Mapping) else None
+    entity_filters = hints.get("entity_filters") if isinstance(hints, Mapping) else None
+    result_scope = hints.get("result_scope") if isinstance(hints, Mapping) else None
+    sort = hints.get("sort") if isinstance(hints, Mapping) else None
     return {
         "intent_type": cp.intent_type.value,
         "needs_analytics": cp.needs_analytics,
         "needs_comparison": cp.needs_comparison,
         "confidence": cp.confidence,
         "metrics": list(cp.metrics),
+        "entities": list(cp.entities),
         "attention_profile": cp.attention_profile.value,
         "time_scope": cp.time_scope,
+        "entity_filters": list(entity_filters) if isinstance(entity_filters, (list, tuple)) else None,
+        "result_scope": dict(result_scope) if isinstance(result_scope, Mapping) else None,
+        "sort": dict(sort) if isinstance(sort, Mapping) else None,
         "signals": dict(sig) if isinstance(sig, Mapping) else None,
     }
 
@@ -185,6 +192,9 @@ def snapshot_semantic_plan(plan: Any) -> dict[str, Any]:
         "selected_metric": hints.get("selected_metric"),
         "selected_dimension": hints.get("selected_dimension"),
         "selected_operation": hints.get("selected_operation"),
+        "entity_filters": hints.get("entity_filters"),
+        "result_scope": hints.get("result_scope"),
+        "sort": hints.get("sort"),
         "semantic_reason": hints.get("semantic_reason"),
     }
     tpl = hints.get("_template")

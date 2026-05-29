@@ -56,3 +56,16 @@ def test_conversational_plan_avoids_broker_fanout() -> None:
     plan = build_query_plan(cognitive, query_text="Olá, como estás?")
     assert plan.strategy == RetrievalStrategy.KEYWORD
     assert plan.analytics_strategy is None
+
+
+def test_policy_analytical_quantity_entity_question_uses_broker_fanout() -> None:
+    cognitive = IntentResolver().resolve(
+        "qual a quantidade de ppf nesse periodo?",
+        policy_request="analytical",
+    )
+
+    assert cognitive.needs_analytics is True
+    assert cognitive.intent_type == IntentType.ANALYTICAL
+    assert "quantidade_vendida" in cognitive.metrics
+    assert "item" in cognitive.entities
+    assert cognitive.retrieval_strategy == RetrievalStrategy.BROKER_FANOUT

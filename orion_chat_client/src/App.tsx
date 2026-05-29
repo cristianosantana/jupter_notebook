@@ -280,7 +280,7 @@ export function App() {
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="field" style={{ display: 'none' }}>
               <span>max_tokens</span>
               <select
                 className="input"

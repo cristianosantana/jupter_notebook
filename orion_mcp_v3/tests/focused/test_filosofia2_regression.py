@@ -128,6 +128,54 @@ def test_evidence_series_uses_selected_metric_for_complementary_summary() -> Non
     assert "Ranking por `vendas`" not in evidence.summary
 
 
+def test_ticket_medio_item_list_omits_distorting_complementary_ranking() -> None:
+    rows = [
+        {
+            "periodo": "2026-05",
+            "item": "ppf full",
+            "ticket_medio_item": "1000.00",
+            "vendas": "3000.00",
+            "quantidade_vendida": 3,
+        },
+        {
+            "periodo": "2026-05",
+            "item": "filme solar",
+            "ticket_medio_item": "300.00",
+            "vendas": "6000.00",
+            "quantidade_vendida": 20,
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            AnalyticsResult(
+                plan=SemanticQueryPlan(
+                    intent_slug="template.itens_vendidos",
+                    strategy=RetrievalStrategy.BROKER_FANOUT,
+                    hints={
+                        "template_slug": "itens_vendidos",
+                        "template_params": {},
+                        "selected_metric": "ticket_medio_item",
+                        "selected_dimension": "item",
+                        "selected_operation": "list",
+                        "result_scope": {"mode": "all", "limit": None},
+                    },
+                ),
+                sql="SELECT ...",
+                rows=rows,
+                row_count=len(rows),
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Qual o ticket médio por item do período de todos os produtos e serviços?",
+    )
+
+    assert evidence.metrics["answer_plan"]["measure"] == "ticket_medio_item"
+    assert "Resposta direta: ticket médio por item" in evidence.summary
+    assert "Resumo estatístico complementar" not in evidence.summary
+    assert "Ranking por `ticket_medio_item`" not in evidence.summary
+
+
 def test_below_average_question_lists_all_below_average_rows() -> None:
     rows = [
         {"concessionaria": "porsche", "vendas": "2000.00"},

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+import re
 from typing import Any
 
 from orion_mcp_v3.broker.planner import build_query_plan
@@ -217,6 +218,7 @@ class QueryExpander:
         params = self._registry.resolve_params(tpl, cognitive) if self._registry is not None else {}
         contract = cognitive.hints.get("intent_contract") if isinstance(cognitive.hints, Mapping) else None
         contract_dict = contract if isinstance(contract, Mapping) else {}
+        entity_filters = _hint_object(cognitive, "entity_filters") or contract_dict.get("entity_filters") or ()
         return SemanticQueryPlan(
             intent_slug=f"template.{tpl.slug}",
             strategy=RetrievalStrategy.BROKER_FANOUT,
@@ -229,6 +231,9 @@ class QueryExpander:
                 or contract_dict.get("dimension")
                 or _first(cognitive.entities),
                 "selected_operation": _hint_value(cognitive, "selected_operation") or contract_dict.get("operation"),
+                "entity_filters": _normalize_entity_filters(entity_filters),
+                "result_scope": _hint_object(cognitive, "result_scope") or contract_dict.get("result_scope"),
+                "sort": _hint_object(cognitive, "sort") or contract_dict.get("sort"),
                 "semantic_reason": semantic_reason,
             },
             correlation_id=correlation_id,
@@ -373,6 +378,47 @@ def _hint_value(cognitive: CognitivePlan, key: str) -> str | None:
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
     return None
+
+
+def _hint_object(cognitive: CognitivePlan, key: str) -> Any:
+    hints = cognitive.hints if isinstance(cognitive.hints, Mapping) else {}
+    return hints.get(key)
+
+
+def _normalize_entity_filters(raw: Any) -> tuple[dict[str, str], ...]:
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        dimension = str(item.get("dimension") or "").strip()
+        value = str(item.get("value") or "").strip()
+        if not dimension or not value:
+            continue
+        if dimension in _TEMPORAL_FILTER_DIMENSIONS:
+            continue
+        match = _normalize_filter_match(
+            dimension=dimension,
+            value=value,
+            match=str(item.get("match") or "contains"),
+        )
+        out.append({"dimension": dimension, "value": value, "match": match})
+    return tuple(out)
+
+
+def _normalize_filter_match(*, dimension: str, value: str, match: str) -> str:
+    normalized = match.strip().lower()
+    if normalized not in {"contains", "exact"}:
+        normalized = "contains"
+    if normalized != "exact":
+        return normalized
+    if dimension in {"periodo", "data_pagamento"} and re.fullmatch(r"20\d{2}(?:-\d{2})?(?:-\d{2})?", value):
+        return "exact"
+    return "contains"
+
+
+_TEMPORAL_FILTER_DIMENSIONS = frozenset({"periodo", "data_pagamento"})
 
 
 def _first(values: tuple[str, ...]) -> str | None:

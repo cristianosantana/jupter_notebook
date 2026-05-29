@@ -137,6 +137,35 @@ def test_llm_query_selector_template_skips_generic_fanout(allowlist) -> None:
     assert plans[0].hints["selected_dimension"] == "concessionaria"
 
 
+def test_llm_query_selector_template_propagates_result_scope_and_sort(allowlist) -> None:
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        confidence=0.8,
+        metrics=("vendas",),
+        entities=("item",),
+        hints={
+            "template_slug": "itens_vendidos",
+            "selected_metric": "vendas",
+            "selected_dimension": "item",
+            "selected_operation": "ranking_desc",
+            "result_scope": {"mode": "all", "limit": None},
+            "sort": {"field": "vendas", "direction": "desc"},
+            "semantic_reason": "llm_query_selector",
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        allowlist,
+        query_text="total vendido, ordene do maior para o menor e inclua todos",
+    )
+
+    assert len(plans) == 1
+    assert plans[0].hints["result_scope"] == {"mode": "all", "limit": None}
+    assert plans[0].hints["sort"] == {"field": "vendas", "direction": "desc"}
+
+
 def test_execute_plan_method(allowlist) -> None:
     mysql = MagicMock()
     mysql.select = AsyncMock(return_value=[{"id": 1, "total_faturamento": 42.0}])

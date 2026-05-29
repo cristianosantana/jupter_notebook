@@ -570,6 +570,9 @@ class IntentResolver:
         ):
             if "sales" not in out:
                 out.append("sales")
+        if re.search(r"\b(quantidade|qtd|unidades?)\b", lower) is not None:
+            if "quantidade_vendida" not in out:
+                out.append("quantidade_vendida")
         return tuple(out)
 
     @staticmethod
@@ -582,4 +585,15 @@ class IntentResolver:
             out.append("vendedor")
         if "pagamento" in lower:
             out.append("pagamento")
+        if re.search(r"\b(item|itens|produto|produtos|serviço|servico|serviços|servicos)\b", lower) is not None:
+            out.append("item")
+        elif re.search(
+            r"\bquantidade\s+(?:vendida\s+)?(?:de|do|da)\s+"
+            r"(?!vendas?\b|os\b|registros?\b|servi[cç]os?\b|itens?\b|produtos?\b)"
+            r"(?=[\w-]*[a-zA-ZÀ-ÿ])[\w-]{2,}\b",
+            lower,
+        ) is not None:
+            out.append("item")
+        elif re.search(r"\b(?:de|do|da)\s+(?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,}\b", blob) is not None:
+            out.append("item")
         return tuple(out)

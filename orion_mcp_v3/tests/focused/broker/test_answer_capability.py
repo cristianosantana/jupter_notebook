@@ -6,12 +6,17 @@ from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPl
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver
 
 
-def _result(slug: str, rows: list[dict]) -> AnalyticsResult:  # type: ignore[type-arg]
+def _result(
+    slug: str,
+    rows: list[dict],  # type: ignore[type-arg]
+    *,
+    hints: dict | None = None,  # type: ignore[type-arg]
+) -> AnalyticsResult:
     return AnalyticsResult(
         plan=SemanticQueryPlan(
             intent_slug=f"template.{slug}",
             strategy=RetrievalStrategy.BROKER_FANOUT,
-            hints={"template_slug": slug, "template_params": {}},
+            hints={"template_slug": slug, "template_params": {}, **(hints or {})},
         ),
         sql="SELECT ...",
         rows=rows,
@@ -109,6 +114,488 @@ def test_performance_vendedor_projects_sales_volume_not_revenue() -> None:
     assert projected.plan.measure == "quantidade_os"
     assert projected.top is not None
     assert projected.top["vendedor"] == "bia"
+
+
+def test_itens_vendidos_projects_ranking_by_sales() -> None:
+    rows = [
+        {
+            "periodo": "2026-04",
+            "categoria": "servico",
+            "item": "martelinho de ouro",
+            "quantidade_vendida": 7,
+            "quantidade_os": 6,
+            "vendas": "14000.00",
+            "ticket_medio_item": "2000.00",
+            "ticket_medio_os": "2333.33",
+            "percentual_faturamento": "70.00",
+        },
+        {
+            "periodo": "2026-04",
+            "categoria": "produto",
+            "item": "película",
+            "quantidade_vendida": 12,
+            "quantidade_os": 10,
+            "vendas": "6000.00",
+            "ticket_medio_item": "500.00",
+            "ticket_medio_os": "600.00",
+            "percentual_faturamento": "30.00",
+        },
+    ]
+
+    projected = build_projected_answer(
+        "Quais itens mais faturaram em abril de 2026?",
+        [_result("itens_vendidos", rows)],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.measure == "vendas"
+    assert projected.plan.dimension == "item"
+    assert projected.plan.operation == "ranking_desc"
+    assert projected.top is not None
+    assert projected.top["item"] == "martelinho de ouro"
+
+
+def test_itens_vendidos_all_scope_lists_every_row_ordered_desc() -> None:
+    rows = [
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": f"item {i:02d}",
+            "quantidade_vendida": i,
+            "quantidade_os": i,
+            "vendas": str(i * 1000),
+            "ticket_medio_item": "1000.00",
+            "ticket_medio_os": "1000.00",
+            "percentual_faturamento": "1.00",
+        }
+        for i in range(1, 13)
+    ]
+
+    projected = build_projected_answer(
+        "total vendido no periodo, ordenar do maior para o menor, inclua todos",
+        [
+            _result(
+                "itens_vendidos",
+                rows,
+                hints={
+                    "selected_metric": "vendas",
+                    "selected_dimension": "item",
+                    "selected_operation": "ranking_desc",
+                    "result_scope": {"mode": "all", "limit": None},
+                    "sort": {"field": "vendas", "direction": "desc"},
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.operation == "list"
+    assert len(projected.rows) == 12
+    assert "1. item 12: R$ 12.000,00" in projected.summary
+    assert "12. item 01: R$ 1.000,00" in projected.summary
+
+
+def test_itens_vendidos_projects_quantity_not_revenue() -> None:
+    rows = [
+        {
+            "periodo": "2026-04",
+            "categoria": "servico",
+            "item": "martelinho de ouro",
+            "quantidade_vendida": 7,
+            "quantidade_os": 6,
+            "vendas": "14000.00",
+            "ticket_medio_item": "2000.00",
+            "ticket_medio_os": "2333.33",
+            "percentual_faturamento": "70.00",
+        },
+        {
+            "periodo": "2026-04",
+            "categoria": "produto",
+            "item": "película",
+            "quantidade_vendida": 12,
+            "quantidade_os": 10,
+            "vendas": "6000.00",
+            "ticket_medio_item": "500.00",
+            "ticket_medio_os": "600.00",
+            "percentual_faturamento": "30.00",
+        },
+    ]
+
+    projected = build_projected_answer(
+        "Quais itens mais venderam em quantidade em abril de 2026?",
+        [_result("itens_vendidos", rows)],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.measure == "quantidade_vendida"
+    assert projected.top is not None
+    assert projected.top["item"] == "película"
+
+
+def test_itens_vendidos_quantity_evidence_summary_is_not_money() -> None:
+    rows = [
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "filme solar",
+            "quantidade_vendida": "946",
+            "quantidade_os": 910,
+            "vendas": "283800.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "311.87",
+            "percentual_faturamento": "24.60",
+        },
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "clear comfort parabrisa",
+            "quantidade_vendida": "420",
+            "quantidade_os": 420,
+            "vendas": "328116.55",
+            "ticket_medio_item": "781.23",
+            "ticket_medio_os": "781.23",
+            "percentual_faturamento": "28.40",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "itens_vendidos",
+                rows,
+                hints={
+                    "selected_metric": "quantidade_vendida",
+                    "selected_dimension": "item",
+                    "selected_operation": "ranking_desc",
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Quais itens, produtos ou serviços mais venderam em dezembro de 2025?",
+    )
+
+    assert evidence.metrics["value_key"] == "quantidade_vendida"
+    assert evidence.metrics["value_kind"] == "count"
+    assert "filme solar  946" in evidence.summary
+    assert "R$ 946,00" not in evidence.summary
+
+
+def test_itens_vendidos_filters_specific_item_before_projecting_answer() -> None:
+    rows = [
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "filme solar",
+            "quantidade_vendida": "946",
+            "quantidade_os": 910,
+            "vendas": "283800.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "311.87",
+            "percentual_faturamento": "24.60",
+        },
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "ppf-maçanetas",
+            "quantidade_vendida": "184",
+            "quantidade_os": 170,
+            "vendas": "55200.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "324.71",
+            "percentual_faturamento": "4.78",
+        },
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "ppf-proteção das portas",
+            "quantidade_vendida": "168",
+            "quantidade_os": 160,
+            "vendas": "50400.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "315.00",
+            "percentual_faturamento": "4.36",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "itens_vendidos",
+                rows,
+                hints={
+                    "selected_metric": "quantidade_vendida",
+                    "selected_dimension": "item",
+                    "selected_operation": "list",
+                    "entity_filters": ({"dimension": "item", "value": "PPF", "match": "exact"},),
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="quero saber quanto foi vendido de PPF nesse periodo?",
+    )
+
+    assert "ppf-maçanetas: 184" in evidence.summary
+    assert "ppf-proteção das portas: 168" in evidence.summary
+    assert "filme solar" not in evidence.summary
+    direct = evidence.supporting_data["direct_answer"]
+    assert len(direct["rows"]) == 2
+
+
+def test_entity_filter_applies_to_any_template_dimension() -> None:
+    rows = [
+        {
+            "periodo": "04/2026",
+            "concessionaria": "osaka",
+            "quantidade_os": 176,
+            "vendas": "187547.00",
+            "ticket_medio_os": "1041.93",
+            "recebido": "13020.00",
+            "percentual_recebido": "6.94",
+        },
+        {
+            "periodo": "04/2026",
+            "concessionaria": "strada jeep",
+            "quantidade_os": 261,
+            "vendas": "112575.00",
+            "ticket_medio_os": "428.04",
+            "recebido": "9405.00",
+            "percentual_recebido": "8.35",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "performance_concessionaria",
+                rows,
+                hints={
+                    "selected_metric": "vendas",
+                    "selected_dimension": "concessionaria",
+                    "selected_operation": "list",
+                    "entity_filters": ({"dimension": "concessionaria", "value": "osaka", "match": "contains"},),
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="quanto a concessionária Osaka vendeu?",
+    )
+
+    assert "osaka: R$ 187.547,00" in evidence.summary
+    assert "strada jeep" not in evidence.summary
+
+
+def test_itens_vendidos_sales_evidence_summary_keeps_money_format() -> None:
+    rows = [
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "filme solar",
+            "quantidade_vendida": "946",
+            "quantidade_os": 910,
+            "vendas": "283800.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "311.87",
+            "percentual_faturamento": "24.60",
+        },
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "clear comfort parabrisa",
+            "quantidade_vendida": "420",
+            "quantidade_os": 420,
+            "vendas": "328116.55",
+            "ticket_medio_item": "781.23",
+            "ticket_medio_os": "781.23",
+            "percentual_faturamento": "28.40",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "itens_vendidos",
+                rows,
+                hints={
+                    "selected_metric": "vendas",
+                    "selected_dimension": "item",
+                    "selected_operation": "ranking_desc",
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Quais itens mais faturaram em dezembro de 2025?",
+    )
+
+    assert evidence.metrics["value_key"] == "vendas"
+    assert evidence.metrics["value_kind"] == "money"
+    assert "R$ 328.116,55" in evidence.summary
+
+
+def test_itens_vendidos_percent_evidence_summary_keeps_percent_format() -> None:
+    rows = [
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "filme solar",
+            "quantidade_vendida": "946",
+            "quantidade_os": 910,
+            "vendas": "283800.00",
+            "ticket_medio_item": "300.00",
+            "ticket_medio_os": "311.87",
+            "percentual_faturamento": "24.60",
+        },
+        {
+            "periodo": "2025-12",
+            "categoria": "servico",
+            "item": "clear comfort parabrisa",
+            "quantidade_vendida": "420",
+            "quantidade_os": 420,
+            "vendas": "328116.55",
+            "ticket_medio_item": "781.23",
+            "ticket_medio_os": "781.23",
+            "percentual_faturamento": "28.40",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "itens_vendidos",
+                rows,
+                hints={
+                    "selected_metric": "percentual_faturamento",
+                    "selected_dimension": "item",
+                    "selected_operation": "list",
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Qual participação de cada item no faturamento em dezembro de 2025?",
+    )
+
+    assert evidence.metrics["value_key"] == "percentual_faturamento"
+    assert evidence.metrics["value_kind"] == "percent"
+    assert "clear comfort parabrisa  28,40%" in evidence.summary
+    assert "R$ 28,40" not in evidence.summary
+
+
+def test_itens_vendidos_projects_ticket_medio_item() -> None:
+    rows = [
+        {
+            "periodo": "2026-04",
+            "categoria": "servico",
+            "item": "martelinho de ouro",
+            "quantidade_vendida": 7,
+            "quantidade_os": 6,
+            "vendas": "14000.00",
+            "ticket_medio_item": "2000.00",
+            "ticket_medio_os": "2333.33",
+            "percentual_faturamento": "70.00",
+        },
+        {
+            "periodo": "2026-04",
+            "categoria": "produto",
+            "item": "película",
+            "quantidade_vendida": 12,
+            "quantidade_os": 10,
+            "vendas": "6000.00",
+            "ticket_medio_item": "500.00",
+            "ticket_medio_os": "600.00",
+            "percentual_faturamento": "30.00",
+        },
+    ]
+
+    projected = build_projected_answer(
+        "Qual item tem maior ticket médio em abril de 2026?",
+        [_result("itens_vendidos", rows)],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.measure == "ticket_medio_item"
+    assert projected.top is not None
+    assert projected.top["item"] == "martelinho de ouro"
+
+
+def test_itens_vendidos_projects_participation_percentage() -> None:
+    rows = [
+        {
+            "periodo": "2026-04",
+            "categoria": "servico",
+            "item": "martelinho de ouro",
+            "quantidade_vendida": 7,
+            "quantidade_os": 6,
+            "vendas": "14000.00",
+            "ticket_medio_item": "2000.00",
+            "ticket_medio_os": "2333.33",
+            "percentual_faturamento": "70.00",
+        },
+        {
+            "periodo": "2026-04",
+            "categoria": "produto",
+            "item": "película",
+            "quantidade_vendida": 12,
+            "quantidade_os": 10,
+            "vendas": "6000.00",
+            "ticket_medio_item": "500.00",
+            "ticket_medio_os": "600.00",
+            "percentual_faturamento": "30.00",
+        },
+    ]
+
+    projected = build_projected_answer(
+        "Qual participação de cada item no faturamento em abril de 2026?",
+        [_result("itens_vendidos", rows)],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.measure == "percentual_faturamento"
+    assert projected.plan.operation == "list"
+    assert "martelinho de ouro: 70,00%" in projected.summary
+    assert "película: 30,00%" in projected.summary
+
+
+def test_itens_vendidos_projects_category_comparison() -> None:
+    rows = [
+        {
+            "periodo": "2026-04",
+            "categoria": "servico",
+            "item": "martelinho de ouro",
+            "quantidade_vendida": 7,
+            "quantidade_os": 6,
+            "vendas": "14000.00",
+            "ticket_medio_item": "2000.00",
+            "ticket_medio_os": "2333.33",
+            "percentual_faturamento": "70.00",
+        },
+        {
+            "periodo": "2026-04",
+            "categoria": "produto",
+            "item": "película",
+            "quantidade_vendida": 12,
+            "quantidade_os": 10,
+            "vendas": "6000.00",
+            "ticket_medio_item": "500.00",
+            "ticket_medio_os": "600.00",
+            "percentual_faturamento": "30.00",
+        },
+    ]
+
+    projected = build_projected_answer(
+        "Produtos versus serviços: qual categoria gera mais receita?",
+        [_result("itens_vendidos", rows)],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.plan.measure == "vendas"
+    assert projected.plan.dimension == "categoria"
+    assert projected.top is not None
+    assert projected.top["categoria"] == "servico"
 
 
 def test_performance_concessionaria_list_summary_materializes_ticket_values() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 from orion_mcp_v3.broker.query_capability_catalog import QueryCapabilityCatalog
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
+from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider, NullLLMProvider
 
 _LOG = logging.getLogger(__name__)
@@ -82,6 +84,7 @@ class QuerySelectionValidator:
         measure = _resolve_alias(contract.measure, entry.metrics)
         dimension = _resolve_alias(contract.dimension, entry.dimensions)
         operation = contract.operation.strip() if contract.operation else None
+        entity_filters = _normalize_entity_filters(contract.entity_filters, entry.dimensions)
 
         if contract.measure is not None and measure is None:
             return self._reject("unsupported_measure")
@@ -89,7 +92,6 @@ class QuerySelectionValidator:
             return self._reject("unsupported_dimension")
         if operation is not None and operation not in entry.operations and operation not in self._DERIVED_OPERATIONS:
             return self._reject("unsupported_operation")
-
         return QuerySelectionValidationResult(
             accepted=True,
             contract=QuerySelectionContract(
@@ -97,6 +99,7 @@ class QuerySelectionValidator:
                 measure=measure,
                 dimension=dimension,
                 operation=operation,
+                entity_filters=entity_filters,
                 confidence=contract.confidence,
                 reason=contract.reason,
             ),
@@ -107,13 +110,7 @@ class QuerySelectionValidator:
         return QuerySelectionValidationResult(accepted=False, rejected_reason=reason)
 
 
-_SYSTEM_PROMPT = """You are a query template selector.
-Return exactly one JSON object and no prose.
-Never generate SQL.
-Never answer the user.
-Choose template_slug only from the query_cards.
-Prefer the template whose dimensions match the user's requested business entity.
-"""
+_SYSTEM_PROMPT = get_prompt_registry().get_text("query_template_selector.system")
 
 
 def _build_prompt(
@@ -138,6 +135,13 @@ def _build_prompt(
             "measure": "string|null",
             "dimension": "string|null",
             "operation": "string|null",
+            "entity_filters": [
+                {
+                    "dimension": "one dimension from the selected query_card",
+                    "value": "specific entity value from the user message",
+                    "match": "contains|exact",
+                }
+            ],
             "confidence": "number 0..1",
             "reason": "short string",
         },
@@ -154,6 +158,41 @@ def _resolve_alias(value: str | None, options: Mapping[str, tuple[str, ...]]) ->
         if raw in values:
             return key
     return None
+
+
+def _normalize_entity_filters(
+    filters: tuple[dict[str, str], ...],
+    dimensions: Mapping[str, tuple[str, ...]],
+) -> tuple[dict[str, str], ...]:
+    out: list[dict[str, str]] = []
+    for item in filters:
+        dimension = _resolve_alias(item.get("dimension"), dimensions)
+        value = str(item.get("value") or "").strip()
+        if dimension is None or not value:
+            continue
+        if dimension in _TEMPORAL_FILTER_DIMENSIONS:
+            continue
+        match = _normalize_filter_match(
+            dimension=dimension,
+            value=value,
+            match=str(item.get("match") or "contains"),
+        )
+        out.append({"dimension": dimension, "value": value, "match": match})
+    return tuple(out)
+
+
+def _normalize_filter_match(*, dimension: str, value: str, match: str) -> str:
+    normalized = match.strip().lower()
+    if normalized not in {"contains", "exact"}:
+        normalized = "contains"
+    if normalized != "exact":
+        return normalized
+    if dimension in {"periodo", "data_pagamento"} and re.fullmatch(r"20\d{2}(?:-\d{2})?(?:-\d{2})?", value):
+        return "exact"
+    return "contains"
+
+
+_TEMPORAL_FILTER_DIMENSIONS = frozenset({"periodo", "data_pagamento"})
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:
