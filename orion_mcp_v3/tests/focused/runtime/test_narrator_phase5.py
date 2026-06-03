@@ -225,6 +225,47 @@ def test_narrator_with_evidence_coverage() -> None:
     assert nr.narration
 
 
+def test_narrator_coverage_note_does_not_duplicate_structured_direct_answer_set() -> None:
+    from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
+    from orion_mcp_v3.runtime.cognitive_orchestrator import CognitiveOrchestrationResult
+
+    long_summary = "Resposta direta composta:\n" + "\n".join(
+        f"{i}. item {i}: R$ {i * 100},00" for i in range(1, 40)
+    )
+    block = ContextBlock(
+        text=long_summary,
+        role=ContextRole.DATA,
+        source=ContextSource.SYSTEM,
+        block_id="fusion:evidence",
+        metadata={
+            "fusion_kind": "evidence",
+            "row_count": 39,
+            "confidence": 0.82,
+            "direct_answer_set": {
+                "collection_slug": "fechamento_gerencial_por_mes",
+                "headline": "Faturamento líquido por forma de pagamento: R$ 1.700,00",
+                "executive_sections": [],
+            },
+        },
+        relevance_score=0.82,
+    )
+    result = CognitiveOrchestrationResult(
+        cognitive_plan=_make_orchestration_result().cognitive_plan,
+        fusion=_make_orchestration_result().fusion,
+        scheduled_blocks=(block,),
+        packed_blocks=(block,),
+        prompt_text="[DATA]\n" + long_summary,
+    )
+
+    narrator = CognitiveNarrator(NullLLMProvider())
+    nr = asyncio.run(narrator.narrate(result))
+
+    assert "coverage_note_injected" in nr.safeguards_applied
+    assert "39 registro(s) analisado(s)" in nr.coverage_note
+    assert "item 39" not in nr.coverage_note
+    assert len(nr.coverage_note) < len(long_summary) * 0.25
+
+
 def test_narrator_preserves_complete_direct_answer_instruction() -> None:
     from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
     from orion_mcp_v3.runtime.provenance import CoverageInfo

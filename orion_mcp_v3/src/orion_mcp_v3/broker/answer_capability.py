@@ -89,11 +89,30 @@ class ProjectedAnswerSet:
     answers: tuple[ProjectedAnswer, ...]
     collection_slug: str | None = None
     presentation_mode: str = "sections"
+    headline: str | None = None
+    executive_summary: str | None = None
+    section_detail: str | None = None
+    executive_sections: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
+    managerial_totals: Mapping[str, Any] = field(default_factory=dict)
+    data_quality: Mapping[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "collection_slug": self.collection_slug,
             "presentation_mode": self.presentation_mode,
             "summary": self.summary,
             "answers": [answer.as_dict() for answer in self.answers],
         }
+        if self.headline is not None:
+            payload["headline"] = self.headline
+        if self.executive_summary is not None:
+            payload["executive_summary"] = self.executive_summary
+        if self.section_detail is not None:
+            payload["section_detail"] = self.section_detail
+        if self.executive_sections:
+            payload["executive_sections"] = [dict(section) for section in self.executive_sections]
+        if self.managerial_totals:
+            payload["managerial_totals"] = dict(self.managerial_totals)
+        if self.data_quality:
+            payload["data_quality"] = dict(self.data_quality)
+        return payload

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from typing import Any
 
 from orion_mcp_v3.contracts.analytics_outcome import AnalyticsOutcome, AnalyticsOutcomeStatus
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
@@ -64,6 +65,26 @@ class AnalyticalReasoner:
                 blocked_reason="no_analytical_plan",
             )
 
+        closing_set = _managerial_closing_answer_set(evidence)
+        if closing_set is not None:
+            direct_contract = EvidenceContract.present(
+                row_count=contract.row_count,
+                full_dataset_available=contract.full_dataset_available,
+                source_priority=EvidencePriority.DIRECT_ANSWER,
+                operational_confidence=contract.operational_confidence,
+                safe_for_record_level_claims=contract.safe_for_record_level_claims,
+            )
+            facts, insights, risks = _managerial_closing_reasoning(closing_set)
+            return AnalyticalReasoningResult(
+                facts=facts,
+                insights=insights,
+                risks=risks,
+                limitations=_material_limitations(direct_contract, evidence=evidence),
+                evidence_contract=direct_contract,
+                answer_mode=AnswerMode.EXECUTIVE,
+                should_narrate=True,
+            )
+
         if _has_direct_answer(evidence):
             direct_contract = EvidenceContract.present(
                 row_count=contract.row_count,
@@ -81,7 +102,7 @@ class AnalyticalReasoner:
                 facts=(fact,),
                 insights=(),
                 risks=(),
-                limitations=_material_limitations(direct_contract),
+                limitations=_material_limitations(direct_contract, evidence=evidence),
                 evidence_contract=direct_contract,
                 answer_mode=AnswerMode.LITERAL,
                 should_narrate=True,
@@ -137,11 +158,69 @@ def _has_direct_answer_set(evidence: EvidenceBlock | None) -> bool:
     return isinstance(evidence.insights.get("direct_answer_set"), Mapping)
 
 
+def _direct_answer_set(evidence: EvidenceBlock | None) -> Mapping[str, Any] | None:
+    if evidence is None:
+        return None
+    raw = evidence.supporting_data.get("direct_answer_set")
+    if isinstance(raw, Mapping):
+        return raw
+    raw = evidence.insights.get("direct_answer_set")
+    return raw if isinstance(raw, Mapping) else None
+
+
+def _managerial_closing_answer_set(evidence: EvidenceBlock | None) -> Mapping[str, Any] | None:
+    raw = _direct_answer_set(evidence)
+    if not isinstance(raw, Mapping):
+        return None
+    if raw.get("collection_slug") != "fechamento_gerencial_por_mes":
+        return None
+    sections = raw.get("executive_sections")
+    if not isinstance(sections, (list, tuple)) or not sections:
+        return None
+    return raw
+
+
+def _managerial_closing_reasoning(answer_set: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    facts: list[str] = []
+    insights: list[str] = []
+    risks: list[str] = []
+    headline = str(answer_set.get("headline") or "").strip()
+    if headline:
+        facts.append(headline)
+    data_quality = answer_set.get("data_quality")
+    if isinstance(data_quality, Mapping):
+        templates = data_quality.get("templates_projected")
+        rows = data_quality.get("rows_projected")
+        if templates is not None and rows is not None:
+            facts.append(f"Fechamento projetado com {templates} template(s) e {rows} registro(s).")
+    sections = answer_set.get("executive_sections")
+    if isinstance(sections, (list, tuple)):
+        for section in sections:
+            if not isinstance(section, Mapping):
+                continue
+            label = str(section.get("label") or section.get("template_slug") or "Seção").strip()
+            top = str(section.get("top") or "").strip()
+            top_value = str(section.get("top_value") or "").strip()
+            share = str(section.get("share_percent") or "").strip()
+            if top and top_value:
+                suffix = f" ({share})" if share else ""
+                insights.append(f"{label}: líder {top} com {top_value}{suffix}.")
+            warnings = section.get("warnings")
+            if isinstance(warnings, (list, tuple)):
+                for warning in warnings:
+                    text = str(warning or "").strip()
+                    if text:
+                        risks.append(f"{label}: {text}.")
+    if not facts:
+        facts.append("Fechamento gerencial estruturado disponível na evidência.")
+    return tuple(facts), tuple(insights), tuple(risks)
+
+
 def _asks_executive(message: str) -> bool:
     return bool(re.search(r"\b(executiv[ao]|resum[ao]|objetiv[ao]|direto)\b", message or "", re.IGNORECASE))
 
 
-def _material_limitations(contract: EvidenceContract) -> tuple[str, ...]:
+def _material_limitations(contract: EvidenceContract, *, evidence: EvidenceBlock | None = None) -> tuple[str, ...]:
     out: list[str] = []
     if contract.status == EvidenceStatus.PIPELINE_FAILURE:
         out.append("Há falha operacional material no pipeline.")
@@ -149,4 +228,6 @@ def _material_limitations(contract: EvidenceContract) -> tuple[str, ...]:
         out.append("Payload parcial detectado; não usar preview como dataset completo.")
     if not contract.safe_for_record_level_claims and contract.status == EvidenceStatus.PRESENT:
         out.append("Não é seguro fazer afirmações registro a registro.")
+    if evidence is not None and evidence.confidence < 0.70:
+        out.append(f"A confiança da evidência é {evidence.confidence:.2f}; sinalizar possível cobertura parcial.")
     return tuple(out)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES, AnalyticsResult, EvidenceAggregator
-from orion_mcp_v3.broker.answer_projector import build_projected_answer
+from orion_mcp_v3.broker.answer_projector import build_projected_answer, build_projected_answer_set
 from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver
 
@@ -21,6 +21,19 @@ def _result(
         sql="SELECT ...",
         rows=rows,
         row_count=len(rows),
+    )
+
+
+def _fechamento_result(slug: str, rows: list[dict]) -> AnalyticsResult:  # type: ignore[type-arg]
+    return _result(
+        slug,
+        rows,
+        hints={
+            "collection_slug": "fechamento_gerencial_por_mes",
+            "collection_presentation_mode": "sections",
+            "selected_operation": "list",
+            "result_scope": {"mode": "all", "limit": None},
+        },
     )
 
 
@@ -60,6 +73,74 @@ def test_performance_concessionaria_projects_top_and_bottom_sales() -> None:
     assert projected.top["concessionaria"] == "osaka"
     assert projected.bottom["concessionaria"] == "strada jeep"
     assert "Resposta direta" in projected.summary
+
+
+def test_fechamento_gerencial_projects_executive_contract_without_parallel_payload() -> None:
+    projected = build_projected_answer_set(
+        "Faça o fechamento gerencial de maio de 2026",
+        [
+            _fechamento_result(
+                "fechamento_faturamento_tipo_pagamento",
+                [
+                    {
+                        "caixa_tipo": "Cartão de Crédito",
+                        "total_pagamentos": "1300.00",
+                        "total_estornos": "100.00",
+                        "total_liquido": "1200.00",
+                    },
+                    {
+                        "caixa_tipo": "PIX",
+                        "total_pagamentos": "500.00",
+                        "total_estornos": "0.00",
+                        "total_liquido": "500.00",
+                    },
+                ],
+            ),
+            _fechamento_result(
+                "fechamento_comissao_concessionaria_servicos",
+                [
+                    {"concessionaria": "GWM BAMAQ", "total": "900.00", "total_comissao": "90.00"},
+                    {"concessionaria": "STRADA JEEP", "total": "600.00", "total_comissao": "60.00"},
+                ],
+            ),
+            _fechamento_result(
+                "fechamento_taxas_cartao_credito",
+                [
+                    {
+                        "empresa_nome": "MFP ESTETICA AUTOMOTIVA",
+                        "valor_bruto": "1200.00",
+                        "valor_liquido": "1160.00",
+                        "valor_taxa": "40.00",
+                    }
+                ],
+            ),
+        ],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    payload = projected.as_dict()
+    assert payload["collection_slug"] == "fechamento_gerencial_por_mes"
+    assert payload["headline"] == "Faturamento líquido por forma de pagamento: R$ 1.700,00"
+    assert payload["managerial_totals"]["financial_net"]["source_template"] == "fechamento_faturamento_tipo_pagamento"
+    assert payload["managerial_totals"]["financial_net"]["value"] == "R$ 1.700,00"
+    assert payload["data_quality"]["templates_projected"] == 3
+    assert payload["data_quality"]["rows_projected"] == 5
+    assert payload["executive_summary"] == payload["summary"]
+    assert "STRADA JEEP" not in payload["summary"]
+    assert "STRADA JEEP" in payload["section_detail"]
+    assert "PIX" in payload["section_detail"]
+
+    sections = payload["executive_sections"]
+    assert [section["template_slug"] for section in sections] == [
+        "fechamento_faturamento_tipo_pagamento",
+        "fechamento_comissao_concessionaria_servicos",
+        "fechamento_taxas_cartao_credito",
+    ]
+    assert sections[0]["top"] == "Cartão de Crédito"
+    assert sections[0]["top_value"] == "R$ 1.200,00"
+    assert sections[0]["share_percent"] == "70,59%"
+    assert projected.answers[0].rows[0]["caixa_tipo"] == "Cartão de Crédito"
 
 
 def test_evidence_aggregator_embeds_direct_answer_before_narration() -> None:

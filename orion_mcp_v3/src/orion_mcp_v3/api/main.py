@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from orion_mcp_v3.api.email_sender import EmailSender
 from orion_mcp_v3.api.models import HealthResponse
 from orion_mcp_v3.api.routes.chat import create_chat_router
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
@@ -169,6 +170,7 @@ def create_app(
     settings: OrionSettings | None = None,
     analytics_executor: AnalyticsExecutor | None = None,
     analytics_allowlist: SqlAllowlist | None = None,
+    email_sender: EmailSender | None = None,
 ) -> FastAPI:
     """Factory da aplicação FastAPI com dependências injectáveis."""
     s = settings or get_settings()
@@ -212,6 +214,25 @@ def create_app(
     else:
         sm = session_manager
     narrator = CognitiveNarrator(provider)
+    resolved_email_sender = email_sender
+    if resolved_email_sender is None and s.email_configured:
+        resolved_email_sender = EmailSender.from_settings(s)
+        _LOG.info(
+            "Email sender enabled (smtp=%s:%s, start_tls=%s, from=%s)",
+            s.email_smtp_host,
+            s.email_smtp_port,
+            s.email_start_tls,
+            s.email_from_address,
+        )
+    elif resolved_email_sender is None:
+        _LOG.info(
+            "Email sender disabled (enabled=%s, host_present=%s, from_present=%s)",
+            s.email_enabled,
+            bool(s.email_smtp_host.strip()),
+            bool(s.email_from_address.strip()),
+        )
+    else:
+        _LOG.info("Email sender injected (%s)", type(resolved_email_sender).__name__)
 
     chat_router = create_chat_router(
         session_manager=sm,
@@ -220,6 +241,7 @@ def create_app(
         analytics_executor=state.get("executor"),
         analytics_allowlist=state.get("allowlist"),
         analytics_state=state,
+        email_sender=resolved_email_sender,
     )
     app.include_router(chat_router)
 

@@ -143,6 +143,8 @@ class EvidenceAggregator:
 
         total_rows = sum(r.row_count for r in results)
         metrics: dict[str, Any] = dict(primary_eb.metrics)
+        metrics["input_rows"] = total_rows
+        metrics["coverage_scoring"] = 1.0 if total_rows > 0 else 0.0
         fanout_contract = _merge_evidence_contracts(
             [eb for _, eb in partials],
             row_count=total_rows,
@@ -234,12 +236,13 @@ def _with_projected_answer(
                     row_count=contract.row_count,
                     full_dataset_available=contract.full_dataset_available,
                     source_priority=EvidencePriority.DIRECT_ANSWER,
-                    operational_confidence=contract.operational_confidence,
+                    operational_confidence=_direct_answer_set_confidence(contract),
                     safe_for_record_level_claims=contract.safe_for_record_level_claims,
                 )
                 metrics["evidence_contract"] = contract.as_dict()
+            summary = str(projected_set_dict.get("section_detail") or projected_set.summary)
             return EvidenceBlock(
-                summary=projected_set.summary,
+                summary=summary,
                 insights={**dict(block.insights), "direct_answer_set": projected_set_dict},
                 metrics=metrics,
                 confidence=block.confidence,
@@ -321,6 +324,18 @@ def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
     if mode == "all" and operation == "list":
         return True
     return measure in {"ticket_medio_item", "ticket_medio_os"} and operation == "list"
+
+
+def _direct_answer_set_confidence(contract: EvidenceContract) -> OperationalConfidence:
+    current = contract.operational_confidence
+    if not contract.full_dataset_available:
+        return current
+    return OperationalConfidence(
+        data_coverage=1.0,
+        aggregation_reliability=current.aggregation_reliability,
+        pipeline_integrity=current.pipeline_integrity,
+        narrative_confidence=max(current.narrative_confidence, 0.8),
+    )
 
 
 def _merge_evidence_contracts(

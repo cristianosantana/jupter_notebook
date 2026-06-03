@@ -45,6 +45,23 @@ def _evidence(*, confidence: float = 0.8) -> EvidenceBlock:
     )
 
 
+def _fechamento_evidence() -> EvidenceBlock:
+    direct_answer_set = {
+        "collection_slug": "fechamento_gerencial_por_mes",
+        "headline": "Faturamento líquido por forma de pagamento: R$ 1.700,00",
+        "executive_sections": [],
+        "answers": [],
+    }
+    return EvidenceBlock(
+        summary="Fechamento executivo",
+        insights={"direct_answer_set": direct_answer_set},
+        metrics={"n": 5},
+        confidence=0.8,
+        coverage=CoverageInfo(labels={"templates_ok": 9, "templates_total": 9}),
+        supporting_data={"direct_answer_set": direct_answer_set},
+    )
+
+
 def test_system_block_has_system_role_source_and_fixed_id() -> None:
     block = build_analytical_system_block(_plan())
     assert block.role == ContextRole.SYSTEM
@@ -93,6 +110,16 @@ def test_low_confidence_evidence_adds_warning_and_coverage_note() -> None:
     assert "confiança da evidência é baixa" in block.text
     assert "3/4 templates executados com sucesso" in block.text
     assert block.metadata["evidence_confidence"] == 0.45
+
+
+def test_managerial_closing_prompt_includes_specific_structure_for_collection() -> None:
+    block = build_analytical_system_block(_plan(), evidence=_fechamento_evidence())
+
+    assert "Fechamento gerencial por mês requer" in block.text
+    assert "headline" in block.text
+    assert "managerial_totals" in block.text
+    assert "Não some templates incompatíveis" in block.text
+    assert block.metadata["collection_slug"] == "fechamento_gerencial_por_mes"
 
 
 def test_build_fusion_layers_without_cognitive_plan_preserves_no_system_layer() -> None:

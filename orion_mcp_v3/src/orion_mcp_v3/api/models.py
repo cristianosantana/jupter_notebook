@@ -4,7 +4,12 @@ Modelos Pydantic para request/response da API de chat (Fase 6.1).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+_EMAIL_RX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class ChatRequest(BaseModel):
@@ -15,6 +20,28 @@ class ChatRequest(BaseModel):
     stream: bool = Field(False, description="Se True, resposta em SSE streaming.")
     max_tokens: int = Field(4096, ge=64, le=32000, description="Orçamento de tokens para o prompt.")
     policy: str = Field("balanced", description="Política de atenção (balanced, analytical, memory_focused, ...).")
+    email_to: str | None = Field(None, description="Destinatário para envio opcional da resposta por e-mail.")
+    email_subject: str | None = Field(None, max_length=200, description="Assunto opcional do e-mail.")
+
+    @field_validator("email_to")
+    @classmethod
+    def _validate_email_to(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        email = value.strip()
+        if not email:
+            return None
+        if not _EMAIL_RX.match(email):
+            raise ValueError("email_to inválido")
+        return email
+
+    @field_validator("email_subject")
+    @classmethod
+    def _normalize_email_subject(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        subject = value.strip()
+        return subject or None
 
 
 class UsageInfo(BaseModel):
@@ -23,6 +50,14 @@ class UsageInfo(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+
+
+class EmailDeliveryInfo(BaseModel):
+    """Status seguro do envio opcional por e-mail."""
+
+    status: Literal["not_requested", "sent", "skipped", "failed"] = "not_requested"
+    to: str | None = None
+    message: str = ""
 
 
 class ChatResponseMeta(BaseModel):
@@ -36,6 +71,7 @@ class ChatResponseMeta(BaseModel):
     safeguards: list[str] = Field(default_factory=list)
     cognitive_intent: str | None = None
     coverage_note: str = ""
+    email_delivery: EmailDeliveryInfo = Field(default_factory=EmailDeliveryInfo)
 
 
 class ChatResponse(BaseModel):

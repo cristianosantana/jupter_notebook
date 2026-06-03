@@ -51,7 +51,19 @@ def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
                 )
             )
         if fk == "evidence":
-            lines.append(_EVIDENCE_TEMPLATE.format(summary=b.text))
+            direct_answer_set = b.metadata.get("direct_answer_set")
+            if isinstance(direct_answer_set, Mapping) and direct_answer_set.get("collection_slug"):
+                row_count = b.metadata.get("row_count")
+                confidence = b.metadata.get("confidence", b.relevance_score)
+                collection = direct_answer_set.get("collection_slug") or "direct_answer_set"
+                parts = [f"coleção {collection}"]
+                if row_count is not None:
+                    parts.append(f"{row_count} registro(s) analisado(s)")
+                if confidence is not None:
+                    parts.append(f"confiança {confidence}")
+                lines.append("Cobertura da evidência estruturada: " + "; ".join(parts))
+            else:
+                lines.append(_EVIDENCE_TEMPLATE.format(summary=b.text))
     return "\n".join(lines) if lines else ""
 
 

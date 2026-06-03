@@ -21,6 +21,7 @@ _PROMPT_ID = "analytical_system.fragments"
 _IDENTITY = _PROMPTS.get_fragment(_PROMPT_ID, "identity")
 _TONE = _PROMPTS.get_fragment(_PROMPT_ID, "tone")
 _STRUCTURE_ANALYTICAL = _PROMPTS.get_fragment(_PROMPT_ID, "structure_analytical")
+_STRUCTURE_MANAGERIAL_CLOSING = _PROMPTS.get_fragment(_PROMPT_ID, "structure_managerial_closing")
 _STRUCTURE_CONVERSATIONAL = _PROMPTS.get_fragment(_PROMPT_ID, "structure_conversational")
 _EVIDENCE_RULES = _PROMPTS.get_fragment(_PROMPT_ID, "evidence_rules")
 _PERIOD_TEMPLATE = _PROMPTS.get_fragment(_PROMPT_ID, "period_template")
@@ -52,6 +53,10 @@ def build_analytical_system_block(
     else:
         sections.append(_STRUCTURE_CONVERSATIONAL)
 
+    collection_slug = _collection_slug_from_evidence(evidence)
+    if collection_slug == "fechamento_gerencial_por_mes":
+        sections.append(_STRUCTURE_MANAGERIAL_CLOSING)
+
     if cognitive_plan.needs_analytics:
         sections.append(_EVIDENCE_RULES)
 
@@ -80,6 +85,7 @@ def build_analytical_system_block(
             "needs_analytics": cognitive_plan.needs_analytics,
             "period": period or "não especificado",
             "evidence_confidence": evidence.confidence if evidence is not None else None,
+            "collection_slug": collection_slug,
         },
         relevance_score=1.0,
         confidence=1.0,
@@ -133,6 +139,18 @@ def _resolve_period(
                 return f"{start} a {end}"
 
     return None
+
+
+def _collection_slug_from_evidence(evidence: EvidenceBlock | None) -> str | None:
+    if evidence is None:
+        return None
+    raw = evidence.supporting_data.get("direct_answer_set")
+    if not isinstance(raw, Mapping):
+        raw = evidence.insights.get("direct_answer_set")
+    if not isinstance(raw, Mapping):
+        return None
+    slug = raw.get("collection_slug")
+    return slug.strip() if isinstance(slug, str) and slug.strip() else None
 
 
 def _period_from_mapping(values: Mapping[str, Any]) -> str | None:
