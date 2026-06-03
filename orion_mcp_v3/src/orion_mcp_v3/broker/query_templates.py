@@ -194,8 +194,13 @@ class QueryTemplateRegistry:
 # Registry builder — importa SQL dos módulos em broker/queries/
 # ---------------------------------------------------------------------------
 
-def _default_params() -> dict[str, Any]:
-    return {"date_from": _default_date_from, "date_to": _default_date_to}
+def _default_params(mod: Any | None = None) -> dict[str, Any]:
+    params: dict[str, Any] = {"date_from": _default_date_from, "date_to": _default_date_to}
+    if mod is not None:
+        extra = getattr(mod, "DEFAULT_PARAMS", None)
+        if isinstance(extra, dict):
+            params.update(extra)
+    return params
 
 
 def _build_capability(slug: str, mod: Any) -> AnswerCapability:
@@ -276,7 +281,7 @@ def _build_registry() -> QueryTemplateRegistry:
             slug=slug,
             sql=mod.SQL,
             parameters=params_tuple,
-            default_params=_default_params(),
+            default_params=_default_params(mod),
             answers=mod.ANSWERS,
             value_key=mod.VALUE_KEY,
             time_key=getattr(mod, "TIME_KEY", None),
