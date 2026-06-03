@@ -11,6 +11,7 @@ from orion_mcp_v3.broker.query_templates import (
     QueryTemplateRegistry,
 )
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
+from orion_mcp_v3.broker.query_collections import ANALYTICS_COLLECTIONS, FECHAMENTO_GERENCIAL_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_expander import QueryExpander
 from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
@@ -214,6 +215,40 @@ def test_expander_prefers_validated_template_from_intent_contract() -> None:
     assert plans[0].hints["semantic_reason"] == "validated_intent_contract"
 
 
+def test_expander_collection_fanout_overrides_llm_selection_for_broad_fechamento() -> None:
+    cp = _analytical_plan(
+        metrics=("total",),
+        entities=("periodo",),
+        time_scope="2026-05-01/2026-05-31",
+        hints={
+            "template_slug": "formas_pagamento",
+            "selected_metric": "total",
+            "selected_dimension": "periodo",
+            "selected_operation": "list",
+            "semantic_reason": "llm_query_selector",
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="Faca o fechamento gerencial de maio de 2026.",
+    )
+
+    assert [p.hints["template_slug"] for p in plans] == list(FECHAMENTO_GERENCIAL_TEMPLATES)
+    assert {p.hints["collection_slug"] for p in plans} == {"fechamento_gerencial_por_mes"}
+    assert {p.hints["semantic_reason"] for p in plans} == {"collection_fanout"}
+
+
+def test_query_collection_catalog_selects_specific_subset() -> None:
+    collection = ANALYTICS_COLLECTIONS.get("fechamento_gerencial_por_mes")
+    assert collection is not None
+
+    assert collection.matched_template_slugs(
+        "No fechamento gerencial de maio, quanto foi produzido por serviço?",
+    ) == ("fechamento_producao_servico",)
+
+
 def test_expander_without_registry_keeps_compiled_path() -> None:
     cp = _analytical_plan(
         metrics=("faturamento",),
@@ -237,6 +272,7 @@ def test_all_templates_registered() -> None:
         "performance_vendedor",
         "formas_pagamento",
         "itens_vendidos",
+        *FECHAMENTO_GERENCIAL_TEMPLATES,
     }
     assert set(ANALYTICS_TEMPLATES.slugs) == expected
 

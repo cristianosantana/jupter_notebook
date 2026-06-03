@@ -15,6 +15,7 @@ from orion_mcp_v3.broker.answer_capability import (
     DimensionCapability,
     MeasureCapability,
     ProjectedAnswer,
+    ProjectedAnswerSet,
 )
 from orion_mcp_v3.broker.executor import AnalyticsResult
 
@@ -500,25 +501,16 @@ def build_projected_answer(
     templates: "QueryTemplateRegistry",
 ) -> ProjectedAnswer | None:
     """Escolhe o melhor resultado de template e constrói uma resposta direta."""
-    best: tuple[int, AnalyticsResult, AnswerPlan, AnswerCapability] | None = None
+    best: tuple[int, ProjectedAnswer] | None = None
     q = _norm(query_text)
     for result in results:
-        hints = result.plan.hints if isinstance(result.plan.hints, Mapping) else {}
-        slug = hints.get("template_slug")
-        if not isinstance(slug, str):
+        projected = _project_result(query_text, result, templates=templates)
+        if projected is None:
             continue
-        template = templates.get(slug)
-        capability = getattr(template, "capability", None)
-        if template is None or capability is None:
+        capability = _capability_for_projected(projected, templates)
+        if capability is None:
             continue
-        plan = _answer_plan_from_hints(
-            hints,
-            query_text=query_text,
-            template_slug=slug,
-            capability=capability,
-        )
-        if plan is None:
-            plan = infer_answer_plan(query_text, template_slug=slug, capability=capability)
+        plan = projected.plan
         measure = capability.measures.get(plan.measure)
         dimension = capability.dimensions.get(plan.dimension) if plan.dimension else None
         score = 0
@@ -526,15 +518,87 @@ def build_projected_answer(
             score += _score_measure(measure, query_text)
         if dimension is not None:
             score += _score_dimension(dimension, query_text)
+        slug = plan.template_slug
         if slug in q:
             score += 20
         if result.rows:
             score += 2
-        candidate = (score, result, plan, capability)
+        candidate = (score, projected)
         if best is None or candidate[0] > best[0]:
             best = candidate
 
     if best is None:
         return None
-    _, result, plan, capability = best
+    return best[1]
+
+
+def build_projected_answer_set(
+    query_text: str,
+    results: Sequence[AnalyticsResult],
+    *,
+    templates: "QueryTemplateRegistry",
+) -> ProjectedAnswerSet | None:
+    """Projeta cada resultado de uma colecao/fanout em secoes objetivas."""
+    answers: list[ProjectedAnswer] = []
+    collection_slug: str | None = None
+    presentation_mode = "sections"
+    for result in results:
+        hints = result.plan.hints if isinstance(result.plan.hints, Mapping) else {}
+        raw_collection = hints.get("collection_slug")
+        if isinstance(raw_collection, str) and raw_collection.strip():
+            collection_slug = collection_slug or raw_collection.strip()
+        raw_mode = hints.get("collection_presentation_mode")
+        if isinstance(raw_mode, str) and raw_mode.strip():
+            presentation_mode = raw_mode.strip()
+        projected = _project_result(query_text, result, templates=templates)
+        if projected is not None:
+            answers.append(projected)
+
+    if not answers:
+        return None
+
+    sections = [
+        f"## {answer.plan.template_slug}\n{answer.summary}"
+        for answer in answers
+    ]
+    summary = "Resposta direta composta:\n\n" + "\n\n".join(sections)
+    return ProjectedAnswerSet(
+        collection_slug=collection_slug,
+        presentation_mode=presentation_mode,
+        summary=summary,
+        answers=tuple(answers),
+    )
+
+
+def _project_result(
+    query_text: str,
+    result: AnalyticsResult,
+    *,
+    templates: "QueryTemplateRegistry",
+) -> ProjectedAnswer | None:
+    hints = result.plan.hints if isinstance(result.plan.hints, Mapping) else {}
+    slug = hints.get("template_slug")
+    if not isinstance(slug, str):
+        return None
+    template = templates.get(slug)
+    capability = getattr(template, "capability", None)
+    if template is None or capability is None:
+        return None
+    plan = _answer_plan_from_hints(
+        hints,
+        query_text=query_text,
+        template_slug=slug,
+        capability=capability,
+    )
+    if plan is None:
+        plan = infer_answer_plan(query_text, template_slug=slug, capability=capability)
     return project_answer(result.rows, plan=plan, capability=capability)
+
+
+def _capability_for_projected(
+    projected: ProjectedAnswer,
+    templates: "QueryTemplateRegistry",
+) -> AnswerCapability | None:
+    template = templates.get(projected.plan.template_slug)
+    capability = getattr(template, "capability", None)
+    return capability if isinstance(capability, AnswerCapability) else None

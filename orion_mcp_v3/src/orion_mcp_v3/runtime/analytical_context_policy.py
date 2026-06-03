@@ -62,6 +62,7 @@ _ANALYTICAL_MARKERS = (
     "metric `",
     "answer_plan",
     "direct_answer",
+    "direct_answer_set",
 )
 
 _MEASURE_TERMS: dict[str, tuple[str, ...]] = {

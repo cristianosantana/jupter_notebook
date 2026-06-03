@@ -30,6 +30,12 @@ from orion_mcp_v3.broker.query_templates import (
     QueryTemplate,
     QueryTemplateRegistry,
 )
+from orion_mcp_v3.broker.query_collections import (
+    ANALYTICS_COLLECTIONS,
+    QueryCollection,
+    QueryCollectionCatalog,
+    QueryCollectionItem,
+)
 from orion_mcp_v3.broker.query_capability_catalog import (
     QueryCapabilityCatalog,
     QueryCapabilityEntry,
@@ -80,6 +86,7 @@ from orion_mcp_v3.broker.sql_compiler import (
 
 __all__ = [
     "ANALYTICS_TEMPLATES",
+    "ANALYTICS_COLLECTIONS",
     "AnalyticsExecutor",
     "AnalyticsResult",
     "EvidenceAggregator",
@@ -88,6 +95,9 @@ __all__ = [
     "QueryExpander",
     "QueryTemplate",
     "QueryTemplateRegistry",
+    "QueryCollection",
+    "QueryCollectionCatalog",
+    "QueryCollectionItem",
     "QueryCapabilityCatalog",
     "QueryCapabilityEntry",
     "build_query_capability_catalog",

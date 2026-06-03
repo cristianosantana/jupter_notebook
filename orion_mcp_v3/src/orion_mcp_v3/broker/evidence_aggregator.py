@@ -11,12 +11,21 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from orion_mcp_v3.broker.answer_projector import build_projected_answer, filter_rows_for_entity_filters
+from orion_mcp_v3.broker.answer_projector import (
+    build_projected_answer,
+    build_projected_answer_set,
+    filter_rows_for_entity_filters,
+)
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder
 from orion_mcp_v3.broker.evidence_series_resolve import resolve_evidence_series_specs
 from orion_mcp_v3.broker.executor import AnalyticsResult
 from orion_mcp_v3.contracts.cognitive_artifact import artifact_provenance_anchor
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.evidence_contract import (
+    EvidenceContract,
+    EvidencePriority,
+    OperationalConfidence,
+)
 from orion_mcp_v3.contracts.evidence_series_spec import EvidenceSeriesSpec
 from orion_mcp_v3.runtime.provenance import merge_coverage_infos, merge_provenance_anchors
 
@@ -134,6 +143,11 @@ class EvidenceAggregator:
 
         total_rows = sum(r.row_count for r in results)
         metrics: dict[str, Any] = dict(primary_eb.metrics)
+        fanout_contract = _merge_evidence_contracts(
+            [eb for _, eb in partials],
+            row_count=total_rows,
+            source_priority=EvidencePriority.AGGREGATED_METRICS,
+        )
         metrics["fanout"] = {
             "intent_slugs": [r.plan.intent_slug for r in results],
             "total_input_rows": total_rows,
@@ -178,6 +192,8 @@ class EvidenceAggregator:
 
         supporting: dict[str, Any] = dict(primary_eb.supporting_data)
         supporting["fanout_by_angle"] = {slug: dict(eb.supporting_data) for slug, eb in partials}
+        supporting["evidence_contract"] = fanout_contract.as_dict()
+        metrics["evidence_contract"] = fanout_contract.as_dict()
 
         block = EvidenceBlock(
             summary=summary,
@@ -206,6 +222,37 @@ def _with_projected_answer(
 ) -> EvidenceBlock:
     if not query_text or templates is None:
         return block
+    collection_slug = _collection_slug(results)
+    if collection_slug is not None:
+        projected_set = build_projected_answer_set(query_text, results, templates=templates)
+        if projected_set is not None:
+            projected_set_dict = projected_set.as_dict()
+            metrics = {**dict(block.metrics), "answer_set": projected_set_dict}
+            contract = EvidenceContract.from_mapping(block.supporting_data.get("evidence_contract"))
+            if contract.status.value == "present":
+                contract = EvidenceContract.present(
+                    row_count=contract.row_count,
+                    full_dataset_available=contract.full_dataset_available,
+                    source_priority=EvidencePriority.DIRECT_ANSWER,
+                    operational_confidence=contract.operational_confidence,
+                    safe_for_record_level_claims=contract.safe_for_record_level_claims,
+                )
+                metrics["evidence_contract"] = contract.as_dict()
+            return EvidenceBlock(
+                summary=projected_set.summary,
+                insights={**dict(block.insights), "direct_answer_set": projected_set_dict},
+                metrics=metrics,
+                confidence=block.confidence,
+                coverage=block.coverage,
+                provenance=block.provenance,
+                sample_refs=block.sample_refs,
+                supporting_data={
+                    **dict(block.supporting_data),
+                    "direct_answer_set": projected_set_dict,
+                    "evidence_contract": contract.as_dict(),
+                },
+            )
+
     projected = build_projected_answer(query_text, results, templates=templates)
     if projected is None:
         return block
@@ -222,6 +269,16 @@ def _with_projected_answer(
         else f"{projected.summary}\n\n{complementary_summary}"
     )
     metrics = {**dict(block.metrics), "answer_plan": projected_dict["plan"]}
+    contract = EvidenceContract.from_mapping(block.supporting_data.get("evidence_contract"))
+    if contract.status.value == "present":
+        contract = EvidenceContract.present(
+            row_count=contract.row_count,
+            full_dataset_available=contract.full_dataset_available,
+            source_priority=EvidencePriority.DIRECT_ANSWER,
+            operational_confidence=contract.operational_confidence,
+            safe_for_record_level_claims=contract.safe_for_record_level_claims,
+        )
+        metrics["evidence_contract"] = contract.as_dict()
     if suppress_complementary:
         metrics["complementary_summary_suppressed"] = True
     return EvidenceBlock(
@@ -232,8 +289,25 @@ def _with_projected_answer(
         coverage=block.coverage,
         provenance=block.provenance,
         sample_refs=block.sample_refs,
-        supporting_data={**dict(block.supporting_data), "direct_answer": projected_dict},
+        supporting_data={
+            **dict(block.supporting_data),
+            "direct_answer": projected_dict,
+            "evidence_contract": contract.as_dict(),
+        },
     )
+
+
+def _collection_slug(results: Sequence[AnalyticsResult]) -> str | None:
+    slugs: list[str] = []
+    for result in results:
+        hints = result.plan.hints if isinstance(result.plan.hints, Mapping) else {}
+        raw = hints.get("collection_slug")
+        if isinstance(raw, str) and raw.strip():
+            slugs.append(raw.strip())
+    if not slugs:
+        return None
+    first = slugs[0]
+    return first if all(slug == first for slug in slugs) else None
 
 
 def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
@@ -247,6 +321,33 @@ def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
     if mode == "all" and operation == "list":
         return True
     return measure in {"ticket_medio_item", "ticket_medio_os"} and operation == "list"
+
+
+def _merge_evidence_contracts(
+    blocks: Sequence[EvidenceBlock],
+    *,
+    row_count: int,
+    source_priority: EvidencePriority,
+) -> EvidenceContract:
+    contracts = [EvidenceContract.from_mapping(b.supporting_data.get("evidence_contract")) for b in blocks]
+    if not contracts:
+        return EvidenceContract.empty_result(row_count=row_count)
+    data_coverage = sum(c.operational_confidence.data_coverage for c in contracts) / len(contracts)
+    aggregation = sum(c.operational_confidence.aggregation_reliability for c in contracts) / len(contracts)
+    pipeline = min(c.operational_confidence.pipeline_integrity for c in contracts)
+    narrative = sum(c.operational_confidence.narrative_confidence for c in contracts) / len(contracts)
+    return EvidenceContract.present(
+        row_count=row_count,
+        full_dataset_available=all(c.full_dataset_available for c in contracts),
+        source_priority=source_priority,
+        operational_confidence=OperationalConfidence(
+            data_coverage=data_coverage,
+            aggregation_reliability=min(0.95, aggregation),
+            pipeline_integrity=pipeline,
+            narrative_confidence=narrative,
+        ),
+        safe_for_record_level_claims=all(c.safe_for_record_level_claims for c in contracts),
+    )
 
 
 def _rows_filtered_by_entity(
