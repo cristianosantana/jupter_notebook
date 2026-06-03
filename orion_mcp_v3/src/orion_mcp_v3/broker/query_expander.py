@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from orion_mcp_v3.broker.planner import build_query_plan
+from orion_mcp_v3.broker.query_collections import ANALYTICS_COLLECTIONS, QueryCollectionCatalog
 from orion_mcp_v3.broker.query_templates import QueryTemplateRegistry
 from orion_mcp_v3.broker.semantic_query_compiler import merge_executable_hints
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist, SqlCompilationError, compile_select
@@ -117,11 +118,13 @@ class QueryExpander:
         default_sql_table: str = "os",
         max_plans: int = 4,
         registry: QueryTemplateRegistry | None = None,
+        collections: QueryCollectionCatalog = ANALYTICS_COLLECTIONS,
     ) -> None:
         self._default_limit = default_limit
         self._default_sql_table = default_sql_table
         self._max_plans = max_plans
         self._registry = registry
+        self._collections = collections
 
     def expand(
         self,
@@ -137,6 +140,8 @@ class QueryExpander:
             correlation_id=correlation_id,
         )
         if template_plans:
+            if any(p.hints.get("collection_slug") for p in template_plans):
+                return template_plans
             return template_plans[: self._max_plans]
 
         primary = build_query_plan(
@@ -178,6 +183,35 @@ class QueryExpander:
     ) -> list[SemanticQueryPlan]:
         if self._registry is None:
             return []
+
+        matched_collections = self._collections.match_all(query_text, cognitive)
+        if matched_collections:
+            collection = matched_collections[0]
+            plans: list[SemanticQueryPlan] = []
+            for slug in collection.matched_template_slugs(query_text):
+                tpl = self._registry.get(slug)
+                if tpl is None:
+                    continue
+                plan = self._template_plan(
+                    tpl,
+                    cognitive,
+                    correlation_id=correlation_id,
+                    semantic_reason="collection_fanout",
+                )
+                plans.append(
+                    replace(
+                        plan,
+                        hints={
+                            **dict(plan.hints),
+                            "collection_slug": collection.slug,
+                            "collection_reason": "collection_catalog_match",
+                            "collection_presentation_mode": collection.presentation_mode,
+                            "selected_operation": plan.hints.get("selected_operation") or collection.default_operation,
+                        },
+                    )
+                )
+            if plans:
+                return plans
 
         preferred_slug = _preferred_template_slug(cognitive)
         if preferred_slug:

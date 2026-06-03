@@ -17,6 +17,7 @@ from orion_mcp_v3.broker import (
     dedupe_plans,
 )
 from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
+from orion_mcp_v3.broker.query_collections import QueryCollection, QueryCollectionCatalog, QueryCollectionItem
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 from orion_mcp_v3.contracts.query_plan import SemanticQueryPlan
 
@@ -135,6 +136,36 @@ def test_llm_query_selector_template_skips_generic_fanout(allowlist) -> None:
     assert plans[0].intent_slug == "template.performance_concessionaria"
     assert plans[0].hints["semantic_reason"] == "llm_query_selector"
     assert plans[0].hints["selected_dimension"] == "concessionaria"
+
+
+def test_custom_query_collection_expands_two_templates_before_preferred_slug(allowlist) -> None:
+    catalog = QueryCollectionCatalog(
+        (
+            QueryCollection(
+                slug="colecao_generica",
+                descriptions=("colecao analitica",),
+                items=(
+                    QueryCollectionItem("itens_vendidos"),
+                    QueryCollectionItem("performance_concessionaria"),
+                ),
+            ),
+        )
+    )
+    cp = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        confidence=0.8,
+        hints={"template_slug": "itens_vendidos"},
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES, collections=catalog).expand(
+        cp,
+        allowlist,
+        query_text="rode a colecao analitica completa",
+    )
+
+    assert [p.hints["template_slug"] for p in plans] == ["itens_vendidos", "performance_concessionaria"]
+    assert {p.hints["collection_slug"] for p in plans} == {"colecao_generica"}
 
 
 def test_llm_query_selector_template_propagates_result_scope_and_sort(allowlist) -> None:

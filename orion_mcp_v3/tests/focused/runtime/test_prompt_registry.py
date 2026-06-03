@@ -23,7 +23,8 @@ def test_prompt_registry_reads_system_and_fragments() -> None:
     registry = get_prompt_registry()
 
     assert "analytical intent interpreter" in registry.get_text("analytical_intent.system")
-    assert "analista de dados preciso" in registry.get_text("narrator.base")
+    assert "narrador final do Orion" in registry.get_text("narrator.base")
+    assert "NÃO" in registry.get_text("narrator.base")
     assert (
         "Resposta direta"
         in registry.get_fragment("narrator.base", "direct_answer_literal")

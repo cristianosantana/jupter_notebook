@@ -31,6 +31,7 @@ _SYSTEM_PREAMBLE = _PROMPTS.get_text("narrator.base")
 _COVERAGE_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "coverage_template")
 _EVIDENCE_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "evidence_template")
 _DIRECT_ANSWER_LITERAL_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "direct_answer_literal")
+_REASONING_TEMPLATE = _PROMPTS.get_fragment("narrator.base", "reasoning_template")
 
 
 def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
@@ -54,7 +55,27 @@ def _extract_coverage_note(result: CognitiveOrchestrationResult) -> str:
     return "\n".join(lines) if lines else ""
 
 
+def _extract_reasoning_note(result: CognitiveOrchestrationResult) -> str:
+    for b in result.packed_blocks:
+        if b.metadata.get("fusion_kind") != "reasoning_result":
+            continue
+        answer_mode = b.metadata.get("answer_mode")
+        prefix = f"answer_mode: {answer_mode}\n" if answer_mode else ""
+        return _REASONING_TEMPLATE.format(reasoning_json=f"{prefix}{b.text}")
+    return ""
+
+
+def _reasoning_answer_mode(result: CognitiveOrchestrationResult) -> str | None:
+    for b in result.packed_blocks:
+        if b.metadata.get("fusion_kind") == "reasoning_result":
+            mode = b.metadata.get("answer_mode")
+            return str(mode) if mode else None
+    return None
+
+
 def _direct_answer_requires_literal_preservation(result: CognitiveOrchestrationResult) -> bool:
+    if _reasoning_answer_mode(result) == "literal":
+        return True
     for b in result.packed_blocks:
         direct = b.metadata.get("direct_answer")
         if not isinstance(direct, Mapping):
@@ -79,9 +100,12 @@ def _build_narrator_messages(
     """Monta as mensagens do chat para o LLM."""
     preamble = system_preamble or _SYSTEM_PREAMBLE
     coverage = _extract_coverage_note(result)
+    reasoning = _extract_reasoning_note(result)
     system_text = preamble.strip()
     if _direct_answer_requires_literal_preservation(result):
         system_text += _DIRECT_ANSWER_LITERAL_TEMPLATE
+    if reasoning:
+        system_text += "\n" + reasoning.strip()
     if coverage:
         system_text += "\n" + coverage.strip()
     if extra_instructions:
@@ -152,10 +176,14 @@ class CognitiveNarrator:
         safeguards = [
             "anti_hallucination_preamble",
             "coverage_note_injected" if _extract_coverage_note(result) else "no_coverage_data",
+            "reasoning_result_present" if _reasoning_answer_mode(result) else "no_reasoning_result",
             "evidence_cited" if any(
                 b.metadata.get("fusion_kind") == "evidence" for b in result.packed_blocks
             ) else "no_evidence",
         ]
+        mode = _reasoning_answer_mode(result)
+        if mode:
+            safeguards.append(f"answer_mode_{mode}")
         if _direct_answer_requires_literal_preservation(result):
             safeguards.append("direct_answer_literal_preservation")
 

@@ -249,12 +249,46 @@ def snapshot_analytics_result(res: Any) -> dict[str, Any]:
     }
 
 
+def snapshot_analytics_outcome(outcome: Any) -> dict[str, Any]:
+    if outcome is None:
+        return {"status": "unavailable"}
+    if hasattr(outcome, "as_dict"):
+        raw = outcome.as_dict()
+        return _json_safe(raw)
+    return {"tipo": type(outcome).__name__}
+
+
+def snapshot_evidence_contract(contract: Any) -> dict[str, Any]:
+    if contract is None:
+        return {"presente": False}
+    if hasattr(contract, "as_dict"):
+        raw = contract.as_dict()
+        raw["presente"] = True
+        return _json_safe(raw)
+    if isinstance(contract, Mapping):
+        raw = dict(contract)
+        raw["presente"] = True
+        return _json_safe(raw)
+    return {"presente": True, "tipo": type(contract).__name__}
+
+
+def snapshot_reasoning_result(result: Any) -> dict[str, Any]:
+    if result is None:
+        return {"presente": False}
+    if hasattr(result, "as_dict"):
+        raw = result.as_dict()
+        raw["presente"] = True
+        return _json_safe(raw)
+    return {"presente": True, "tipo": type(result).__name__}
+
+
 def snapshot_evidence_block(eb: Any | None) -> dict[str, Any]:
     if eb is None:
         return {"presente": False}
     summary = getattr(eb, "summary", "") or ""
     metrics = getattr(eb, "metrics", {}) or {}
     answer_plan = metrics.get("answer_plan") if isinstance(metrics, Mapping) else None
+    evidence_contract = metrics.get("evidence_contract") if isinstance(metrics, Mapping) else None
     return {
         "presente": True,
         "confidence": getattr(eb, "confidence", None),
@@ -262,6 +296,9 @@ def snapshot_evidence_block(eb: Any | None) -> dict[str, Any]:
         "summary_preview": _truncate(summary, 500),
         "metrics_value_key": metrics.get("value_key") if isinstance(metrics, Mapping) else None,
         "answer_plan": answer_plan if isinstance(answer_plan, Mapping) else None,
+        "evidence_contract": snapshot_evidence_contract(evidence_contract)
+        if evidence_contract is not None
+        else None,
         "input_rows": metrics.get("input_rows") if isinstance(metrics, Mapping) else None,
     }
 

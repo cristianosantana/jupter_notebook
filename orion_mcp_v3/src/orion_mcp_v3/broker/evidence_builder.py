@@ -18,6 +18,11 @@ from orion_mcp_v3.contracts.cognitive_artifact import (
 )
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.evidence_contract import (
+    EvidenceContract,
+    EvidencePriority,
+    OperationalConfidence,
+)
 from orion_mcp_v3.runtime.provenance import CoverageInfo
 
 
@@ -266,10 +271,26 @@ class EvidenceBuilder:
             },
             "coverage_scoring": coverage_scoring,
         }
+        evidence_contract = (
+            EvidenceContract.empty_result(row_count=0)
+            if row_total == 0
+            else EvidenceContract.present(
+                row_count=row_total,
+                source_priority=EvidencePriority.FRESH_SQL_EVIDENCE,
+                operational_confidence=OperationalConfidence(
+                    data_coverage=coverage_scoring,
+                    aggregation_reliability=0.9 if n > 0 else 0.5,
+                    pipeline_integrity=1.0,
+                    narrative_confidence=confidence,
+                ),
+                safe_for_record_level_claims=True,
+            )
+        )
+        metrics["evidence_contract"] = evidence_contract.as_dict()
 
         refs = tuple(str(a.get("ref", "")) for a in anomalies.get("examples", []) if a.get("ref") is not None)
 
-        supporting = {}
+        supporting = {"evidence_contract": evidence_contract.as_dict()}
         if periods_snapshot:
             supporting["periods_tail"] = periods_snapshot[-min(6, len(periods_snapshot)) :]
 

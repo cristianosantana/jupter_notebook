@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from orion_mcp_v3.broker.evidence_builder import EvidenceBuilder
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
+from orion_mcp_v3.contracts.evidence_contract import EvidenceContract
+from orion_mcp_v3.contracts.reasoning_result import AnalyticalReasoningResult, AnswerMode
 from orion_mcp_v3.runtime import AttentionPolicy, CognitiveOrchestrator
 from orion_mcp_v3.runtime.cognitive_orchestrator import build_fusion_layers
 
@@ -55,3 +57,33 @@ def test_fusion_layers_place_evidence_before_memory_context() -> None:
     )
 
     assert tuple(name for name, _ in layers) == ("user", "evidence", "essence", "memory")
+
+
+def test_fusion_layers_place_reasoning_after_evidence_before_memory() -> None:
+    evidence = EvidenceBuilder().build(
+        [{"total_faturamento": 100.0}],
+        value_key="total_faturamento",
+    )
+    reasoning = AnalyticalReasoningResult(
+        facts=("Evidência analítica disponível.",),
+        evidence_contract=EvidenceContract.present(row_count=1),
+        answer_mode=AnswerMode.EXECUTIVE,
+    )
+    memory = ContextBlock(
+        "memória episódica",
+        ContextRole.CONTEXT,
+        ContextSource.MEMORY,
+        block_id="memory",
+    )
+
+    layers = build_fusion_layers(
+        "resumo executivo",
+        evidence=evidence,
+        reasoning_result=reasoning,
+        memory_blocks=[memory],
+    )
+
+    assert tuple(name for name, _ in layers) == ("user", "evidence", "reasoning", "memory")
+    reasoning_block = layers[2][1][0]
+    assert reasoning_block.metadata["fusion_kind"] == "reasoning_result"
+    assert reasoning_block.metadata["answer_mode"] == "executive"

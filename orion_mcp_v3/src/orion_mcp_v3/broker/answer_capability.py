@@ -79,3 +79,21 @@ class ProjectedAnswer:
             "top": dict(self.top) if self.top is not None else None,
             "bottom": dict(self.bottom) if self.bottom is not None else None,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectedAnswerSet:
+    """Resposta objetiva composta por varias visoes/templates."""
+
+    summary: str
+    answers: tuple[ProjectedAnswer, ...]
+    collection_slug: str | None = None
+    presentation_mode: str = "sections"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "collection_slug": self.collection_slug,
+            "presentation_mode": self.presentation_mode,
+            "summary": self.summary,
+            "answers": [answer.as_dict() for answer in self.answers],
+        }
