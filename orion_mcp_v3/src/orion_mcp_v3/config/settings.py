@@ -57,6 +57,17 @@ class OrionSettings(BaseSettings):
     llm_base_url: str = Field("", description="Base URL alternativa (ex.: Azure, proxy).")
     llm_max_tokens: int = Field(2048, ge=64, le=128000)
 
+    # ── E-mail ───────────────────────────────────────────────────────
+    email_enabled: bool = Field(False, description="Habilitar envio SMTP de respostas do chat.")
+    email_smtp_host: str = Field("", description="Host SMTP para envio de e-mail.")
+    email_smtp_port: int = Field(587, ge=1, le=65535)
+    email_smtp_username: str = Field("", description="Usuário SMTP; vazio = sem autenticação.")
+    email_smtp_password: str = Field("", description="Senha SMTP; nunca deve ser logada.")
+    email_from_address: str = Field("", description="Endereço remetente usado pelo Orion.")
+    email_from_name: str = Field("Orion", description="Nome exibido do remetente.")
+    email_start_tls: bool = Field(True, description="Usar STARTTLS ao conectar no SMTP.")
+    email_timeout: float = Field(10.0, ge=1.0, description="Timeout SMTP em segundos.")
+
     # ── Runtime cognitivo ────────────────────────────────────────────
     max_tokens: int = Field(4096, ge=64, le=128000, description="Orçamento default do prompt.")
     default_limit: int = Field(500, ge=1, description="LIMIT default em queries SQL.")
@@ -143,6 +154,15 @@ class OrionSettings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.llm_api_key.strip())
+
+    @property
+    def email_configured(self) -> bool:
+        """Envio de e-mail disponível sem expor credenciais."""
+        return (
+            self.email_enabled
+            and bool(self.email_smtp_host.strip())
+            and bool(self.email_from_address.strip())
+        )
 
     @property
     def effective_embedding_mode(self) -> Literal["off", "index_only", "retrieve"]:

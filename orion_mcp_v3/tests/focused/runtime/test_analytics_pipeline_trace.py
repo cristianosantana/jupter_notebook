@@ -20,6 +20,15 @@ from orion_mcp_v3.runtime.analytics_pipeline_trace import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_pipeline_logger_state() -> None:
+    from orion_mcp_v3.runtime.analytics_pipeline_trace import shutdown_pipeline_file_logging
+
+    shutdown_pipeline_file_logging()
+    yield
+    shutdown_pipeline_file_logging()
+
+
 def test_log_pipeline_event_emits_json(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO, logger="orion.analytics.pipeline")
     log_pipeline_event(
@@ -69,6 +78,44 @@ def test_configure_pipeline_file_logging_writes_jsonl(tmp_path) -> None:
     payload = json.loads(line)
     assert payload["etapa"] == "x"
     assert payload["dados"]["k"] == 1
+
+
+def test_pipeline_file_logging_does_not_propagate_to_root_logger(tmp_path) -> None:
+    from orion_mcp_v3.config.settings import get_settings_uncached
+    from orion_mcp_v3.runtime.analytics_pipeline_trace import (
+        configure_pipeline_file_logging,
+        log_pipeline_event,
+        shutdown_pipeline_file_logging,
+    )
+
+    class _ListHandler(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__(level=logging.INFO)
+            self.messages: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.messages.append(record.getMessage())
+
+    root = logging.getLogger()
+    handler = _ListHandler()
+    root.addHandler(handler)
+    try:
+        s = get_settings_uncached(
+            analytics_pipeline_trace=True,
+            analytics_pipeline_log_dir=str(tmp_path),
+            _env_file=None,
+        )
+        path = configure_pipeline_file_logging(s)
+        assert path is not None
+
+        log_pipeline_event(etapa="sem_terminal", fase="pre", dados={"k": 2})
+        shutdown_pipeline_file_logging()
+
+        assert path.read_text(encoding="utf-8").strip()
+        assert not any("sem_terminal" in message for message in handler.messages)
+    finally:
+        root.removeHandler(handler)
+        shutdown_pipeline_file_logging()
 
 
 def test_snapshot_cognitive_plan_minimal() -> None:

@@ -12,6 +12,8 @@ export type OrionChatRequest = {
   stream: boolean
   max_tokens: number
   policy: string
+  email_to?: string | null
+  email_subject?: string | null
 }
 
 export type OrionChatResponse = {
@@ -29,6 +31,11 @@ export type OrionChatResponse = {
     safeguards: string[]
     cognitive_intent: string | null
     coverage_note: string
+    email_delivery?: {
+      status: 'not_requested' | 'sent' | 'skipped' | 'failed'
+      to?: string | null
+      message?: string | null
+    }
   }
 }
 

@@ -73,6 +73,65 @@ def test_reasoner_uses_literal_mode_for_direct_answer_set() -> None:
     assert result.evidence_contract.source_priority.value == "direct_answer"
 
 
+def test_reasoner_extracts_managerial_closing_executive_facts_from_direct_answer_set() -> None:
+    contract = EvidenceContract.present(row_count=5)
+    direct_answer_set = {
+        "collection_slug": "fechamento_gerencial_por_mes",
+        "headline": "Faturamento líquido por forma de pagamento: R$ 1.700,00",
+        "summary": "Fechamento executivo",
+        "managerial_totals": {
+            "financial_net": {
+                "label": "Faturamento líquido por forma de pagamento",
+                "value": "R$ 1.700,00",
+                "source_template": "fechamento_faturamento_tipo_pagamento",
+            }
+        },
+        "executive_sections": [
+            {
+                "template_slug": "fechamento_faturamento_tipo_pagamento",
+                "label": "Faturamento por tipo de pagamento",
+                "top": "Cartão de Crédito",
+                "top_value": "R$ 1.200,00",
+                "share_percent": "70,59%",
+                "warnings": [],
+            },
+            {
+                "template_slug": "fechamento_comissao_concessionaria_servicos",
+                "label": "Comissões por concessionária",
+                "top": "GWM BAMAQ",
+                "top_value": "R$ 90,00",
+                "share_percent": "60,00%",
+                "warnings": ["1 registro(s) com valor zero"],
+            },
+        ],
+        "data_quality": {"templates_projected": 2, "rows_projected": 5},
+        "answers": [],
+    }
+    evidence = EvidenceBlock(
+        summary="Fechamento executivo",
+        insights={"direct_answer_set": direct_answer_set},
+        metrics={"evidence_contract": contract.as_dict()},
+        confidence=0.65,
+        coverage=CoverageInfo(labels={"rows_in": contract.row_count}),
+        supporting_data={
+            "evidence_contract": contract.as_dict(),
+            "direct_answer_set": direct_answer_set,
+        },
+    )
+
+    result = AnalyticalReasoner().reason(
+        "faça o fechamento gerencial de maio",
+        cognitive_plan=_plan(),
+        analytics_outcome=AnalyticsOutcome.executed(evidence=evidence, row_count=5, evidence_contract=contract),
+    )
+
+    assert result.answer_mode == AnswerMode.EXECUTIVE
+    assert "Faturamento líquido por forma de pagamento: R$ 1.700,00" in result.facts
+    assert any("Cartão de Crédito" in insight and "70,59%" in insight for insight in result.insights)
+    assert any("valor zero" in risk for risk in result.risks)
+    assert any("confiança" in limitation for limitation in result.limitations)
+
+
 def test_reasoner_distinguishes_pipeline_failure_from_no_data() -> None:
     failure = PipelineFailure(
         stage="intent_interpreter",

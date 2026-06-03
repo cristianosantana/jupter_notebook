@@ -52,6 +52,7 @@ def configure_pipeline_file_logging(s: "OrionSettings") -> Path | None:
     path = base / f"analytics_pipeline_{stamp}.jsonl"
 
     _LOG.setLevel(logging.INFO)
+    _LOG.propagate = False
     _PIPELINE_JSONL_HANDLER = None
     _PIPELINE_JSONL_PATH = None
     _PIPELINE_JSONL_PENDING_PATH = path.resolve()
@@ -77,6 +78,7 @@ def shutdown_pipeline_file_logging() -> None:
     global _PIPELINE_JSONL_HANDLER, _PIPELINE_JSONL_PATH, _PIPELINE_JSONL_PENDING_PATH
 
     _PIPELINE_JSONL_PENDING_PATH = None
+    _LOG.propagate = True
     if _PIPELINE_JSONL_HANDLER is None:
         _PIPELINE_JSONL_PATH = None
         return

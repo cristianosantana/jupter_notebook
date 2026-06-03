@@ -1,5 +1,5 @@
 SET @ano = 2026;
-SET @mes = 5; -- 0 = ano inteiro
+SET @mes = 4; -- 0 = ano inteiro
 SET @business_unit_id = 1; -- 0 = todas
 SET @tipo_grupo_servico = 0; -- 0 completo, 1 sem couro, 2 couro
 

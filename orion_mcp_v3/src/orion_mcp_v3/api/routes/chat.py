@@ -24,11 +24,13 @@ from orion_mcp_v3.api.models import (
     ChatRequest,
     ChatResponse,
     ChatResponseMeta,
+    EmailDeliveryInfo,
     ErrorResponse,
     SessionListItem,
     SessionListResponse,
     UsageInfo,
 )
+from orion_mcp_v3.api.email_sender import EmailSendRequest, EmailSendResult
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
@@ -261,6 +263,7 @@ def create_chat_router(
     analytics_executor: AnalyticsExecutor | None = None,
     analytics_allowlist: SqlAllowlist | None = None,
     analytics_state: dict | None = None,
+    email_sender: Any | None = None,
 ) -> APIRouter:
     """Factory que retorna o router de chat com dependências injectadas."""
     router = APIRouter(prefix="/api/v1", tags=["chat"])
@@ -282,6 +285,76 @@ def create_chat_router(
     # Não usar ``analytics_state or {}``: um dict vazio é falsy e seria substituído
     # por um novo {}, quebrando o partilhamento com o lifespan (executor nunca visto).
     _state: dict = analytics_state if analytics_state is not None else {}
+
+    async def _send_response_email(
+        req: ChatRequest,
+        body: str,
+        *,
+        conversation_id: str,
+        trace_enabled: bool = False,
+    ) -> EmailSendResult:
+        def _trace(phase: str, data: Mapping[str, Any]) -> None:
+            if trace_enabled:
+                log_pipeline_event(
+                    etapa="email_delivery",
+                    fase=phase,
+                    conversation_id=conversation_id,
+                    dados=dict(data),
+                )
+
+        _trace(
+            "pre",
+            {
+                "requested": bool(req.email_to),
+                "to": req.email_to,
+                "subject_present": bool(req.email_subject),
+                "sender_present": email_sender is not None,
+                "body_chars": len(body or ""),
+            },
+        )
+        if not req.email_to:
+            _LOG.info("email_delivery not_requested conversation_id=%s", conversation_id)
+            result = EmailSendResult(status="not_requested")
+            _trace("post", result.as_dict())
+            return result
+        if email_sender is None:
+            _LOG.warning(
+                "email_delivery skipped conversation_id=%s to=%s reason=email_sender_missing",
+                conversation_id,
+                req.email_to,
+            )
+            result = EmailSendResult(status="skipped", to=req.email_to, message="envio de e-mail não configurado")
+            _trace("post", result.as_dict())
+            return result
+        try:
+            _LOG.info(
+                "email_delivery requested conversation_id=%s to=%s subject_present=%s",
+                conversation_id,
+                req.email_to,
+                bool(req.email_subject),
+            )
+            result = await email_sender.send_response(
+                EmailSendRequest(
+                    to=req.email_to,
+                    subject=req.email_subject or "Resposta Orion",
+                    body=body,
+                    conversation_id=conversation_id,
+                )
+            )
+            _LOG.info(
+                "email_delivery result conversation_id=%s to=%s status=%s message=%s",
+                conversation_id,
+                result.to,
+                result.status,
+                result.message,
+            )
+            _trace("post", result.as_dict())
+            return result
+        except Exception:
+            _LOG.exception("email sender failed")
+            result = EmailSendResult(status="failed", to=req.email_to, message="falha ao enviar e-mail")
+            _trace("post", result.as_dict())
+            return result
 
     @router.get("/sessions", response_model=SessionListResponse)
     async def sessions_list() -> SessionListResponse:
@@ -735,7 +808,7 @@ def create_chat_router(
         sm.update_phase(session, CognitivePhase.NARRATING)
 
         if req.stream:
-            return _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, trace_pipe=trace_pipe)
+            return _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, req, trace_pipe=trace_pipe)
 
         if trace_pipe:
             log_pipeline_event(
@@ -749,6 +822,12 @@ def create_chat_router(
             )
 
         narration = await narr.narrate(orch_result)
+        email_delivery = await _send_response_email(
+            req,
+            narration.narration,
+            conversation_id=session.conversation_id,
+            trace_enabled=trace_pipe,
+        )
 
         if trace_pipe:
             log_pipeline_event(
@@ -780,14 +859,16 @@ def create_chat_router(
             safeguards=list(narration.safeguards_applied),
             cognitive_intent=cognitive_plan.intent_type.value,
             coverage_note=narration.coverage_note,
+            email_delivery=EmailDeliveryInfo(**email_delivery.as_dict()),
         )
         return ChatResponse(reply=narration.narration, meta=meta)
 
-    def _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, *, trace_pipe: bool = False):
+    def _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, req: ChatRequest, *, trace_pipe: bool = False):
         cid = session.conversation_id
 
         async def event_generator():
             full_text: list[str] = []
+            email_delivery = EmailSendResult(status="not_requested")
             try:
                 if trace_pipe:
                     log_pipeline_event(
@@ -803,6 +884,12 @@ def create_chat_router(
             finally:
                 text = "".join(full_text)
                 await sm.record_assistant_message(session, text)
+                email_delivery = await _send_response_email(
+                    req,
+                    text,
+                    conversation_id=session.conversation_id,
+                    trace_enabled=trace_pipe,
+                )
                 sm.update_phase(session, CognitivePhase.IDLE)
                 if trace_pipe:
                     log_pipeline_event(
@@ -817,6 +904,7 @@ def create_chat_router(
                     "conversation_id": session.conversation_id,
                     "latency_ms": round(elapsed, 2),
                     "cognitive_intent": cognitive_plan.intent_type.value,
+                    "email_delivery": email_delivery.as_dict(),
                 })
                 yield f"data: {done}\n\n"
 

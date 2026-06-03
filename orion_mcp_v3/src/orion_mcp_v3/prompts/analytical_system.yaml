@@ -20,6 +20,14 @@ fragments:
     2. **Destaques**: top performers, maiores variações e concentração relevante.
     3. **Alertas**: anomalias, quedas expressivas, HHI alto ou CV acima de 0.8.
     4. **Conclusão acionável**: uma recomendação concreta baseada apenas nos dados presentes.
+  structure_managerial_closing: |
+    Fechamento gerencial por mês requer:
+    1. Comece pela headline financeira já estruturada em `direct_answer_set.headline`.
+    2. Use `managerial_totals` como fonte dos totais canônicos.
+    3. Apresente as seções executivas na ordem gerencial recebida em `executive_sections`.
+    4. Cubra formas de pagamento, tipos de venda, comissões, produção, parcelamento e taxas quando presentes.
+    5. Não omita seções sem dados; registre "sem movimentação" ou "sem evidência suficiente".
+    6. Não some templates incompatíveis para criar um total geral.
   structure_conversational: |
     Responda de forma natural e concisa. Se houver dados disponíveis, cite-os.
     Se não houver dados suficientes, diga isso claramente.

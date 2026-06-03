@@ -562,6 +562,13 @@ def build_projected_answer_set(
         for answer in answers
     ]
     summary = "Resposta direta composta:\n\n" + "\n\n".join(sections)
+    if _is_fechamento_gerencial_por_mes(collection_slug, answers):
+        return _build_fechamento_gerencial_por_mes_projection(
+            answers,
+            collection_slug=collection_slug,
+            presentation_mode=presentation_mode,
+            templates=templates,
+        )
     return ProjectedAnswerSet(
         collection_slug=collection_slug,
         presentation_mode=presentation_mode,
@@ -593,6 +600,209 @@ def _project_result(
     if plan is None:
         plan = infer_answer_plan(query_text, template_slug=slug, capability=capability)
     return project_answer(result.rows, plan=plan, capability=capability)
+
+
+_FECHAMENTO_SECTION_ORDER = {
+    "fechamento_faturamento_tipo_pagamento": 10,
+    "fechamento_faturamento_tipo_venda": 20,
+    "fechamento_faturamento_tipo_venda_produtos": 30,
+    "fechamento_comissao_concessionaria_servicos": 40,
+    "fechamento_comissao_concessionaria_tipos": 50,
+    "fechamento_producao_servico": 60,
+    "fechamento_producao_produto": 70,
+    "fechamento_parcelamento_cartao": 80,
+    "fechamento_taxas_cartao_credito": 90,
+}
+
+_FECHAMENTO_LABELS = {
+    "fechamento_faturamento_tipo_pagamento": "Faturamento por tipo de pagamento",
+    "fechamento_faturamento_tipo_venda": "Faturamento por tipo de venda",
+    "fechamento_faturamento_tipo_venda_produtos": "Faturamento por tipo de venda de produtos",
+    "fechamento_comissao_concessionaria_servicos": "Comissões por concessionária",
+    "fechamento_comissao_concessionaria_tipos": "Comissões por concessionária e tipo",
+    "fechamento_producao_servico": "Produção por serviço",
+    "fechamento_producao_produto": "Produção por produto",
+    "fechamento_parcelamento_cartao": "Parcelamento de cartão",
+    "fechamento_taxas_cartao_credito": "Taxas de cartão de crédito",
+}
+
+
+def _is_fechamento_gerencial_por_mes(
+    collection_slug: str | None,
+    answers: Sequence[ProjectedAnswer],
+) -> bool:
+    if collection_slug == "fechamento_gerencial_por_mes":
+        return True
+    if collection_slug:
+        return False
+    return bool(answers) and all(answer.plan.template_slug.startswith("fechamento_") for answer in answers)
+
+
+def _build_fechamento_gerencial_por_mes_projection(
+    answers: Sequence[ProjectedAnswer],
+    *,
+    collection_slug: str | None,
+    presentation_mode: str,
+    templates: "QueryTemplateRegistry",
+) -> ProjectedAnswerSet:
+    ordered_answers = tuple(
+        sorted(
+            answers,
+            key=lambda answer: (
+                _FECHAMENTO_SECTION_ORDER.get(answer.plan.template_slug, 999),
+                answer.plan.template_slug,
+            ),
+        )
+    )
+    executive_sections = tuple(
+        section
+        for answer in ordered_answers
+        if (section := _fechamento_section(answer, templates=templates)) is not None
+    )
+    managerial_totals = _fechamento_managerial_totals(executive_sections)
+    headline = _fechamento_headline(managerial_totals, len(ordered_answers))
+    data_quality = {
+        "templates_projected": len(ordered_answers),
+        "rows_projected": sum(len(answer.rows) for answer in ordered_answers),
+        "collection_slug": collection_slug or "fechamento_gerencial_por_mes",
+        "source": "ProjectedAnswerSet",
+    }
+    lines = [headline, "", "Seções executivas:"]
+    for section in executive_sections:
+        total = section.get("total") or "n/d"
+        top = section.get("top") or "sem movimentação"
+        top_value = section.get("top_value") or "n/d"
+        lines.append(f"- {section['label']}: total {total}; líder {top} ({top_value}).")
+    summary = "\n".join(lines)
+    section_detail = _fechamento_section_detail(ordered_answers, templates=templates)
+    return ProjectedAnswerSet(
+        collection_slug=collection_slug,
+        presentation_mode=presentation_mode,
+        summary=summary,
+        answers=ordered_answers,
+        headline=headline,
+        executive_summary=summary,
+        section_detail=section_detail,
+        executive_sections=executive_sections,
+        managerial_totals=managerial_totals,
+        data_quality=data_quality,
+    )
+
+
+def _fechamento_section(
+    answer: ProjectedAnswer,
+    *,
+    templates: "QueryTemplateRegistry",
+) -> dict[str, Any] | None:
+    capability = _capability_for_projected(answer, templates)
+    if capability is None:
+        return None
+    measure = capability.measures.get(answer.plan.measure)
+    dimension = capability.dimensions.get(answer.plan.dimension) if answer.plan.dimension else None
+    if measure is None:
+        return None
+    values = [_to_float(row.get(measure.column)) for row in answer.rows]
+    numeric_values = [value for value in values if value is not None]
+    total = sum(numeric_values) if numeric_values else None
+    top = answer.top or (answer.rows[0] if answer.rows else None)
+    top_value_num = _to_float(top.get(measure.column)) if isinstance(top, Mapping) else None
+    share = (top_value_num / total * 100.0) if total and top_value_num is not None else None
+    zero_count = sum(1 for value in numeric_values if value == 0.0)
+    warnings: list[str] = []
+    if not answer.rows:
+        warnings.append("sem movimentação")
+    if zero_count:
+        warnings.append(f"{zero_count} registro(s) com valor zero")
+    return {
+        "template_slug": answer.plan.template_slug,
+        "label": _FECHAMENTO_LABELS.get(answer.plan.template_slug, answer.plan.template_slug),
+        "measure": answer.plan.measure,
+        "dimension": answer.plan.dimension,
+        "total": _format_value(total, measure.kind) if total is not None else None,
+        "total_raw": total,
+        "top": _row_label(top, dimension) if isinstance(top, Mapping) else None,
+        "top_value": _format_value(top_value_num, measure.kind) if top_value_num is not None else None,
+        "top_value_raw": top_value_num,
+        "share_percent": _format_value(share, "percent") if share is not None else None,
+        "row_count": len(answer.rows),
+        "warnings": tuple(warnings),
+    }
+
+
+def _fechamento_section_detail(
+    answers: Sequence[ProjectedAnswer],
+    *,
+    templates: "QueryTemplateRegistry",
+    limit_per_section: int = 10,
+) -> str:
+    lines = ["Detalhe por seção do fechamento gerencial:"]
+    for answer in answers:
+        capability = _capability_for_projected(answer, templates)
+        if capability is None:
+            continue
+        measure = capability.measures.get(answer.plan.measure)
+        dimension = capability.dimensions.get(answer.plan.dimension) if answer.plan.dimension else None
+        if measure is None:
+            continue
+        label = _FECHAMENTO_LABELS.get(answer.plan.template_slug, answer.plan.template_slug)
+        lines.extend(["", f"## {label}", f"Template: {answer.plan.template_slug}", f"Linhas disponíveis: {len(answer.rows)}"])
+        values = [_to_float(row.get(measure.column)) for row in answer.rows]
+        total = sum(value for value in values if value is not None)
+        for index, row in enumerate(answer.rows[:limit_per_section], start=1):
+            value_num = _to_float(row.get(measure.column))
+            value = _format_value(value_num, measure.kind) if value_num is not None else "n/d"
+            share = _format_value((value_num / total * 100.0), "percent") if total and value_num is not None else None
+            label_value = _row_label(row, dimension)
+            suffix = f" ({share})" if share else ""
+            lines.append(f"{index}. {label_value}: {value}{suffix}")
+        omitted = max(0, len(answer.rows) - limit_per_section)
+        if omitted:
+            lines.append(f"... mais {omitted} linha(s) disponíveis em answers[].rows.")
+        if not answer.rows:
+            lines.append("Sem movimentação na evidência disponível.")
+    return "\n".join(lines)
+
+
+def _fechamento_managerial_totals(
+    sections: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    by_slug = {str(section.get("template_slug")): section for section in sections}
+    totals: dict[str, Any] = {}
+    payment = by_slug.get("fechamento_faturamento_tipo_pagamento")
+    if payment and payment.get("total") is not None:
+        totals["financial_net"] = {
+            "label": "Faturamento líquido por forma de pagamento",
+            "source_template": "fechamento_faturamento_tipo_pagamento",
+            "value": payment["total"],
+            "value_raw": payment.get("total_raw"),
+        }
+    sale_type = by_slug.get("fechamento_faturamento_tipo_venda")
+    if sale_type and sale_type.get("total") is not None:
+        totals["sales_type_total"] = {
+            "label": "Faturamento por tipo de venda",
+            "source_template": "fechamento_faturamento_tipo_venda",
+            "value": sale_type["total"],
+            "value_raw": sale_type.get("total_raw"),
+        }
+    fees = by_slug.get("fechamento_taxas_cartao_credito")
+    if fees and fees.get("total") is not None:
+        totals["card_fees"] = {
+            "label": "Taxas de cartão",
+            "source_template": "fechamento_taxas_cartao_credito",
+            "value": fees["total"],
+            "value_raw": fees.get("total_raw"),
+        }
+    return totals
+
+
+def _fechamento_headline(managerial_totals: Mapping[str, Any], template_count: int) -> str:
+    financial = managerial_totals.get("financial_net")
+    if isinstance(financial, Mapping) and financial.get("value"):
+        return f"{financial['label']}: {financial['value']}"
+    sale_type = managerial_totals.get("sales_type_total")
+    if isinstance(sale_type, Mapping) and sale_type.get("value"):
+        return f"{sale_type['label']}: {sale_type['value']}"
+    return f"Fechamento gerencial: dados executados em {template_count} template(s)"
 
 
 def _capability_for_projected(

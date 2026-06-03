@@ -51,3 +51,6 @@ A LLM pode atuar em dois pontos distintos:
 3. A LLM nao escolhe livremente colunas, metricas ou SQL.
 4. `EvidenceBlock` e a fronteira entre dados executados e narracao.
 5. Em conflito entre memoria e evidencia atual, a evidencia vence.
+6. O narrador recebe contratos estruturados do pipeline, nao listas brutas concatenadas.
+7. A LLM narradora apenas materializa decisoes analiticas ja tomadas pelo runtime.
+8. Novas respostas analiticas devem aprofundar contratos existentes (`ProjectedAnswer`, `ProjectedAnswerSet`, `EvidenceBlock`, `AnalyticalReasoningResult`, `ContextBlock`) em vez de inventar estruturas paralelas.

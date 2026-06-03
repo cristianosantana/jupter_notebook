@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from orion_mcp_v3.api.main import create_app
 from orion_mcp_v3.api.models import ChatRequest, ChatResponse, HealthResponse
+from orion_mcp_v3.api.email_sender import EmailSendResult
 from orion_mcp_v3.protocols.llm import (
     ChatMessage,
     EchoLLMProvider,
@@ -87,6 +88,16 @@ def test_session_update_phase() -> None:
 def _make_client(provider=None) -> TestClient:
     app = create_app(llm_provider=provider or NullLLMProvider())
     return TestClient(app)
+
+
+class FakeEmailSender:
+    def __init__(self, result: EmailSendResult | None = None) -> None:
+        self.calls = []
+        self.result = result or EmailSendResult(status="sent", to="destino@local.test", message="enviado")
+
+    async def send_response(self, request):  # type: ignore[no-untyped-def]
+        self.calls.append(request)
+        return self.result
 
 
 class IntentThenNarrationProvider:
@@ -268,11 +279,83 @@ def test_chat_endpoint_sse_streaming() -> None:
     assert done_events[0]["conversation_id"]
 
 
+def test_chat_endpoint_sse_streaming_sends_email_after_stream() -> None:
+    sender = FakeEmailSender()
+    app = create_app(llm_provider=EchoLLMProvider(), email_sender=sender)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "dados de vendas", "stream": True, "email_to": "destino@local.test"},
+    )
+
+    assert r.status_code == 200
+    events = [json.loads(line[6:]) for line in r.text.split("\n") if line.startswith("data: ")]
+    deltas = [e.get("delta", "") for e in events if "delta" in e]
+    done = next(e for e in events if e.get("done"))
+
+    assert len(sender.calls) == 1
+    assert sender.calls[0].to == "destino@local.test"
+    assert sender.calls[0].body == "".join(deltas)
+    assert done["email_delivery"]["status"] == "sent"
+
+
 def test_chat_response_model_structure() -> None:
     req = ChatRequest(message="teste")
     assert req.message == "teste"
     assert req.stream is False
     assert req.policy == "balanced"
+    assert req.email_to is None
+    assert req.email_subject is None
+
+
+def test_chat_without_email_to_does_not_send_email() -> None:
+    sender = FakeEmailSender()
+    app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
+    client = TestClient(app)
+
+    r = client.post("/api/v1/chat", json={"message": "olá"})
+
+    assert r.status_code == 200
+    assert sender.calls == []
+    assert r.json()["meta"]["email_delivery"]["status"] == "not_requested"
+
+
+def test_chat_with_email_to_sends_response_email() -> None:
+    sender = FakeEmailSender()
+    app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "olá",
+            "email_to": "destino@local.test",
+            "email_subject": "Minha resposta",
+        },
+    )
+
+    assert r.status_code == 200
+    assert len(sender.calls) == 1
+    assert sender.calls[0].to == "destino@local.test"
+    assert sender.calls[0].subject == "Minha resposta"
+    assert sender.calls[0].body == "resposta fixa"
+    assert r.json()["meta"]["email_delivery"]["status"] == "sent"
+
+
+def test_chat_email_failure_does_not_fail_chat_response() -> None:
+    sender = FakeEmailSender(EmailSendResult(status="failed", to="destino@local.test", message="falha smtp"))
+    app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "olá", "email_to": "destino@local.test"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["reply"] == "resposta fixa"
+    assert r.json()["meta"]["email_delivery"]["status"] == "failed"
 
 
 # ── 6.1+ Analytics pipeline na rota de chat ──────────────────────────

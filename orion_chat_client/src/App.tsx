@@ -23,13 +23,22 @@ function buildChatRequest(
   stream: boolean,
   maxTokens: number,
   policy: string,
+  emailTo: string,
+  emailSubject: string,
 ) {
-  return {
+  const req = {
     message,
     conversation_id: conversationId,
     stream,
     max_tokens: maxTokens,
     policy,
+  }
+  const to = emailTo.trim()
+  const subject = emailSubject.trim()
+  return {
+    ...req,
+    ...(to ? { email_to: to } : {}),
+    ...(subject ? { email_subject: subject } : {}),
   }
 }
 
@@ -46,6 +55,8 @@ export function App() {
   const [policy, setPolicy] = useState('analytical')
   const [maxTokens, setMaxTokens] = useState(4096)
   const [stream, setStream] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
   const [reply, setReply] = useState('')
   const [metaText, setMetaText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -116,9 +127,22 @@ export function App() {
       setError('max_tokens inválido.')
       return
     }
+    const emailToTrimmed = emailTo.trim()
+    if (emailToTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailToTrimmed)) {
+      setError('email_to inválido.')
+      return
+    }
     setLoading(true)
     try {
-      const payload = buildChatRequest(trimmed, activeConversationId, stream, maxTokens, policy)
+      const payload = buildChatRequest(
+        trimmed,
+        activeConversationId,
+        stream,
+        maxTokens,
+        policy,
+        emailTo,
+        emailSubject,
+      )
       if (stream) {
         let acc = ''
         const m = await postChatStream(payload, (d) => {
@@ -146,7 +170,7 @@ export function App() {
     } finally {
       setLoading(false)
     }
-  }, [activeConversationId, maxTokens, message, options, policy, reloadSessions, stream])
+  }, [activeConversationId, emailSubject, emailTo, maxTokens, message, options, policy, reloadSessions, stream])
 
   const newConversation = () => {
     setActiveConversationId(null)
@@ -301,6 +325,29 @@ export function App() {
             <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} />
             <span>stream (SSE)</span>
           </label>
+
+          <div className="email-grid">
+            <label className="field">
+              <span>email_to (opcional)</span>
+              <input
+                className="input"
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="destino@exemplo.com"
+              />
+            </label>
+            <label className="field">
+              <span>email_subject (opcional)</span>
+              <input
+                className="input"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                maxLength={200}
+                placeholder="Resposta Orion"
+              />
+            </label>
+          </div>
 
           <div className="actions">
             <button type="button" className="btn primary" disabled={loading} onClick={() => void send()}>

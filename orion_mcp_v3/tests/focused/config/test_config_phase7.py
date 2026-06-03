@@ -52,6 +52,42 @@ def test_settings_llm_enabled() -> None:
     assert s2.llm_enabled is False
 
 
+def test_settings_email_defaults(monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("ORION_EMAIL_"):
+            monkeypatch.delenv(key, raising=False)
+    s = get_settings_uncached(_env_file=None)
+    assert s.email_enabled is False
+    assert s.email_smtp_host == ""
+    assert s.email_smtp_port == 587
+    assert s.email_smtp_username == ""
+    assert s.email_smtp_password == ""
+    assert s.email_from_address == ""
+    assert s.email_from_name == "Orion"
+    assert s.email_start_tls is True
+    assert s.email_timeout == 10.0
+    assert s.email_configured is False
+
+
+def test_settings_email_configured_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("ORION_EMAIL_ENABLED", "true")
+    monkeypatch.setenv("ORION_EMAIL_SMTP_HOST", "localhost")
+    monkeypatch.setenv("ORION_EMAIL_SMTP_PORT", "1025")
+    monkeypatch.setenv("ORION_EMAIL_FROM_ADDRESS", "orion@local.test")
+    monkeypatch.setenv("ORION_EMAIL_FROM_NAME", "Orion Test")
+    monkeypatch.setenv("ORION_EMAIL_START_TLS", "false")
+
+    s = get_settings_uncached()
+
+    assert s.email_enabled is True
+    assert s.email_smtp_host == "localhost"
+    assert s.email_smtp_port == 1025
+    assert s.email_from_address == "orion@local.test"
+    assert s.email_from_name == "Orion Test"
+    assert s.email_start_tls is False
+    assert s.email_configured is True
+
+
 def test_settings_cors_origins_list() -> None:
     s = get_settings_uncached(api_cors_origins="http://a.com, http://b.com")
     assert s.cors_origins_list == ["http://a.com", "http://b.com"]
