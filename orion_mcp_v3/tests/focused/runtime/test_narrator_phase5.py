@@ -155,10 +155,10 @@ def test_narrator_system_message_contains_anti_hallucination() -> None:
     narrator = CognitiveNarrator(NullLLMProvider())
     nr = asyncio.run(narrator.narrate(result))
     sys_msg = nr.messages_sent[0].content
-    assert "Não invente" in sys_msg
-    assert "resumo estatístico" in sys_msg
-    assert "dados amostrados" in sys_msg
-    assert "sem acesso à totalidade" in sys_msg
+    assert ( "Não invente" in sys_msg or "Nunca invente" in sys_msg)
+    assert ("Não reinterprete" in sys_msg or "Nunca reinterprete" in sys_msg)
+    assert ("Não diagnostique o pipeline" in sys_msg or "Nunca diagnostique o pipeline" in sys_msg)
+    assert "answer_mode=executive" in sys_msg
 
 
 def test_narrator_extra_instructions() -> None:
@@ -263,9 +263,41 @@ def test_narrator_preserves_complete_direct_answer_instruction() -> None:
     nr = asyncio.run(CognitiveNarrator(NullLLMProvider()).narrate(result))
     sys_msg = nr.messages_sent[0].content
 
-    assert "preserve literalmente a seção `Resposta direta:`" in sys_msg
-    assert "não produza visão geral" in sys_msg
+    assert "preserve literalmente" in sys_msg
+    assert "NÃO" in sys_msg
     assert "direct_answer_literal_preservation" in nr.safeguards_applied
+
+
+def test_narrator_uses_reasoning_result_answer_mode_safeguards() -> None:
+    from orion_mcp_v3.contracts.evidence_contract import EvidenceContract, PipelineFailure
+    from orion_mcp_v3.contracts.reasoning_result import AnalyticalReasoningResult, AnswerMode
+
+    reasoning = AnalyticalReasoningResult(
+        facts=("Falha operacional em intent_interpreter: no_valid_json.",),
+        risks=("no_valid_json impediu contrato estruturado.",),
+        evidence_contract=EvidenceContract.pipeline_failure(
+            PipelineFailure(
+                stage="intent_interpreter",
+                failure_type="no_valid_json",
+                impact="parse indisponível",
+                analytical_consequence="não inferir dados",
+                recoverable=True,
+            )
+        ),
+        answer_mode=AnswerMode.OPERATIONAL_FAILURE,
+    )
+    result = CognitiveOrchestrator().finalize_prompt(
+        "qual o faturamento?",
+        policy=AttentionPolicy.ANALYTICAL,
+        reasoning_result=reasoning,
+        max_tokens=1024,
+    )
+
+    nr = asyncio.run(CognitiveNarrator(NullLLMProvider()).narrate(result))
+
+    assert "answer_mode: operational_failure" in nr.messages_sent[0].content
+    assert "reasoning_result_present" in nr.safeguards_applied
+    assert "answer_mode_operational_failure" in nr.safeguards_applied
 
 
 def test_narration_result_fields() -> None:

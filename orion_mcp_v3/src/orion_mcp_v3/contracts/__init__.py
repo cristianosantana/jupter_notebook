@@ -13,7 +13,16 @@ from orion_mcp_v3.contracts.cognitive_artifact import (
 from orion_mcp_v3.contracts.context_block import ContextBlock, ContextRole, ContextSource
 from orion_mcp_v3.contracts.digest import AnalyticalDigest
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.evidence_contract import (
+    EvidenceContract,
+    EvidencePriority,
+    EvidenceStatus,
+    OperationalConfidence,
+    PipelineFailure,
+)
 from orion_mcp_v3.contracts.evidence_series_spec import EvidenceSeriesSpec
+from orion_mcp_v3.contracts.analytics_outcome import AnalyticsOutcome, AnalyticsOutcomeStatus
+from orion_mcp_v3.contracts.reasoning_result import AnalyticalReasoningResult, AnswerMode
 from orion_mcp_v3.contracts.query_plan import AnalyticsStrategy, RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
 from orion_mcp_v3.contracts.semantic_retrieval_plan import SemanticRetrievalPlan
@@ -32,7 +41,16 @@ __all__ = [
     "AnalyticalIntentType",
     "AnalyticalOperation",
     "EvidenceBlock",
+    "EvidenceContract",
+    "EvidencePriority",
+    "EvidenceStatus",
     "EvidenceSeriesSpec",
+    "OperationalConfidence",
+    "PipelineFailure",
+    "AnalyticsOutcome",
+    "AnalyticsOutcomeStatus",
+    "AnalyticalReasoningResult",
+    "AnswerMode",
     "AttentionProfile",
     "CognitivePlan",
     "CognitiveArtifact",

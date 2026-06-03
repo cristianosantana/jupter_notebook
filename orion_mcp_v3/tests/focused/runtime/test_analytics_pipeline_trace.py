@@ -8,9 +8,15 @@ import logging
 import pytest
 
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
+from orion_mcp_v3.contracts.analytics_outcome import AnalyticsOutcome
+from orion_mcp_v3.contracts.evidence_contract import EvidenceContract
+from orion_mcp_v3.contracts.reasoning_result import AnalyticalReasoningResult, AnswerMode
 from orion_mcp_v3.runtime.analytics_pipeline_trace import (
     log_pipeline_event,
+    snapshot_analytics_outcome,
     snapshot_cognitive_plan,
+    snapshot_evidence_contract,
+    snapshot_reasoning_result,
 )
 
 
@@ -76,3 +82,19 @@ def test_snapshot_cognitive_plan_minimal() -> None:
     assert snap["needs_analytics"] is True
     assert snap["intent_type"] == "analytical"
     assert "revenue" in snap["metrics"]
+
+
+def test_snapshots_include_outcome_contract_and_reasoning() -> None:
+    contract = EvidenceContract.present(row_count=5)
+    outcome = AnalyticsOutcome.executed(evidence=None, row_count=5, evidence_contract=contract)
+    reasoning = AnalyticalReasoningResult(
+        facts=("Evidência disponível.",),
+        evidence_contract=contract,
+        answer_mode=AnswerMode.EXECUTIVE,
+    )
+
+    assert snapshot_analytics_outcome(outcome)["status"] == "executed"
+    assert snapshot_evidence_contract(contract)["status"] == "present"
+    reasoning_snap = snapshot_reasoning_result(reasoning)
+    assert reasoning_snap["answer_mode"] == "executive"
+    assert reasoning_snap["evidence_contract"]["row_count"] == 5

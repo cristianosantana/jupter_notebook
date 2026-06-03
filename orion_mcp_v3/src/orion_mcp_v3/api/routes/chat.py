@@ -35,8 +35,10 @@ from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_
 from orion_mcp_v3.broker.query_template_selector import QuerySelectionValidator, QueryTemplateSelector
 from orion_mcp_v3.broker.sql_compiler import SqlAllowlist
 from orion_mcp_v3.contracts.answer_presentation import AnswerPresentationContract
+from orion_mcp_v3.contracts.analytics_outcome import AnalyticsOutcome
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.evidence_contract import PipelineFailure
 from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
 from orion_mcp_v3.memory.episodic_retriever import EpisodicRetriever
 from orion_mcp_v3.memory.chat_turn_embedding_store import ChatTurnEmbeddingStore
@@ -50,14 +52,18 @@ from orion_mcp_v3.runtime.context_state import CognitivePhase
 from orion_mcp_v3.config.settings import get_settings
 from orion_mcp_v3.runtime.analytics_pipeline_trace import (
     log_pipeline_event,
+    snapshot_analytics_outcome,
     snapshot_analytics_result,
     snapshot_cognitive_plan,
+    snapshot_evidence_contract,
     snapshot_evidence_block,
     snapshot_orchestration,
     snapshot_query_cards,
+    snapshot_reasoning_result,
     snapshot_semantic_plan,
 )
 from orion_mcp_v3.runtime.analytical_context_policy import AnalyticalContextIsolationPolicy
+from orion_mcp_v3.runtime.analytical_reasoner import AnalyticalReasoner
 from orion_mcp_v3.runtime.analytical_signature import signature_from_evidence, signature_from_plan
 from orion_mcp_v3.runtime.analytical_intent_interpreter import (
     AnalyticalIntentInterpreter,
@@ -157,6 +163,9 @@ def _period_context_missing_reply() -> str:
 def _direct_answer_literal_preservation_enabled(evidence: EvidenceBlock | None) -> bool:
     if evidence is None:
         return False
+    direct_set = evidence.supporting_data.get("direct_answer_set") if evidence.supporting_data else None
+    if isinstance(direct_set, Mapping):
+        return True
     direct = evidence.supporting_data.get("direct_answer") if evidence.supporting_data else None
     if not isinstance(direct, Mapping):
         return False
@@ -584,6 +593,7 @@ def create_chat_router(
                 },
             )
 
+        analytics_outcome = AnalyticsOutcome.not_required()
         evidence = None
         exec_ = _fixed_executor or _state.get("executor")
         al = _fixed_allowlist or _state.get("allowlist")
@@ -609,9 +619,10 @@ def create_chat_router(
                     conversation_id=cid,
                     dados={"executado": True},
                 )
-            evidence = await _run_analytics(
+            analytics_outcome = await _run_analytics(
                 exec_, al, cognitive_plan, req.message, trace_enabled=trace_pipe, conversation_id=cid,
             )
+            evidence = analytics_outcome.evidence
             if evidence is not None:
                 session.extra["last_analytical_evidence"] = evidence
         elif trace_pipe:
@@ -628,6 +639,19 @@ def create_chat_router(
                 conversation_id=cid,
                 dados={"executado": False, "motivo": ",".join(parts)},
             )
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="analytics_outcome",
+                fase="post",
+                conversation_id=cid,
+                dados=snapshot_analytics_outcome(analytics_outcome),
+            )
+            log_pipeline_event(
+                etapa="evidence_contract",
+                fase="post",
+                conversation_id=cid,
+                dados=snapshot_evidence_contract(analytics_outcome.evidence_contract),
+            )
 
         if evidence is None and _is_all_records_followup(req.message):
             memory_evidence = _all_records_evidence_from_last(
@@ -636,6 +660,10 @@ def create_chat_router(
             )
             if memory_evidence is not None:
                 evidence = memory_evidence
+                analytics_outcome = AnalyticsOutcome.executed(
+                    evidence=memory_evidence,
+                    row_count=int((memory_evidence.metrics or {}).get("input_rows") or 0),
+                )
 
         current_signature = (
             signature_from_evidence(evidence, fallback=cognitive_plan)
@@ -661,6 +689,20 @@ def create_chat_router(
 
         sm.update_phase(session, CognitivePhase.FUSING)
 
+        reasoning_result = AnalyticalReasoner().reason(
+            req.message,
+            cognitive_plan=cognitive_plan,
+            analytics_outcome=analytics_outcome,
+            last_analytical_evidence=session.extra.get("last_analytical_evidence"),
+        )
+        if trace_pipe:
+            log_pipeline_event(
+                etapa="analytical_reasoner",
+                fase="post",
+                conversation_id=cid,
+                dados=snapshot_reasoning_result(reasoning_result),
+            )
+
         if trace_pipe:
             log_pipeline_event(
                 etapa="cognitive_orchestrate",
@@ -677,6 +719,7 @@ def create_chat_router(
             policy=resolved_policy,
             cognitive_plan=cognitive_plan,
             evidence=evidence,
+            reasoning_result=reasoning_result,
             memory_blocks=memory_blocks,
             max_tokens=req.max_tokens,
         )
@@ -791,7 +834,7 @@ def create_chat_router(
         *,
         trace_enabled: bool = False,
         conversation_id: str | None = None,
-    ) -> Any:
+    ) -> AnalyticsOutcome:
         from orion_mcp_v3.broker import (
             ANALYTICS_TEMPLATES,
             AnalyticsResult,
@@ -821,7 +864,7 @@ def create_chat_router(
                 },
             )
         if not plans:
-            return None
+            return AnalyticsOutcome.no_plan()
 
         if trace_enabled:
             log_pipeline_event(
@@ -869,6 +912,7 @@ def create_chat_router(
                         dados=snapshot_analytics_result(r),
                     )
 
+        failures = [r for r in results if isinstance(r, Exception)]
         results = [r for r in results if r is not None and not isinstance(r, Exception)]
         if not results:
             if trace_enabled:
@@ -878,7 +922,21 @@ def create_chat_router(
                     conversation_id=conversation_id,
                     dados={"abortado": True, "motivo": "sem_resultados_validos"},
                 )
-            return None
+            failure = failures[0] if failures else None
+            return AnalyticsOutcome.execution_failure(
+                PipelineFailure(
+                    stage="analytics_execute",
+                    failure_type=type(failure).__name__ if failure is not None else "no_valid_results",
+                    impact="nenhum resultado analítico válido foi produzido",
+                    analytical_consequence="não há evidência nova segura para a narração",
+                    recoverable=True,
+                ),
+                plan_count=len(plans),
+            )
+
+        total_rows = sum(r.row_count for r in results)
+        if total_rows == 0:
+            return AnalyticsOutcome.executed_empty(row_count=0, plan_count=len(plans))
 
         merge_pre = {
             "series_specs": [
@@ -957,7 +1015,11 @@ def create_chat_router(
                     conversation_id=conversation_id,
                     dados=snapshot_evidence_block(merged),
                 )
-            return merged
+            return AnalyticsOutcome.executed(
+                evidence=merged,
+                row_count=total_rows,
+                plan_count=len(plans),
+            )
         except Exception:
             _LOG.exception("analytics aggregation failed")
             if trace_enabled:
@@ -967,6 +1029,15 @@ def create_chat_router(
                     conversation_id=conversation_id,
                     dados={"erro": "aggregation_exception"},
                 )
-            return None
+            return AnalyticsOutcome.aggregation_failure(
+                PipelineFailure(
+                    stage="analytics_merge",
+                    failure_type="aggregation_exception",
+                    impact="a execução retornou linhas, mas a agregação falhou",
+                    analytical_consequence="não há EvidenceBlock confiável para narrar",
+                    recoverable=True,
+                ),
+                row_count=total_rows,
+            )
 
     return router
