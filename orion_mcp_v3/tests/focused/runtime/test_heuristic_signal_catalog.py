@@ -26,3 +26,14 @@ def test_regex_catalog_adds_explicit_period_signal() -> None:
         and signal.matched_text == "2026-01-01/2026-04-30"
         for signal in catalog.signals
     )
+
+
+def test_regex_catalog_adds_inherits_period_for_semantic_temporal_anaphora() -> None:
+    catalog = extract_heuristic_signals("qual o total de comissão nessa competência?")
+
+    assert any(
+        signal.kind == "followup_signal"
+        and signal.label == "inherits_period"
+        and signal.matched_text == "nessa competencia"
+        for signal in catalog.signals
+    )

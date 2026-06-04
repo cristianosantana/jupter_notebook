@@ -1,16 +1,16 @@
 """
-fechamento_comissao_concessionaria_servicos
-===========================================
+fechamento_faturamento_comissao_concessionaria_periodo
+======================================================
 
-Comissao por concessionaria no fechamento gerencial mensal, considerando
-servicos de OS dos tipos 1, 2 e 11.
+Faturamento e comissão geral por concessionária e período no fechamento gerencial.
 """
 
 SQL = """\
 SELECT
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo,
     conc.nome AS concessionaria,
-    ROUND(SUM(IF(com.estorno IS NULL OR com.estorno != 1, oss.valor_venda_real, oss.valor_venda_real * -1)), 2) AS total,
-    ROUND(SUM(IF(com.estorno IS NULL OR com.estorno != 1, com.valor_dentro + com.valor_fora, (com.valor_dentro + com.valor_fora) * -1)), 2) AS total_comissao
+    ROUND(SUM(IF(com.estorno IS NULL OR com.estorno != 1, oss.valor_venda_real, oss.valor_venda_real * -1)), 2) AS total_faturamento,
+    ROUND(SUM(IF(com.estorno IS NULL OR com.estorno != 1, com.valor_dentro, com.valor_dentro * -1)), 2) AS total_comissao
 FROM os
 JOIN os_servicos AS oss ON oss.os_id = os.id
 JOIN servicos AS serv ON serv.id = oss.servico_id
@@ -34,38 +34,42 @@ WHERE os.os_tipo_id IN (1, 2, 11)
       OR (%s = 1 AND serv.grupo_servico_id != 3)
       OR (%s = 2 AND serv.grupo_servico_id = 3)
   )
-GROUP BY os.concessionaria_id
+GROUP BY os.concessionaria_id, DATE_FORMAT(os.data_pagamento, '%%Y-%%m')
 ORDER BY concessionaria"""
 
 ANSWERS = (
-    "comissao por concessionaria servicos",
-    "comissoes de concessionarias servicos",
+    "faturamento e comissao por concessionaria e periodo",
+    "comissao geral por concessionaria no periodo",
     "fechamento gerencial comissao por concessionaria",
     "total de comissao por concessionaria",
     "concessionaria com maior comissao",
 )
 
 VALUE_KEY = "total_comissao"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "concessionaria"
 DEFAULT_MEASURE = "total_comissao"
 DEFAULT_DIMENSION = "concessionaria"
 MEASURES = {
-    "total": {
-        "label": "total vendido",
+    "total_faturamento": {
+        "label": "total faturamento",
         "kind": "money",
-        "synonyms": ("total", "vendas", "faturamento", "valor vendido"),
+        "synonyms": ("faturamento", "receita", "vendas", "total faturamento"),
         "additive": True,
     },
     "total_comissao": {
-        "label": "total de comissao",
+        "label": "total comissao",
         "kind": "money",
         "synonyms": ("comissao", "comissao total", "total comissao", "comissoes"),
         "additive": True,
     },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "concessionaria": {
         "label": "concessionaria",
         "synonyms": ("concessionaria", "concessionarias", "loja", "lojas"),

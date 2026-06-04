@@ -83,8 +83,8 @@ class QueryCollectionCatalog:
 
 
 FECHAMENTO_GERENCIAL_TEMPLATES: tuple[str, ...] = (
-    "fechamento_comissao_concessionaria_servicos",
-    "fechamento_comissao_concessionaria_tipos",
+    "fechamento_faturamento_comissao_concessionaria_periodo",
+    "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo",
     "fechamento_producao_servico",
     "fechamento_producao_produto",
     "fechamento_faturamento_tipo_pagamento",
@@ -106,12 +106,12 @@ ANALYTICS_COLLECTIONS = QueryCollectionCatalog(
             ),
             items=(
                 QueryCollectionItem(
-                    "fechamento_comissao_concessionaria_servicos",
+                    "fechamento_faturamento_comissao_concessionaria_periodo",
                     ("comissao", "concessionaria"),
                 ),
                 QueryCollectionItem(
-                    "fechamento_comissao_concessionaria_tipos",
-                    ("comissao", "concessionaria", "tipo de venda"),
+                    "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo",
+                    ("comissao", "concessionaria", "tipo de os"),
                 ),
                 QueryCollectionItem(
                     "fechamento_producao_servico",

@@ -85,9 +85,15 @@ def _has_recall_hint(plan: CognitivePlan) -> bool:
     hints = plan.hints or {}
     if not isinstance(hints, Mapping):
         return False
+    if hints.get("inherits_period") or hints.get("period_source") == "inherited_last_analytical_evidence":
+        return True
     signals = hints.get("signals")
     if isinstance(signals, Mapping):
-        return bool(signals.get("recall") or signals.get("comparative"))
+        return bool(
+            signals.get("recall")
+            or signals.get("comparative")
+            or signals.get("inherits_period")
+        )
     return False
 
 

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import calendar
 import re
-import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.runtime.temporal_reference import has_temporal_anaphora
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,12 +58,17 @@ def resolve_period_adequacy(
 
     date_from, date_to = inherited
     hints = dict(plan.hints or {})
+    signals = dict(hints.get("signals") or {}) if isinstance(hints.get("signals"), Mapping) else {}
+    signals["recall"] = True
+    signals["inherits_period"] = True
     hints.update(
         {
             "date_from": date_from,
             "date_to": date_to,
             "period_grain": "month" if date_from[:7] == date_to[:7] else "day",
             "period_source": "inherited_last_analytical_evidence",
+            "inherits_period": True,
+            "signals": signals,
             "explicit_period": {"date_from": date_from, "date_to": date_to},
         }
     )
@@ -83,11 +88,7 @@ def resolve_period_adequacy(
 
 
 def _has_period_anaphora(message: str) -> bool:
-    text = _norm(message)
-    return bool(
-        re.search(r"\b(nesse|neste|no|do|deste|desse)\s+periodo\b", text)
-        or re.search(r"\bperiodo\s+(analisado|atual|anterior)\b", text)
-    )
+    return has_temporal_anaphora(message)
 
 
 def _period_from_evidence(evidence: EvidenceBlock | None) -> tuple[str, str] | None:
@@ -120,9 +121,3 @@ def _period_bounds(period: str) -> tuple[str, str] | None:
         return f"{year:04d}-{month:02d}-01", f"{year:04d}-{month:02d}-{last_day:02d}"
     return None
 
-
-def _norm(text: str) -> str:
-    raw = "".join(
-        c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c)
-    )
-    return re.sub(r"\s+", " ", raw).strip()

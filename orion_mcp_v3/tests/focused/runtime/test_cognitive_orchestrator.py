@@ -41,16 +41,25 @@ def _fechamento_result(slug: str, rows: list[dict]) -> AnalyticsResult:  # type:
 def _fechamento_results() -> list[AnalyticsResult]:
     return [
         _fechamento_result(
-            "fechamento_comissao_concessionaria_servicos",
+            "fechamento_faturamento_comissao_concessionaria_periodo",
             [
-                {"concessionaria": "GWM BAMAQ", "total": "900.00", "total_comissao": "90.00"},
-                {"concessionaria": "STRADA JEEP", "total": "700.00", "total_comissao": "70.00"},
-                {"concessionaria": "AUDI CARBEL", "total": "500.00", "total_comissao": "50.00"},
+                {"periodo": "2026-05", "concessionaria": "GWM BAMAQ", "total_faturamento": "900.00", "total_comissao": "90.00"},
+                {"periodo": "2026-05", "concessionaria": "STRADA JEEP", "total_faturamento": "700.00", "total_comissao": "70.00"},
+                {"periodo": "2026-05", "concessionaria": "AUDI CARBEL", "total_faturamento": "500.00", "total_comissao": "50.00"},
             ],
         ),
         _fechamento_result(
-            "fechamento_comissao_concessionaria_tipos",
-            [{"concessionaria": "GWM BAMAQ", "total": "300.00", "total_cort": "0.00", "total_fin": "300.00", "total_prest": "0.00"}],
+            "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo",
+            [
+                {
+                    "periodo": "2026-05",
+                    "concessionaria": "GWM BAMAQ",
+                    "total_faturamento": "300.00",
+                    "total_comissao": "30.00",
+                    "comissao_venda_normal": "0.00",
+                    "comissao_financiamento": "30.00",
+                }
+            ],
         ),
         _fechamento_result(
             "fechamento_producao_servico",

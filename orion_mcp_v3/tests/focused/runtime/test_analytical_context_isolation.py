@@ -57,6 +57,28 @@ def test_analytical_fresh_turn_blocks_vector_memory() -> None:
     assert decision.allow_historical_analytics is False
 
 
+def test_inherited_period_turn_is_analytical_continuity() -> None:
+    policy = AnalyticalContextIsolationPolicy()
+    plan = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=("total_comissao",),
+        entities=("concessionaria",),
+        time_scope="2026-04-01/2026-04-30",
+        hints={
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-30",
+            "period_source": "inherited_last_analytical_evidence",
+            "inherits_period": True,
+        },
+    )
+
+    decision = policy.decide(plan)
+
+    assert decision.reason == "analytical_continuity"
+    assert decision.allow_historical_analytics is True
+
+
 def test_analytical_fresh_turn_removes_old_direct_answers_and_vector_blocks() -> None:
     policy = AnalyticalContextIsolationPolicy()
     plan = _plan()

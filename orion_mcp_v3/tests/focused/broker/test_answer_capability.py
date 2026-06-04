@@ -97,10 +97,10 @@ def test_fechamento_gerencial_projects_executive_contract_without_parallel_paylo
                 ],
             ),
             _fechamento_result(
-                "fechamento_comissao_concessionaria_servicos",
+                "fechamento_faturamento_comissao_concessionaria_periodo",
                 [
-                    {"concessionaria": "GWM BAMAQ", "total": "900.00", "total_comissao": "90.00"},
-                    {"concessionaria": "STRADA JEEP", "total": "600.00", "total_comissao": "60.00"},
+                    {"periodo": "2026-05", "concessionaria": "GWM BAMAQ", "total_faturamento": "900.00", "total_comissao": "90.00"},
+                    {"periodo": "2026-05", "concessionaria": "STRADA JEEP", "total_faturamento": "600.00", "total_comissao": "60.00"},
                 ],
             ),
             _fechamento_result(
@@ -134,7 +134,7 @@ def test_fechamento_gerencial_projects_executive_contract_without_parallel_paylo
     sections = payload["executive_sections"]
     assert [section["template_slug"] for section in sections] == [
         "fechamento_faturamento_tipo_pagamento",
-        "fechamento_comissao_concessionaria_servicos",
+        "fechamento_faturamento_comissao_concessionaria_periodo",
         "fechamento_taxas_cartao_credito",
     ]
     assert sections[0]["top"] == "Cartão de Crédito"

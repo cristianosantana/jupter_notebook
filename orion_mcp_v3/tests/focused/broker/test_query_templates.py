@@ -296,6 +296,36 @@ def test_itens_vendidos_template_contract() -> None:
     assert "DATE_FORMAT(os.created_at, '%%Y-%%m')" in tpl.sql
 
 
+def test_fechamento_faturamento_comissao_templates_use_period_aware_slugs() -> None:
+    consolidated_slug = "fechamento_faturamento_comissao_concessionaria_periodo"
+    detail_slug = "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo"
+
+    assert ANALYTICS_TEMPLATES.get("fechamento_comissao_concessionaria_servicos") is None
+    assert ANALYTICS_TEMPLATES.get("fechamento_comissao_concessionaria_tipos") is None
+
+    consolidated = ANALYTICS_TEMPLATES.get(consolidated_slug)
+    detail = ANALYTICS_TEMPLATES.get(detail_slug)
+    assert consolidated is not None
+    assert detail is not None
+
+    assert consolidated.time_key == "periodo"
+    assert consolidated.grain == "month"
+    assert consolidated.label_key == "concessionaria"
+    assert consolidated.value_key == "total_comissao"
+    assert "DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo" in consolidated.sql
+    assert "total_faturamento" in consolidated.capability.measures
+    assert "total_comissao" in consolidated.capability.measures
+
+    assert detail.time_key == "periodo"
+    assert detail.grain == "month"
+    assert detail.label_key == "concessionaria"
+    assert detail.value_key == "total_comissao"
+    assert "DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo" in detail.sql
+    assert "comissao_venda_normal" in detail.capability.measures
+    assert "comissao_financiamento" in detail.capability.measures
+    assert "total_comissao" in detail.capability.measures
+
+
 def test_capability_catalog_exposes_semantic_view_details() -> None:
     catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
     entry = next(e for e in catalog.entries if e.template_slug == "performance_concessionaria")
