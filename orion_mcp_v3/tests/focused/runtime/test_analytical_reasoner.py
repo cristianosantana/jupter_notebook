@@ -43,6 +43,88 @@ def test_reasoner_uses_literal_mode_for_direct_answer() -> None:
     assert result.evidence_contract.source_priority.value == "direct_answer"
 
 
+def test_reasoner_keeps_literal_mode_with_structural_insights_for_direct_answer_rows() -> None:
+    contract = EvidenceContract.present(row_count=3)
+    direct_answer = {
+        "plan": {
+            "template_slug": "fechamento_faturamento_comissao_concessionaria_periodo",
+            "measure": "total_comissao",
+            "dimension": "concessionaria",
+            "operation": "list",
+            "sort": {"field": "total_comissao", "direction": "desc"},
+        },
+        "summary": "Resposta direta: total comissao por concessionaria",
+        "rows": [
+            {"concessionaria": "GWM BAMAQ", "total_comissao": "43304.46"},
+            {"concessionaria": "SAITAMA - HONDA", "total_comissao": "36755.90"},
+            {"concessionaria": "XTREME CAR DETAIL", "total_comissao": "0.00"},
+        ],
+    }
+    evidence = EvidenceBlock(
+        summary="Resposta direta: total comissao por concessionaria",
+        insights={"direct_answer": direct_answer},
+        metrics={"evidence_contract": contract.as_dict()},
+        confidence=0.91,
+        coverage=CoverageInfo(labels={"rows_in": 3}),
+        supporting_data={
+            "evidence_contract": contract.as_dict(),
+            "direct_answer": direct_answer,
+        },
+    )
+
+    result = AnalyticalReasoner().reason(
+        "qual o total de comissão por concessionária?",
+        cognitive_plan=_plan(),
+        analytics_outcome=AnalyticsOutcome.executed(evidence=evidence, row_count=3, evidence_contract=contract),
+    )
+
+    assert result.answer_mode == AnswerMode.LITERAL
+    assert any("3 registro(s)" in fact for fact in result.facts)
+    assert any("Total total_comissao" in insight and "80060.36" in insight for insight in result.insights)
+    assert any("GWM BAMAQ" in insight and "total_comissao" in insight for insight in result.insights)
+    assert any("1 registro(s)" in insight and "zero" in insight for insight in result.insights)
+    assert any("ordenada por total_comissao" in insight for insight in result.insights)
+
+
+def test_reasoner_does_not_sum_literal_rows_without_totalization_intent() -> None:
+    contract = EvidenceContract.present(row_count=2)
+    direct_answer = {
+        "plan": {
+            "template_slug": "fechamento_faturamento_comissao_concessionaria_periodo",
+            "measure": "total_comissao",
+            "dimension": "concessionaria",
+            "operation": "list",
+            "sort": {"field": "total_comissao", "direction": "desc"},
+        },
+        "summary": "Resposta direta: comissão por concessionária",
+        "rows": [
+            {"concessionaria": "GWM BAMAQ", "total_comissao": "43304.46"},
+            {"concessionaria": "SAITAMA - HONDA", "total_comissao": "36755.90"},
+        ],
+    }
+    evidence = EvidenceBlock(
+        summary="Resposta direta: comissão por concessionária",
+        insights={"direct_answer": direct_answer},
+        metrics={"evidence_contract": contract.as_dict()},
+        confidence=0.91,
+        coverage=CoverageInfo(labels={"rows_in": 2}),
+        supporting_data={
+            "evidence_contract": contract.as_dict(),
+            "direct_answer": direct_answer,
+        },
+    )
+
+    result = AnalyticalReasoner().reason(
+        "liste a comissão por concessionária",
+        cognitive_plan=_plan(),
+        analytics_outcome=AnalyticsOutcome.executed(evidence=evidence, row_count=2, evidence_contract=contract),
+    )
+
+    assert result.answer_mode == AnswerMode.LITERAL
+    assert not any("Total total_comissao" in insight for insight in result.insights)
+    assert any("GWM BAMAQ" in insight and "total_comissao" in insight for insight in result.insights)
+
+
 def test_reasoner_uses_literal_mode_for_direct_answer_set() -> None:
     contract = EvidenceContract.present(row_count=2)
     direct_answer_set = {
@@ -96,8 +178,8 @@ def test_reasoner_extracts_managerial_closing_executive_facts_from_direct_answer
                 "warnings": [],
             },
             {
-                "template_slug": "fechamento_comissao_concessionaria_servicos",
-                "label": "Comissões por concessionária",
+                "template_slug": "fechamento_faturamento_comissao_concessionaria_periodo",
+                "label": "Faturamento e comissão por concessionária",
                 "top": "GWM BAMAQ",
                 "top_value": "R$ 90,00",
                 "share_percent": "60,00%",
