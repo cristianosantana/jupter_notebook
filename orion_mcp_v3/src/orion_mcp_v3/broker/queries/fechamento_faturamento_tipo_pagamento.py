@@ -70,13 +70,13 @@ MEASURES = {
     "total_pagamentos": {
         "label": "total pagamentos",
         "kind": "money",
-        "synonyms": ("pagamentos", "recebido", "total pagamentos"),
+        "synonyms": ("pagamentos", "recebido", "total pagamentos", "pagamento"),
         "additive": True,
     },
     "total_estornos": {
         "label": "total estornos",
         "kind": "money",
-        "synonyms": ("estornos", "devolucoes", "total estornos"),
+        "synonyms": ("estornos", "devolucoes", "total estornos", "estorno"),
         "additive": True,
     },
     "total_liquido": {
@@ -90,6 +90,7 @@ DIMENSIONS = {
     "caixa_tipo": {
         "label": "tipo de pagamento",
         "synonyms": ("tipo de pagamento", "forma de pagamento", "caixa tipo", "caixa_tipo"),
+        "sortable": True,
     },
     "caixa_tipo_id": {
         "label": "id do tipo de pagamento",

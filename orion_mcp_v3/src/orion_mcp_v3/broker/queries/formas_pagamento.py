@@ -189,7 +189,7 @@ MEASURES = {
     "cortesia": {
         "label": "cortesia/concessionária",
         "kind": "money",
-        "synonyms": ("cortesia", "concessionária", "concessionaria"),
+        "synonyms": ("cortesia", "concessionária", "concessionaria", "cortesia concessionária", "cortesia concessionaria"),
         "additive": True,
     },
     "pix": {

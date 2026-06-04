@@ -8,7 +8,7 @@ Faturamento mensal de produtos para OS do tipo 11.
 SQL = """\
 SELECT
     ost.id,
-    ost.nome AS os_tipo,
+    ost.nome AS tipo_venda_material,
     ROUND(SUM(osp.valor_venda_real), 2) AS total
 FROM os
 JOIN os_produtos AS osp ON osp.os_id = os.id
@@ -28,18 +28,18 @@ GROUP BY ost.id
 ORDER BY ost.id"""
 
 ANSWERS = (
-    "faturamento por tipo de venda produtos",
-    "faturamento tipo 11",
-    "vendas de produtos por tipo de os",
-    "fechamento gerencial tipo de venda produtos",
+    "faturamento de venda de materias",
+    "faturamento de venda de materias",
+    "vendas de materias",
+    "fechamento gerencial venda de materias",
 )
 
 VALUE_KEY = "total"
 TIME_KEY = None
 GRAIN = "month"
-LABEL_KEY = "os_tipo"
+LABEL_KEY = "venda_material"
 DEFAULT_MEASURE = "total"
-DEFAULT_DIMENSION = "os_tipo"
+DEFAULT_DIMENSION = "venda_material"
 MEASURES = {
     "total": {
         "label": "total",
@@ -49,8 +49,16 @@ MEASURES = {
     },
 }
 DIMENSIONS = {
-    "os_tipo": {"label": "tipo de venda", "synonyms": ("tipo de venda", "tipo de os", "os_tipo")},
-    "id": {"label": "id do tipo de venda", "synonyms": ("id", "os_tipo_id")},
+    "venda_material": {
+        "label": "venda de material",
+        "synonyms": ("venda de material", "venda de materiais"),
+        "sortable": True,
+    },
+    "id": {
+        "label": "id do tipo de venda de material",
+        "synonyms": ("id", "os_tipo_id", "id tipo venda material"),
+        "sortable": True,
+    },
 }
 SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
 DEFAULT_PARAMS = {"business_unit_id": 0}
