@@ -7,6 +7,7 @@ from typing import Any
 
 from orion_mcp_v3.runtime import intent_patterns as P
 from orion_mcp_v3.runtime.intent_resolver import _explicit_period_hint
+from orion_mcp_v3.runtime.temporal_reference import temporal_anaphora_match
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +126,11 @@ def _semantic_signals(text: str) -> list[HeuristicSignal]:
         if matched:
             out.append(HeuristicSignal("operation_signal", label, 0.7, matched.strip()))
 
+    period_match = temporal_anaphora_match(text)
+    if period_match:
+        out.append(HeuristicSignal("followup_signal", "inherits_period", 0.7, period_match))
+
     for label, needles in {
-        "inherits_period": ("e o de", "agora", "anterior"),
         "same_operation": ("faz o mesmo", "mesmo por", "cruze com"),
     }.items():
         matched = next((needle for needle in needles if needle in lower), None)
