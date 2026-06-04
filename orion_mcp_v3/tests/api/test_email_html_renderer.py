@@ -52,7 +52,7 @@ def test_render_response_email_html_preserves_composed_direct_answer_blocks() ->
         subject="Fechamento",
         body=(
             "Resposta direta composta:\n"
-            "## fechamento_comissao_concessionaria_servicos\n"
+            "## fechamento_faturamento_comissao_concessionaria_periodo\n"
             "Resposta direta: total vendido por concessionaria:\n"
             "1. GWM BAMAQ: R$ 171.543,90\n"
             "2. STRADA JEEP: R$ 154.602,90\n"
@@ -64,7 +64,7 @@ def test_render_response_email_html_preserves_composed_direct_answer_blocks() ->
     )
 
     assert 'class="section section-direct-answer"' in html
-    assert "<h3>fechamento_comissao_concessionaria_servicos</h3>" in html
+    assert "<h3>fechamento_faturamento_comissao_concessionaria_periodo</h3>" in html
     assert "<h3>fechamento_faturamento_tipo_pagamento</h3>" in html
     assert "<li>GWM BAMAQ: R$ 171.543,90</li>" in html
     assert "<li>Cartão de Crédito: R$ 1.274.119,02</li>" in html
@@ -74,7 +74,7 @@ def test_render_response_email_html_preserves_inline_composed_direct_answer() ->
     html = render_response_email_html(
         subject="Fechamento",
         body=(
-            "Resposta direta composta: ## fechamento_comissao_concessionaria_servicos "
+            "Resposta direta composta: ## fechamento_faturamento_comissao_concessionaria_periodo "
             "Resposta direta: total de comissao por concessionaria: "
             "1. GWM BAMAQ: R$ 43.584,46 "
             "2. SAITAMA - HONDA: R$ 36.755,90 "
@@ -86,7 +86,7 @@ def test_render_response_email_html_preserves_inline_composed_direct_answer() ->
     )
 
     assert 'class="section section-direct-answer"' in html
-    assert "<h3>fechamento_comissao_concessionaria_servicos</h3>" in html
+    assert "<h3>fechamento_faturamento_comissao_concessionaria_periodo</h3>" in html
     assert "<h3>fechamento_faturamento_tipo_pagamento</h3>" in html
     assert "total de comissao por concessionaria" in html
     assert "<li>GWM BAMAQ: R$ 43.584,46</li>" in html

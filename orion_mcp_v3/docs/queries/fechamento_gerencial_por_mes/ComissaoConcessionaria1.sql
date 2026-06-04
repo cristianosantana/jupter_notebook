@@ -1,12 +1,13 @@
 SET @ano = 2026;
-SET @mes = 5; -- 0 = ano inteiro
+SET @mes = 3; -- 0 = ano inteiro
 SET @business_unit_id = 1; -- 0 = todas
 SET @tipo_grupo_servico = 0; -- 0 completo, 1 sem couro, 2 couro
 
 SELECT
+	DATE_FORMAT(os.data_pagamento, "%Y-%m") AS periodo,
     conc.nome AS concessionaria,
-    SUM(IF(com.estorno IS NULL OR com.estorno != 1, oss.valor_venda_real, oss.valor_venda_real * -1)) AS total,
-    SUM(IF(com.estorno IS NULL OR com.estorno != 1, com.valor_dentro + com.valor_fora, (com.valor_dentro + com.valor_fora) * -1)) AS total_comissao
+    SUM(IF(com.estorno IS NULL OR com.estorno != 1, oss.valor_venda_real, oss.valor_venda_real * -1)) AS total_faturamento,
+    SUM(IF(com.estorno IS NULL OR com.estorno != 1, com.valor_dentro, com.valor_dentro * -1)) AS total_comissao
 FROM os
 JOIN os_servicos AS oss ON oss.os_id = os.id
 JOIN servicos AS serv ON serv.id = oss.servico_id
@@ -30,5 +31,5 @@ WHERE os.os_tipo_id IN (1, 2, 11)
       OR (@tipo_grupo_servico = 1 AND serv.grupo_servico_id != 3)
       OR (@tipo_grupo_servico = 2 AND serv.grupo_servico_id = 3)
   )
-GROUP BY os.concessionaria_id
+GROUP BY os.concessionaria_id, DATE_FORMAT(os.data_pagamento, "%Y-%m")
 ORDER BY concessionaria;
