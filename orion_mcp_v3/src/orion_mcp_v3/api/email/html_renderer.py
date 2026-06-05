@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 
 from orion_mcp_v3.api.email.factory import build_report_from_text
-from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection
+from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection, EmailTable
 
 @dataclass(slots=True)
 class _LegacySection:
@@ -77,6 +77,9 @@ def render_response_email_html(
     .metric-label {{ display: table-cell; font-weight: 700; color: #25324a; }}
     .metric-value {{ display: table-cell; text-align: right; white-space: nowrap; color: #172033; }}
     .metric-detail {{ display: table-cell; text-align: right; width: 82px; color: #6b768a; }}
+    .metric-table {{ width: 100%; border-collapse: collapse; margin: 12px 0 0; color: #354258; font-size: 13px; }}
+    .metric-table th {{ text-align: left; padding: 9px 8px; background: #f3f7fc; color: #25324a; border-bottom: 1px solid #dfe7f2; }}
+    .metric-table td {{ padding: 9px 8px; border-bottom: 1px solid #eef2f7; }}
     .note-list {{ margin: 12px 0 0; padding-left: 0; list-style: none; }}
     .note-list li {{ margin: 0 0 8px; color: #526078; font-size: 13px; line-height: 1.45; }}
     .alert-card {{ margin: 18px 0; padding: 16px; border-radius: 14px; background: #fff8f1; border: 1px solid #f3dcc1; color: #5a3515; }}
@@ -169,6 +172,8 @@ def _render_section(section: EmailSection) -> str:
         )
     if section.items:
         parts.append(_render_metric_list(section.items))
+    if section.tables:
+        parts.append(_render_tables(section.tables))
     if section.notes:
         parts.append(_render_notes(section.notes))
     parts.append("</section>")
@@ -187,6 +192,25 @@ def _render_metric_list(items: tuple[EmailMetricItem, ...]) -> str:
         )
     rows.append("</ul>")
     return "\n".join(rows)
+
+
+def _render_tables(tables: tuple[EmailTable, ...]) -> str:
+    rendered: list[str] = []
+    for table in tables:
+        if not table.headers or not table.rows:
+            continue
+        rows = ['<table class="metric-table">', "<thead><tr>"]
+        for header in table.headers:
+            rows.append(f"<th>{html.escape(header)}</th>")
+        rows.append("</tr></thead><tbody>")
+        for table_row in table.rows:
+            rows.append("<tr>")
+            for cell in table_row:
+                rows.append(f"<td>{html.escape(cell)}</td>")
+            rows.append("</tr>")
+        rows.append("</tbody></table>")
+        rendered.append("\n".join(rows))
+    return "\n".join(rendered)
 
 
 def _render_notes(notes: tuple[str, ...]) -> str:

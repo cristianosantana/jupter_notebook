@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from orion_mcp_v3.api.email.classifier import EmailMessageType, classify_message
-from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection
+from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection, EmailTable
 from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider, NullLLMProvider
 
@@ -268,6 +268,10 @@ def build_report_from_text(
 
         if current is not None and _looks_like_metric(raw):
             current.items.append(EmailMetricItem.from_text(raw))
+            continue
+
+        if current is not None and _looks_like_pipe_table_line(raw):
+            current.add_table_line(raw)
 
     flush()
     if headline is None:
@@ -291,15 +295,31 @@ class _SectionDraft:
         self.total = total
         self.highlight: str | None = None
         self.items: list[EmailMetricItem] = []
+        self.table_headers: tuple[str, ...] = ()
+        self.table_rows: list[tuple[str, ...]] = []
         self.notes: list[str] = []
 
+    def add_table_line(self, line: str) -> None:
+        cells = tuple(cell.strip() for cell in line.split("|"))
+        if len(cells) < 2 or not any(cells):
+            return
+        if not self.table_headers:
+            self.table_headers = cells
+            return
+        if len(cells) == len(self.table_headers):
+            self.table_rows.append(cells)
+
     def to_section(self) -> EmailSection:
+        tables = ()
+        if self.table_headers and self.table_rows:
+            tables = (EmailTable(headers=self.table_headers, rows=tuple(self.table_rows)),)
         return EmailSection(
             title=self.title,
             kind=self.kind,
             total=self.total,
             highlight=self.highlight,
             items=tuple(self.items),
+            tables=tables,
             notes=tuple(self.notes),
         )
 
@@ -471,6 +491,7 @@ def _fallback_section_with_llm_metadata(fallback: EmailSection, report: EmailSec
         total=report.total or fallback.total,
         highlight=report.highlight or fallback.highlight,
         items=fallback.items,
+        tables=fallback.tables,
         notes=fallback.notes,
     )
 
@@ -483,6 +504,7 @@ def _merge_section(section: EmailSection, fallback: EmailSection | None) -> Emai
             total=section.total,
             highlight=section.highlight,
             items=section.items,
+            tables=section.tables,
             notes=section.notes,
         )
     items = fallback.items if _should_prefer_fallback_items(section, fallback) else section.items
@@ -492,6 +514,7 @@ def _merge_section(section: EmailSection, fallback: EmailSection | None) -> Emai
         total=section.total or fallback.total,
         highlight=section.highlight or fallback.highlight,
         items=items,
+        tables=section.tables or fallback.tables,
         notes=section.notes or fallback.notes,
     )
 
@@ -578,6 +601,10 @@ def _section_kind(title: str) -> str:
 
 def _looks_like_metric(line: str) -> bool:
     return (":" in line or "—" in line) and "R$" in line
+
+
+def _looks_like_pipe_table_line(line: str) -> bool:
+    return "|" in line and len([cell for cell in line.split("|") if cell.strip()]) >= 2
 
 
 def _inline_detail_items(line: str) -> list[EmailMetricItem]:

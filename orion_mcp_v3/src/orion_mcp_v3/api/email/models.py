@@ -22,12 +22,30 @@ class EmailMetricItem:
 
 
 @dataclass(frozen=True, slots=True)
+class EmailTable:
+    headers: tuple[str, ...] = ()
+    rows: tuple[tuple[str, ...], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> "EmailTable":
+        headers = tuple(filter(None, (_text(item) for item in _list(raw.get("headers")))))
+        rows: list[tuple[str, ...]] = []
+        for raw_row in _list(raw.get("rows")):
+            if isinstance(raw_row, list):
+                row = tuple(_text(item) or "" for item in raw_row)
+                if any(row):
+                    rows.append(row)
+        return cls(headers=headers, rows=tuple(rows))
+
+
+@dataclass(frozen=True, slots=True)
 class EmailSection:
     title: str
     kind: str = "default"
     total: str | None = None
     highlight: str | None = None
     items: tuple[EmailMetricItem, ...] = ()
+    tables: tuple[EmailTable, ...] = ()
     notes: tuple[str, ...] = ()
 
     @classmethod
@@ -35,12 +53,14 @@ class EmailSection:
         items = tuple(_coerce_item(item) for item in _list(raw.get("items")))
         highlight = _text(raw.get("highlight")) or _join_highlight(raw)
         notes = _list(raw.get("notes")) + _list(raw.get("risks"))
+        tables = tuple(EmailTable.from_mapping(item) for item in _list(raw.get("tables")) if isinstance(item, Mapping))
         return cls(
             title=_text(raw.get("title")) or "Seção",
             kind=_text(raw.get("kind")) or _text(raw.get("category")) or "default",
             total=_text(raw.get("total")),
             highlight=highlight,
             items=items,
+            tables=tables,
             notes=tuple(filter(None, (_text(item) for item in notes))),
         )
 

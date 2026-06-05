@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orion_mcp_v3.api.email.models import EmailReport, EmailSection
+from orion_mcp_v3.api.email.models import EmailReport, EmailSection, EmailTable
 from orion_mcp_v3.api.email_html_renderer import render_response_email_html
 
 
@@ -64,6 +64,32 @@ def test_render_response_email_html_renders_executive_summary_between_hero_and_s
     assert "&lt;b&gt;alerta&lt;/b&gt;" in html
     assert html.index('class="hero-card"') < html.index('class="executive-summary-card"')
     assert html.index('class="executive-summary-card"') < html.index("Faturamento por tipo de pagamento")
+
+
+def test_render_response_email_html_renders_section_tables() -> None:
+    report = EmailReport(
+        subject="Fechamento",
+        from_name="CarSoul",
+        sections=(
+            EmailSection(
+                title="Comissão por tipo de O.S.",
+                kind="commission",
+                tables=(
+                    EmailTable(
+                        headers=("concessionaria", "venda normal", "financiamento", "total comissão"),
+                        rows=(("Concessionária A", "R$ 120.000,00", "R$ 80.000,00", "R$ 200.000,00"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    html = render_response_email_html(subject="Fechamento", body="", from_name="CarSoul", report=report)
+
+    assert '<table class="metric-table">' in html
+    assert "<th>venda normal</th>" in html
+    assert "<td>Concessionária A</td>" in html
+    assert "<td>R$ 80.000,00</td>" in html
 
 
 def test_render_response_email_html_preserves_composed_direct_answer_blocks() -> None:

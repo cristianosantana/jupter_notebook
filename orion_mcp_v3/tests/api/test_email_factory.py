@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, AsyncIterator, Sequence
 
-from orion_mcp_v3.api.email import EmailMessageFactory, EmailReport, render_response_email_html
+from orion_mcp_v3.api.email import EmailMessageFactory, EmailReport, build_report_from_text, render_response_email_html
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMResponse, LLMResponseMeta, LLMStreamChunk
 
 
@@ -335,6 +335,34 @@ async def test_email_factory_fallback_splits_fechamento_into_business_sections()
     assert len(report.actions) == 3
     assert report.alerts
     assert report.actions
+
+
+def test_email_factory_fallback_parses_pipe_table_sections() -> None:
+    body = "\n".join(
+        [
+            "Detalhe por seção do fechamento gerencial:",
+            "",
+            "## Comissão por tipo de O.S.",
+            "Template: fechamento_faturamento_comissao_tipo_os_concessionaria_periodo",
+            "Linhas disponíveis: 2",
+            "concessionaria | venda normal | financiamento | total comissão",
+            "Concessionária A | R$ 120.000,00 | R$ 80.000,00 | R$ 200.000,00",
+            "Concessionária B | R$ 90.000,00 | R$ 0,00 | R$ 90.000,00",
+        ]
+    )
+
+    parsed = build_report_from_text(
+        subject="Fechamento",
+        body=body,
+        from_name="CarSoul",
+        report_type="fechamento_gerencial",
+    )
+
+    section = parsed.sections[0]
+    assert section.title == "Comissão por tipo de O.S."
+    assert section.tables
+    assert section.tables[0].headers == ("concessionaria", "venda normal", "financiamento", "total comissão")
+    assert section.tables[0].rows[0] == ("Concessionária A", "R$ 120.000,00", "R$ 80.000,00", "R$ 200.000,00")
 
 
 def test_structured_email_renderer_outputs_cards_badges_and_metric_rows() -> None:
