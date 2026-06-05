@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from orion_mcp_v3.api.main import create_app
 from orion_mcp_v3.api.models import ChatRequest, ChatResponse, HealthResponse
 from orion_mcp_v3.api.email_sender import EmailSendResult
+from orion_mcp_v3.api.routes.chat import _structured_email_evidence_from
+from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
+from orion_mcp_v3.contracts.provenance import CoverageInfo
 from orion_mcp_v3.protocols.llm import (
     ChatMessage,
     EchoLLMProvider,
@@ -343,6 +346,19 @@ def test_chat_with_email_to_sends_response_email() -> None:
     assert r.json()["meta"]["email_delivery"]["status"] == "sent"
 
 
+def test_structured_email_evidence_uses_evidence_summary() -> None:
+    evidence = EvidenceBlock(
+        summary="## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00",
+        insights={},
+        metrics={},
+        confidence=0.9,
+        coverage=CoverageInfo(),
+    )
+
+    assert _structured_email_evidence_from(evidence) == "## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00"
+    assert _structured_email_evidence_from(None) is None
+
+
 def test_chat_email_failure_does_not_fail_chat_response() -> None:
     sender = FakeEmailSender(EmailSendResult(status="failed", to="destino@local.test", message="falha smtp"))
     app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
@@ -364,6 +380,7 @@ def test_chat_email_failure_does_not_fail_chat_response() -> None:
 def _make_client_with_analytics(
     provider=None,
     mock_rows: list | None = None,
+    email_sender=None,
 ) -> TestClient:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -382,6 +399,7 @@ def _make_client_with_analytics(
         llm_provider=provider or EchoLLMProvider(),
         analytics_executor=executor,
         analytics_allowlist=ANALYTICS_ALLOWLIST,
+        email_sender=email_sender,
     )
     return TestClient(app)
 
@@ -404,6 +422,25 @@ def test_chat_analytical_with_evidence() -> None:
     )
     assert "evidence_cited" in safeguards
     assert "coverage_note_injected" in safeguards
+
+
+def test_chat_email_receives_structured_evidence_from_analytics_merge() -> None:
+    sender = FakeEmailSender()
+    client = _make_client_with_analytics(email_sender=sender)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Qual forma de pagamento domina o faturamento entre janeiro e abril de 2026?",
+            "email_to": "destino@local.test",
+        },
+    )
+
+    assert r.status_code == 200
+    assert len(sender.calls) == 1
+    assert sender.calls[0].body == r.json()["reply"]
+    assert sender.calls[0].structured_evidence
+    assert "template.formas_pagamento" in sender.calls[0].structured_evidence
 
 
 def test_chat_analytical_without_executor() -> None:

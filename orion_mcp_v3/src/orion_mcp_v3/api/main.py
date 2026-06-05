@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from orion_mcp_v3.api.email_sender import EmailSender
+from orion_mcp_v3.api.email import EmailSender
 from orion_mcp_v3.api.models import HealthResponse
 from orion_mcp_v3.api.routes.chat import create_chat_router
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
@@ -216,7 +216,7 @@ def create_app(
     narrator = CognitiveNarrator(provider)
     resolved_email_sender = email_sender
     if resolved_email_sender is None and s.email_configured:
-        resolved_email_sender = EmailSender.from_settings(s)
+        resolved_email_sender = EmailSender.from_settings(s, llm_provider=provider)
         _LOG.info(
             "Email sender enabled (smtp=%s:%s, start_tls=%s, from=%s)",
             s.email_smtp_host,

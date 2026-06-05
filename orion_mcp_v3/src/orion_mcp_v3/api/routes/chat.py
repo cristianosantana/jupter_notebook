@@ -30,7 +30,7 @@ from orion_mcp_v3.api.models import (
     SessionListResponse,
     UsageInfo,
 )
-from orion_mcp_v3.api.email_sender import EmailSendRequest, EmailSendResult
+from orion_mcp_v3.api.email import EmailSendRequest, EmailSendResult
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
@@ -181,6 +181,13 @@ def _direct_answer_literal_preservation_enabled(evidence: EvidenceBlock | None) 
     )
 
 
+def _structured_email_evidence_from(evidence: EvidenceBlock | None) -> str | None:
+    if evidence is None:
+        return None
+    summary = (evidence.summary or "").strip()
+    return summary or None
+
+
 def _should_interpret_with_llm(
     plan: CognitivePlan,
     *,
@@ -312,6 +319,7 @@ def create_chat_router(
         body: str,
         *,
         conversation_id: str,
+        structured_evidence: str | None = None,
         trace_enabled: bool = False,
     ) -> EmailSendResult:
         def _trace(phase: str, data: Mapping[str, Any]) -> None:
@@ -331,6 +339,7 @@ def create_chat_router(
                 "subject_present": bool(req.email_subject),
                 "sender_present": email_sender is not None,
                 "body_chars": len(body or ""),
+                "structured_evidence_chars": len(structured_evidence or ""),
             },
         )
         if not req.email_to:
@@ -359,6 +368,7 @@ def create_chat_router(
                     to=req.email_to,
                     subject=req.email_subject or "Resposta Orion",
                     body=body,
+                    structured_evidence=structured_evidence,
                     conversation_id=conversation_id,
                 )
             )
@@ -829,7 +839,17 @@ def create_chat_router(
         sm.update_phase(session, CognitivePhase.NARRATING)
 
         if req.stream:
-            return _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, req, trace_pipe=trace_pipe)
+            return _sse_response(
+                narr,
+                orch_result,
+                session,
+                sm,
+                t0,
+                cognitive_plan,
+                req,
+                trace_pipe=trace_pipe,
+                structured_evidence=_structured_email_evidence_from(evidence),
+            )
 
         if trace_pipe:
             log_pipeline_event(
@@ -847,6 +867,7 @@ def create_chat_router(
             req,
             narration.narration,
             conversation_id=session.conversation_id,
+            structured_evidence=_structured_email_evidence_from(evidence),
             trace_enabled=trace_pipe,
         )
 
@@ -884,7 +905,18 @@ def create_chat_router(
         )
         return ChatResponse(reply=narration.narration, meta=meta)
 
-    def _sse_response(narr, orch_result, session, sm, t0, cognitive_plan, req: ChatRequest, *, trace_pipe: bool = False):
+    def _sse_response(
+        narr,
+        orch_result,
+        session,
+        sm,
+        t0,
+        cognitive_plan,
+        req: ChatRequest,
+        *,
+        trace_pipe: bool = False,
+        structured_evidence: str | None = None,
+    ):
         cid = session.conversation_id
 
         async def event_generator():
@@ -909,6 +941,7 @@ def create_chat_router(
                     req,
                     text,
                     conversation_id=session.conversation_id,
+                    structured_evidence=structured_evidence,
                     trace_enabled=trace_pipe,
                 )
                 sm.update_phase(session, CognitivePhase.IDLE)

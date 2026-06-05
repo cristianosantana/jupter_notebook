@@ -339,6 +339,7 @@ def _aggregate_rows(
     *,
     measure: MeasureCapability,
     dimension: DimensionCapability | None,
+    measures: Mapping[str, MeasureCapability] | None = None,
 ) -> list[dict[str, Any]]:
     if dimension is None:
         out: list[dict[str, Any]] = []
@@ -349,6 +350,7 @@ def _aggregate_rows(
 
     grouped: dict[str, dict[str, Any]] = {}
     values: defaultdict[str, list[float]] = defaultdict(list)
+    additive_measures = tuple(item for item in (measures or {}).values() if item.additive)
     for row in rows:
         if dimension.column not in row or measure.column not in row:
             continue
@@ -359,10 +361,19 @@ def _aggregate_rows(
         if label not in grouped:
             grouped[label] = dict(row)
             grouped[label][measure.column] = 0.0 if measure.additive else n
+            for additive_measure in additive_measures:
+                if additive_measure.column in row and _to_float(row.get(additive_measure.column)) is not None:
+                    grouped[label][additive_measure.column] = 0.0
         if measure.additive:
             grouped[label][measure.column] = float(grouped[label][measure.column]) + n
         else:
             values[label].append(n)
+        for additive_measure in additive_measures:
+            if additive_measure.column == measure.column:
+                continue
+            value = _to_float(row.get(additive_measure.column))
+            if value is not None:
+                grouped[label][additive_measure.column] = float(grouped[label].get(additive_measure.column, 0.0)) + value
 
     if not measure.additive:
         for label, nums in values.items():
@@ -388,7 +399,7 @@ def project_answer(
         entity_filters=plan.entity_filters,
         capability=capability,
     )
-    projected = _aggregate_rows(filtered_rows, measure=measure, dimension=dimension)
+    projected = _aggregate_rows(filtered_rows, measure=measure, dimension=dimension, measures=capability.measures)
     projected = [r for r in projected if _to_float(r.get(measure.column)) is not None]
     if not projected:
         return None
@@ -625,6 +636,7 @@ _FECHAMENTO_LABELS = {
     "fechamento_parcelamento_cartao": "Parcelamento de cartão",
     "fechamento_taxas_cartao_credito": "Taxas de cartão de crédito",
 }
+_COMISSAO_TIPO_OS_SLUG = "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo"
 
 
 def _is_fechamento_gerencial_por_mes(
@@ -744,6 +756,9 @@ def _fechamento_section_detail(
         dimension = capability.dimensions.get(answer.plan.dimension) if answer.plan.dimension else None
         if measure is None:
             continue
+        if answer.plan.template_slug == _COMISSAO_TIPO_OS_SLUG:
+            lines.extend(_fechamento_comissao_tipo_os_table(answer, limit_per_section=limit_per_section))
+            continue
         label = _FECHAMENTO_LABELS.get(answer.plan.template_slug, answer.plan.template_slug)
         lines.extend(["", f"## {label}", f"Template: {answer.plan.template_slug}", f"Linhas disponíveis: {len(answer.rows)}"])
         values = [_to_float(row.get(measure.column)) for row in answer.rows]
@@ -761,6 +776,54 @@ def _fechamento_section_detail(
         if not answer.rows:
             lines.append("Sem movimentação na evidência disponível.")
     return "\n".join(lines)
+
+
+def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer, *, limit_per_section: int) -> list[str]:
+    rows = _commission_type_rows(answer.rows)
+    lines = [
+        "",
+        "## Comissão por tipo de O.S.",
+        f"Template: {answer.plan.template_slug}",
+        f"Linhas disponíveis: {len(rows)}",
+        "concessionaria | venda normal | financiamento | total comissão",
+    ]
+    for row in rows[:limit_per_section]:
+        lines.append(
+            " | ".join(
+                (
+                    str(row["concessionaria"]),
+                    _format_value(row["comissao_venda_normal"], "money"),
+                    _format_value(row["comissao_financiamento"], "money"),
+                    _format_value(row["total_comissao"], "money"),
+                )
+            )
+        )
+    omitted = max(0, len(rows) - limit_per_section)
+    if omitted:
+        lines.append(f"... mais {omitted} linha(s) disponíveis em answers[].rows.")
+    if not rows:
+        lines.append("Sem movimentação na evidência disponível.")
+    return lines
+
+
+def _commission_type_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        label = str(row.get("concessionaria") or "").strip()
+        if not label:
+            continue
+        target = grouped.setdefault(
+            label,
+            {
+                "concessionaria": label,
+                "comissao_venda_normal": 0.0,
+                "comissao_financiamento": 0.0,
+                "total_comissao": 0.0,
+            },
+        )
+        for key in ("comissao_venda_normal", "comissao_financiamento", "total_comissao"):
+            target[key] = float(target[key]) + (_to_float(row.get(key)) or 0.0)
+    return sorted(grouped.values(), key=lambda row: _to_float(row.get("total_comissao")) or 0.0, reverse=True)
 
 
 def _fechamento_managerial_totals(

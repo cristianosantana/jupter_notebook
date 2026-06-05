@@ -143,6 +143,51 @@ def test_fechamento_gerencial_projects_executive_contract_without_parallel_paylo
     assert projected.answers[0].rows[0]["caixa_tipo"] == "Cartão de Crédito"
 
 
+def test_fechamento_tipo_os_projects_commission_composition_table() -> None:
+    projected = build_projected_answer_set(
+        "Faça o fechamento gerencial de fevereiro de 2026",
+        [
+            _fechamento_result(
+                "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo",
+                [
+                    {
+                        "periodo": "2026-02",
+                        "concessionaria": "Concessionária A",
+                        "total_faturamento": "170000.00",
+                        "total_comissao": "170000.00",
+                        "comissao_venda_normal": "100000.00",
+                        "comissao_financiamento": "70000.00",
+                    },
+                    {
+                        "periodo": "2026-03",
+                        "concessionaria": "Concessionária A",
+                        "total_faturamento": "30000.00",
+                        "total_comissao": "30000.00",
+                        "comissao_venda_normal": "20000.00",
+                        "comissao_financiamento": "10000.00",
+                    },
+                    {
+                        "periodo": "2026-02",
+                        "concessionaria": "Concessionária B",
+                        "total_faturamento": "90000.00",
+                        "total_comissao": "90000.00",
+                        "comissao_venda_normal": "90000.00",
+                        "comissao_financiamento": "0.00",
+                    },
+                ],
+            ),
+        ],
+        templates=ANALYTICS_TEMPLATES,
+    )
+
+    assert projected is not None
+    assert projected.section_detail is not None
+    assert "## Comissão por tipo de O.S." in projected.section_detail
+    assert "concessionaria | venda normal | financiamento | total comissão" in projected.section_detail
+    assert "Concessionária A | R$ 120.000,00 | R$ 80.000,00 | R$ 200.000,00" in projected.section_detail
+    assert "Concessionária B | R$ 90.000,00 | R$ 0,00 | R$ 90.000,00" in projected.section_detail
+
+
 def test_evidence_aggregator_embeds_direct_answer_before_narration() -> None:
     rows = [
         {"vendedor": "ana", "quantidade_os": 10, "vendas": "10000.00", "ticket_medio_os": "1000.00"},
