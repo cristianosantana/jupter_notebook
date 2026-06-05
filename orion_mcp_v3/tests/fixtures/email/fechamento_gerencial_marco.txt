@@ -1,0 +1,66 @@
+direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31 — R$ 2.713.158,18
+
+Observações finais
+- No período 2026-03-01 a 2026-03-31 o faturamento líquido total registrado foi R$ 2.713.158,18 (fechamento projetado com 9 template(s) e 153 registro(s)).
+- Faturamento por forma de pagamento — Total: R$ 2.713.158,18
+- Destaque: Cartão de Crédito — R$ 1.352.045,28 (49,83%)
+- Detalhe (todos os registros, template fechamento_faturamento_tipo_pagamento):
+- Cartão de Crédito: R$ 1.352.045,28 (49,83%)
+- Concessionária: R$ 886.921,02 (32,69%)
+- PIX: R$ 399.819,98 (14,74%)
+- Dinheiro: R$ 55.179,90 (2,03%)
+- Parcelamento: R$ 15.502,00 (0,57%)
+- Depósito Bancário: R$ 3.690,00 (0,14%)
+- Cheque: R$ 0,00 (0,00%)
+- Permuta: R$ 0,00 (0,00%)
+- Faturamento por tipo de venda — Total (soma dos registros do template fechamento_faturamento_tipo_venda): R$ 2.563.819,17
+- Destaque: Venda Normal — R$ 1.651.289,15 (64,41%)
+- Venda Normal: R$ 1.651.289,15 (64,41%)
+- Prestação de Serviços: R$ 655.892,02 (25,58%)
+- Cortesia Concessionária: R$ 122.379,00 (4,77%)
+- Financiamento: R$ 105.039,00 (4,10%)
+- Cortesia Funcionário: R$ 29.220,00 (1,14%)
+- Faturamento e comissão por concessionária — Total (derivado a partir do percentual do líder): R$ 355.437,45
+- Destaque: PORSCHE — R$ 41.195,20 (11,59%)
+- Top 5 (template fechamento_faturamento_comissao_concessionaria_periodo):
+- PORSCHE: R$ 41.195,20 (11,59%)
+- GWM BAMAQ: R$ 39.416,00 (11,09%)
+- SAITAMA - HONDA: R$ 34.479,10 (9,70%)
+- STRADA JEEP: R$ 23.964,78 (6,74%)
+- GWM BAMAQ PAMPULHA: R$ 21.946,40 (6,18%)
+- Osaka Veículos: R$ 20.001,00 (5,63%)
+- Euroville BMW: R$ 19.500,00 (5,49%)
+- Carbel Japão: R$ 18.450,00 (5,19%)
+- Bamaq Seminovos: R$ 17.890,00 (5,03%)
+- Kyoto Toyota: R$ 16.770,00 (4,72%)
+- Linha extra não deve aparecer: R$ 1,00 (0,01%)
+- Produção por serviço — Total (derivado a partir do percentual do líder): R$ 2.564.136,73
+- Destaque: PPF REGENERATIVO - FULL - CARRO INTEIRO — R$ 442.570,00 (17,26%)
+- Top 5 (template fechamento_producao_servico):
+- PPF REGENERATIVO - FULL - CARRO INTEIRO: R$ 442.570,00 (17,26%)
+- CLEAR COMFORT PARABRISA: R$ 323.571,90 (12,62%)
+- FILME SOLAR: R$ 298.348,00 (11,64%)
+- NANO PROTEÇÃO 9H EVO: R$ 283.468,00 (11,06%)
+- MAX COMFORT Filme Premium: R$ 270.893,10 (10,57%)
+- Produção por produto — Total: R$ 140.408,00
+- Destaque: PAINT PROTECTION FILME 15M EUA — R$ 101.796,00 (72,50%)
+- Detalhe (todos os registros):
+- PAINT PROTECTION FILME 15M EUA: R$ 101.796,00 (72,50%)
+- PAINT PROTECTION FOSCO EUA 15M: R$ 13.925,00 (9,92%)
+- PAINT PROTECTION FILME 15M BLK: R$ 13.680,00 (9,74%)
+- PAINT PROTECTION FILME 15M FM: R$ 8.467,00 (6,03%)
+- Filme PS4 Protection: R$ 1.500,00 (1,07%)
+- Filme Solar STA: R$ 1.040,00 (0,74%)
+- Parcelamento de cartão — Total (soma dos registros do template fechamento_parcelamento_cartao): R$ 1.348.275,28
+- Destaque: 10X — R$ 847.408,80 (62,85%)
+- Detalhe (todos os registros): 10X: R$ 847.408,80 (62,85%); 6X: R$ 146.854,48 (10,89%); 1X: R$ 116.686,00 (8,65%); 2X: R$ 53.397,00 (3,96%); 3X: R$ 50.418,00 (3,74%); 4X: R$ 46.987,00 (3,48%); 5X: R$ 44.728,00 (3,32%); 8X: R$ 36.246,00 (2,69%); 9X: R$ 3.000,00 (0,22%); 7X: R$ 2.550,00 (0,19%).
+- Taxas de cartão de crédito — Total (soma dos registros do template fechamento_taxas_cartao_credito): R$ 4.296,82
+- Destaque: MFP ESTETICA AUTOMOTIVA — R$ 1.687,79 (39,28%)
+- Registros com valor zero identificados:
+- Faturamento por tipo de pagamento: 2 registro(s) com valor zero.
+- Faturamento e comissão por concessionária: 3 registro(s) com valor zero.
+- Produção por serviço: 2 registro(s) com valor zero.
+- Discrepância a verificar: somatório do parcelamento por cartão (R$ 1.348.275,28) é ligeiramente inferior ao total informado em Cartão de Crédito (R$ 1.352.045,28) — diferença de R$ 3.770,00.
+- Priorizar capacidade comercial e operacional para PPF REGENERATIVO - FULL.
+- Negociar condições/fees de adquirentes e revisar estrutura de parcelamento.
+- Corrigir e conciliar registros com valor zero antes do fechamento final contábil.

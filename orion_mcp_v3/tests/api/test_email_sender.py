@@ -2,9 +2,28 @@ from __future__ import annotations
 
 import logging
 from email.message import EmailMessage
+from pathlib import Path
 
-from orion_mcp_v3.api.email_sender import EmailSender, EmailSendRequest
+from orion_mcp_v3.api.email import EmailSender, EmailSendRequest
+from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.config.settings import get_settings_uncached
+
+
+FIXTURE = Path("tests/fixtures/email/fechamento_gerencial_marco.txt")
+
+
+class CapturingFactory:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def build_report(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.calls.append(kwargs)
+        return EmailReport(
+            subject=str(kwargs["subject"]),
+            from_name=str(kwargs["from_name"]),
+            headline="Relatório estruturado",
+            sections=(EmailSection(title="Evidência", kind="default"),),
+        )
 
 
 async def test_email_sender_sends_plain_text_response_with_settings() -> None:
@@ -58,6 +77,87 @@ async def test_email_sender_sends_plain_text_response_with_settings() -> None:
     assert kwargs["password"] == "secret"
     assert kwargs["start_tls"] is False
     assert kwargs["timeout"] == 3.5
+
+
+async def test_email_sender_builds_structured_html_from_report_text() -> None:
+    calls: list[tuple[EmailMessage, dict]] = []
+
+    async def fake_send(message: EmailMessage, **kwargs):
+        calls.append((message, kwargs))
+        return {}
+
+    settings = get_settings_uncached(
+        email_enabled=True,
+        email_smtp_host="smtp.local",
+        email_smtp_port=1025,
+        email_from_address="orion@local.test",
+        email_from_name="CarSoul",
+        email_start_tls=False,
+    )
+    sender = EmailSender.from_settings(settings, send_func=fake_send)
+
+    result = await sender.send_response(
+        EmailSendRequest(
+            to="destino@local.test",
+            subject="Fechamento gerencial de março de 2026",
+            body=FIXTURE.read_text(encoding="utf-8"),
+            conversation_id="conv-fechamento",
+        )
+    )
+
+    assert result.status == "sent"
+    html_part = calls[0][0].get_body(preferencelist=("html",))
+    assert html_part is not None
+    html = html_part.get_content()
+    assert 'class="hero-card"' in html
+    assert "Faturamento por forma de pagamento" in html
+    assert "Produção por serviço" in html
+    assert "Discrepância a verificar" in html
+
+
+async def test_email_sender_passes_structured_evidence_to_factory() -> None:
+    calls: list[tuple[EmailMessage, dict]] = []
+
+    async def fake_send(message: EmailMessage, **kwargs):
+        calls.append((message, kwargs))
+        return {}
+
+    settings = get_settings_uncached(
+        email_enabled=True,
+        email_smtp_host="smtp.local",
+        email_smtp_port=1025,
+        email_from_address="orion@local.test",
+        email_from_name="CarSoul",
+        email_start_tls=False,
+    )
+    factory = CapturingFactory()
+    sender = EmailSender.from_settings(settings, send_func=fake_send)
+    sender = EmailSender(
+        smtp_host=sender.smtp_host,
+        smtp_port=sender.smtp_port,
+        smtp_username=sender.smtp_username,
+        smtp_password=sender.smtp_password,
+        from_address=sender.from_address,
+        from_name=sender.from_name,
+        start_tls=sender.start_tls,
+        timeout=sender.timeout,
+        send_func=sender.send_func,
+        factory=factory,  # type: ignore[arg-type]
+    )
+
+    result = await sender.send_response(
+        EmailSendRequest(
+            to="destino@local.test",
+            subject="Fechamento gerencial",
+            body="narrativa do chat",
+            structured_evidence="## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00",
+            conversation_id="conv-evidence",
+        )
+    )
+
+    assert result.status == "sent"
+    assert factory.calls[0]["body"] == "narrativa do chat"
+    assert factory.calls[0]["structured_evidence"] == "## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00"
 
 
 async def test_email_sender_returns_failed_without_leaking_body_or_password() -> None:

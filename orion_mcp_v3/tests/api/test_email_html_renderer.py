@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email_html_renderer import render_response_email_html
 
 
@@ -45,6 +46,24 @@ def test_render_response_email_html_escapes_untrusted_content() -> None:
     assert "<b>Orion</b>" not in html
     assert "&lt;script&gt;alert(&#x27;body&#x27;)&lt;/script&gt;" in html
     assert "&lt;b&gt;não deve virar HTML&lt;/b&gt;" in html
+
+
+def test_render_response_email_html_renders_executive_summary_between_hero_and_sections() -> None:
+    report = EmailReport(
+        subject="Fechamento",
+        from_name="CarSoul",
+        headline="Faturamento total — R$ 5.329.489,51",
+        executive_summary="Resumo do narrador com <b>alerta</b> contextual.",
+        sections=(EmailSection(title="Faturamento por tipo de pagamento", kind="payment"),),
+    )
+
+    html = render_response_email_html(subject="Fechamento", body="narrativa", from_name="CarSoul", report=report)
+
+    assert '<section class="executive-summary-card">' in html
+    assert "Resumo executivo" in html
+    assert "&lt;b&gt;alerta&lt;/b&gt;" in html
+    assert html.index('class="hero-card"') < html.index('class="executive-summary-card"')
+    assert html.index('class="executive-summary-card"') < html.index("Faturamento por tipo de pagamento")
 
 
 def test_render_response_email_html_preserves_composed_direct_answer_blocks() -> None:

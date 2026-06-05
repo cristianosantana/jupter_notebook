@@ -1,0 +1,73 @@
+Faturamento líquido (01/01/2026 a 31/01/2026): R$ 2.154.503,81
+
+## Faturamento por tipo de pagamento
+Template: fechamento_faturamento_tipo_pagamento
+Linhas disponíveis: 8
+1. Cartão de Crédito: R$ 1.143.256,71 (53,06%)
+2. Concessionária: R$ 668.855,10 (31,04%)
+3. PIX: R$ 256.954,00 (11,93%)
+4. Depósito Bancário: R$ 43.340,00 (2,01%)
+5. Dinheiro: R$ 29.598,00 (1,37%)
+6. Parcelamento: R$ 12.500,00 (0,58%)
+7. Cheque: R$ 0,00 (0,00%)
+8. Permuta: R$ 0,00 (0,00%)
+
+## Faturamento por tipo de venda
+Template: fechamento_faturamento_tipo_venda
+Linhas disponíveis: 5
+1. Venda Normal: R$ 1.426.448,71 (68,04%)
+2. Prestação de Serviços: R$ 485.000,00 (23,14%)
+3. Cortesia Concessionária: R$ 129.120,10 (6,16%)
+4. Financiamento: R$ 43.934,00 (2,10%)
+5. Cortesia Funcionário: R$ 12.000,00 (0,57%)
+
+## Faturamento por tipo de venda de produtos
+Template: fechamento_faturamento_tipo_venda_produtos
+Linhas disponíveis: 1
+1. Venda de Materiais: R$ 59.520,00 (100,00%)
+
+## Faturamento e comissão por concessionária
+Template: fechamento_faturamento_comissao_concessionaria_periodo
+Linhas disponíveis: 33
+1. SAITAMA - HONDA: R$ 33.828,00 (10,95%)
+2. GWM BAMAQ: R$ 31.210,00 (10,10%)
+3. PORSCHE: R$ 28.900,00 (9,36%)
+
+## Produção por serviço
+Template: fechamento_producao_servico
+Linhas disponíveis: 52
+1. PPF REGENERATIVO - FULL - CARRO INTEIRO: R$ 362.390,00 (17,29%)
+2. CLEAR COMFORT PARABRISA: R$ 299.100,00 (14,27%)
+3. FILME SOLAR: R$ 280.200,00 (13,37%)
+
+## Produção por produto
+Template: fechamento_producao_produto
+Linhas disponíveis: 4
+1. PAINT PROTECTION FILME 15M EUA: R$ 51.960,00 (87,30%)
+2. Filme - Window Blue: R$ 4.500,00 (7,56%)
+3. Filme Solar STA: R$ 2.100,00 (3,53%)
+4. Filme PS4 Protection: R$ 960,00 (1,61%)
+
+## Parcelamento de cartão
+Template: fechamento_parcelamento_cartao
+Linhas disponíveis: 13
+1. 10X: R$ 681.772,80 (59,56%)
+2. 1X: R$ 157.701,01 (13,78%)
+3. 6X: R$ 117.900,00 (10,30%)
+4. 2X: R$ 70.000,00 (6,11%)
+5. 3X: R$ 48.000,00 (4,19%)
+
+## Taxas de cartão de crédito
+Template: fechamento_taxas_cartao_credito
+Linhas disponíveis: 5
+1. BH ESTÉTICA: R$ 3.781,80 (62,22%)
+2. CARSOUL: R$ 1.200,00 (19,74%)
+3. MFP ESTETICA AUTOMOTIVA: R$ 900,00 (14,81%)
+
+## Alertas e conciliações
+1. Registros com valor zero: 2 na quebra por tipo de pagamento.
+2. Parcelamento 10X responde por 59,56% do parcelamento.
+
+## Conclusão acionável
+1. Validar registros com valor zero.
+2. Revisar política de parcelamento e custo financeiro.

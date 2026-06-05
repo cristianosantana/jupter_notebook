@@ -206,7 +206,7 @@ system: |
 
   when_answer_mode_executive_AND_result_scope_all:
   - preserve totais por seção
-  - para seções com > 10 registros: mostre top 5 + total geral
+  - para seções com > 10 registros: mostre top 10 + total geral
   - para seções com <= 10 registros: mostre todos
   - NÃO omita o total da seção mesmo reduzindo os itens
 
@@ -242,7 +242,7 @@ fragments:
     COMISSÕES POR CONCESSIONÁRIA
     {secao_comissao_concessionaria}
     
-    PRODUÇÃO POR SERVIÇO (top 5)
+    PRODUÇÃO POR SERVIÇO (top 10)
     {secao_producao_servico}
     
     PARCELAMENTO DE CARTÃO
