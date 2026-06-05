@@ -58,6 +58,10 @@ class QueryCollectionCatalog:
     def __init__(self, collections: tuple[QueryCollection, ...]) -> None:
         self._collections = {collection.slug: collection for collection in collections}
 
+    @property
+    def collections(self) -> tuple[QueryCollection, ...]:
+        return tuple(self._collections.values())
+
     def get(self, slug: str) -> QueryCollection | None:
         return self._collections.get(slug)
 

@@ -238,6 +238,54 @@ def test_expander_collection_fanout_overrides_llm_selection_for_broad_fechamento
     assert [p.hints["template_slug"] for p in plans] == list(FECHAMENTO_GERENCIAL_TEMPLATES)
     assert {p.hints["collection_slug"] for p in plans} == {"fechamento_gerencial_por_mes"}
     assert {p.hints["semantic_reason"] for p in plans} == {"collection_fanout"}
+    dimensions_by_slug = {p.hints["template_slug"]: p.hints["selected_dimension"] for p in plans}
+    assert dimensions_by_slug == {
+        "fechamento_faturamento_comissao_concessionaria_periodo": "concessionaria",
+        "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo": "concessionaria",
+        "fechamento_producao_servico": "servico",
+        "fechamento_producao_produto": "produto",
+        "fechamento_faturamento_tipo_pagamento": "caixa_tipo",
+        "fechamento_faturamento_tipo_venda": "os_tipo",
+        "fechamento_faturamento_tipo_venda_produtos": "os_tipo",
+        "fechamento_parcelamento_cartao": "parcelas",
+        "fechamento_taxas_cartao_credito": "empresa_nome",
+    }
+    assert "periodo" not in dimensions_by_slug.values()
+    metrics_by_slug = {p.hints["template_slug"]: p.hints["selected_metric"] for p in plans}
+    assert metrics_by_slug == {
+        "fechamento_faturamento_comissao_concessionaria_periodo": "total_comissao",
+        "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo": "total_comissao",
+        "fechamento_producao_servico": "total",
+        "fechamento_producao_produto": "total",
+        "fechamento_faturamento_tipo_pagamento": "total_liquido",
+        "fechamento_faturamento_tipo_venda": "total",
+        "fechamento_faturamento_tipo_venda_produtos": "total",
+        "fechamento_parcelamento_cartao": "total",
+        "fechamento_taxas_cartao_credito": "valor_taxa",
+    }
+
+
+def test_expander_prefers_explicit_collection_slug_from_selector() -> None:
+    cp = _analytical_plan(
+        metrics=("total",),
+        entities=("periodo",),
+        time_scope="2026-01-01/2026-01-31",
+        hints={
+            "collection_slug": "fechamento_gerencial_por_mes",
+            "selected_operation": "list",
+            "semantic_reason": "llm_collection_selector",
+        },
+    )
+
+    plans = QueryExpander(registry=ANALYTICS_TEMPLATES).expand(
+        cp,
+        ANALYTICS_ALLOWLIST,
+        query_text="quero o relatório executivo mensal consolidado de janeiro",
+    )
+
+    assert [p.hints["template_slug"] for p in plans] == list(FECHAMENTO_GERENCIAL_TEMPLATES)
+    assert {p.hints["collection_slug"] for p in plans} == {"fechamento_gerencial_por_mes"}
+    assert {p.hints["semantic_reason"] for p in plans} == {"collection_fanout"}
 
 
 def test_query_collection_catalog_selects_specific_subset() -> None:

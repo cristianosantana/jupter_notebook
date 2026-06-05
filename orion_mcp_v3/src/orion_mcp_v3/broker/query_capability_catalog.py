@@ -37,6 +37,26 @@ class QueryCard:
 
 
 @dataclass(frozen=True, slots=True)
+class CollectionCard:
+    """Cartão semântico compacto usado para seleção de coleção."""
+
+    collection_slug: str
+    descriptions: tuple[str, ...]
+    template_slugs: tuple[str, ...]
+    default_operation: str
+    presentation_mode: str
+
+    def as_prompt_dict(self) -> dict[str, Any]:
+        return {
+            "collection_slug": self.collection_slug,
+            "descriptions": list(self.descriptions),
+            "template_slugs": list(self.template_slugs),
+            "default_operation": self.default_operation,
+            "presentation_mode": self.presentation_mode,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class QueryCapabilityEntry:
     template_slug: str
     metrics: Mapping[str, tuple[str, ...]]
@@ -92,6 +112,7 @@ class QueryCapabilityEntry:
 @dataclass(frozen=True, slots=True)
 class QueryCapabilityCatalog:
     entries: tuple[QueryCapabilityEntry, ...]
+    collections: tuple[CollectionCard, ...] = ()
 
     def as_prompt_dict(self) -> list[dict[str, Any]]:
         return [entry.as_prompt_dict() for entry in self.entries]
@@ -101,6 +122,9 @@ class QueryCapabilityCatalog:
 
     def query_cards_prompt(self) -> list[dict[str, Any]]:
         return [card.as_prompt_dict() for card in self.query_cards()]
+
+    def collection_cards_prompt(self) -> list[dict[str, Any]]:
+        return [card.as_prompt_dict() for card in self.collections]
 
     @property
     def metric_keys(self) -> set[str]:
@@ -120,6 +144,14 @@ class QueryCapabilityCatalog:
         for entry in self.entries:
             if entry.template_slug == template_slug:
                 return entry
+        return None
+
+    def collection_card(self, collection_slug: str | None) -> CollectionCard | None:
+        if collection_slug is None:
+            return None
+        for card in self.collections:
+            if card.collection_slug == collection_slug:
+                return card
         return None
 
     def supports(
@@ -144,6 +176,8 @@ class QueryCapabilityCatalog:
 
 
 def build_query_capability_catalog(registry: QueryTemplateRegistry) -> QueryCapabilityCatalog:
+    from orion_mcp_v3.broker.query_collections import ANALYTICS_COLLECTIONS
+
     entries: list[QueryCapabilityEntry] = []
     for slug in registry.slugs:
         template = registry.get(slug)
@@ -190,7 +224,17 @@ def build_query_capability_catalog(registry: QueryTemplateRegistry) -> QueryCapa
                 default_dimension=capability.default_dimension,
             )
         )
-    return QueryCapabilityCatalog(entries=tuple(entries))
+    collection_cards = tuple(
+        CollectionCard(
+            collection_slug=collection.slug,
+            descriptions=collection.descriptions,
+            template_slugs=collection.template_slugs,
+            default_operation=collection.default_operation,
+            presentation_mode=collection.presentation_mode,
+        )
+        for collection in ANALYTICS_COLLECTIONS.collections
+    )
+    return QueryCapabilityCatalog(entries=tuple(entries), collections=collection_cards)
 
 
 def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:
