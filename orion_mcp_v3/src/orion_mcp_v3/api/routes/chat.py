@@ -208,6 +208,27 @@ def _plan_with_query_selection(
     selection: QuerySelectionContract,
 ) -> CognitivePlan:
     hints = dict(plan.hints or {})
+    if selection.selection_kind == "collection" or selection.collection_slug is not None:
+        intent_contract = {
+            "collection_slug": selection.collection_slug,
+            "operation": selection.operation,
+            "entity_filters": [dict(item) for item in selection.entity_filters],
+        }
+        hints.pop("template_slug", None)
+        hints.pop("selected_metric", None)
+        hints.pop("selected_dimension", None)
+        hints.update(
+            {
+                "collection_slug": selection.collection_slug,
+                "intent_contract": intent_contract,
+                "selected_operation": selection.operation,
+                "entity_filters": selection.entity_filters,
+                "semantic_reason": "llm_collection_selector",
+                "query_selection": selection.as_dict(),
+            }
+        )
+        return replace(plan, hints=hints)
+
     intent_contract = hints.get("intent_contract")
     if isinstance(intent_contract, Mapping):
         intent_contract = {

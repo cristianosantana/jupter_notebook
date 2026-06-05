@@ -184,7 +184,9 @@ class QueryExpander:
         if self._registry is None:
             return []
 
-        matched_collections = self._collections.match_all(query_text, cognitive)
+        preferred_collection_slug = _preferred_collection_slug(cognitive)
+        preferred_collection = self._collections.get(preferred_collection_slug) if preferred_collection_slug else None
+        matched_collections = (preferred_collection,) if preferred_collection is not None else self._collections.match_all(query_text, cognitive)
         if matched_collections:
             collection = matched_collections[0]
             plans: list[SemanticQueryPlan] = []
@@ -206,6 +208,8 @@ class QueryExpander:
                             "collection_slug": collection.slug,
                             "collection_reason": "collection_catalog_match",
                             "collection_presentation_mode": collection.presentation_mode,
+                            "selected_metric": _collection_default_measure(tpl, plan.hints.get("selected_metric")),
+                            "selected_dimension": _collection_default_dimension(tpl, plan.hints.get("selected_dimension")),
                             "selected_operation": plan.hints.get("selected_operation") or collection.default_operation,
                         },
                     )
@@ -406,6 +410,19 @@ def _preferred_template_slug(cognitive: CognitivePlan) -> str | None:
     return None
 
 
+def _preferred_collection_slug(cognitive: CognitivePlan) -> str | None:
+    hints = cognitive.hints if isinstance(cognitive.hints, Mapping) else {}
+    raw = hints.get("collection_slug")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    contract = hints.get("intent_contract")
+    if isinstance(contract, Mapping):
+        raw = contract.get("collection_slug")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    return None
+
+
 def _hint_value(cognitive: CognitivePlan, key: str) -> str | None:
     hints = cognitive.hints if isinstance(cognitive.hints, Mapping) else {}
     raw = hints.get(key)
@@ -457,3 +474,15 @@ _TEMPORAL_FILTER_DIMENSIONS = frozenset({"periodo", "data_pagamento"})
 
 def _first(values: tuple[str, ...]) -> str | None:
     return values[0] if values else None
+
+
+def _collection_default_dimension(tpl: Any, fallback: Any) -> Any:
+    capability = getattr(tpl, "capability", None)
+    default_dimension = getattr(capability, "default_dimension", None)
+    return default_dimension or fallback
+
+
+def _collection_default_measure(tpl: Any, fallback: Any) -> Any:
+    capability = getattr(tpl, "capability", None)
+    default_measure = getattr(capability, "default_measure", None)
+    return default_measure or fallback

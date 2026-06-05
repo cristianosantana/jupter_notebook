@@ -10,7 +10,9 @@ from typing import Any, Mapping
 class QuerySelectionContract:
     """Saída segura do seletor LLM: escolhe visão analítica, não SQL."""
 
-    template_slug: str
+    template_slug: str | None = None
+    collection_slug: str | None = None
+    selection_kind: str = "template"
     measure: str | None = None
     dimension: str | None = None
     operation: str | None = None
@@ -20,7 +22,9 @@ class QuerySelectionContract:
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "selection_kind": self.selection_kind,
             "template_slug": self.template_slug,
+            "collection_slug": self.collection_slug,
             "measure": self.measure,
             "dimension": self.dimension,
             "operation": self.operation,
@@ -31,8 +35,15 @@ class QuerySelectionContract:
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "QuerySelectionContract":
+        collection_slug = _optional_str(raw.get("collection_slug"))
+        template_slug = _optional_str(raw.get("template_slug"))
+        selection_kind = _optional_str(raw.get("selection_kind"))
+        if selection_kind is None:
+            selection_kind = "collection" if collection_slug is not None else "template"
         return cls(
-            template_slug=str(raw.get("template_slug") or "").strip(),
+            template_slug=template_slug,
+            collection_slug=collection_slug,
+            selection_kind=selection_kind,
             measure=_optional_str(raw.get("measure")),
             dimension=_optional_str(raw.get("dimension")),
             operation=_optional_str(raw.get("operation")),

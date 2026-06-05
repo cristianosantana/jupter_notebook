@@ -9,6 +9,7 @@ SQL = """\
 SELECT
     ct.id AS caixa_tipo_id,
     ct.nome AS caixa_tipo,
+    DATE_FORMAT(%s, '%%Y-%%m') AS periodo,
     COALESCE(p.total_pagamentos, 0) AS total_pagamentos,
     COALESCE(e.total_estornos, 0) AS total_estornos,
     (COALESCE(p.total_pagamentos, 0) - COALESCE(e.total_estornos, 0)) AS total_liquido
@@ -42,7 +43,7 @@ LEFT JOIN (
       AND est.deleted_at IS NULL
       AND cx.deleted_at IS NULL
       AND est.status > 2
-      AND os.os_tipo_id IN (1, 2, 3, 4, 5)
+      AND os.os_tipo_id IN (1, 2, 3, 4, 5, 11)
       AND os.cancelada = 0
       AND est.updated_at >= %s
       AND est.updated_at < DATE_ADD(%s, INTERVAL 1 DAY)
@@ -61,7 +62,7 @@ ANSWERS = (
 )
 
 VALUE_KEY = "total_liquido"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "caixa_tipo"
 DEFAULT_MEASURE = "total_liquido"
@@ -87,6 +88,10 @@ MEASURES = {
     },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "caixa_tipo": {
         "label": "tipo de pagamento",
         "synonyms": ("tipo de pagamento", "forma de pagamento", "caixa tipo", "caixa_tipo"),
@@ -100,6 +105,7 @@ DIMENSIONS = {
 SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
 DEFAULT_PARAMS = {"business_unit_id": 0}
 PARAMETERS = (
+    "date_from",
     "date_from",
     "date_to",
     "business_unit_id",

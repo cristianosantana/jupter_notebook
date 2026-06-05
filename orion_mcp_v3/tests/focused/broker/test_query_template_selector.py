@@ -9,6 +9,7 @@ from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
 from orion_mcp_v3.contracts.query_selection import QuerySelectionContract
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan, IntentType
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMResponse, LLMResponseMeta
+from orion_mcp_v3.api.routes.chat import _plan_with_query_selection
 
 
 class FakeSelectorProvider:
@@ -61,6 +62,44 @@ async def test_query_template_selector_returns_contract_from_json() -> None:
     assert selected.template_slug == "performance_vendedor"
     assert selected.dimension == "vendedor"
     assert "query_cards" in provider.last_messages[-1].content
+
+
+async def test_query_template_selector_returns_collection_contract_from_json() -> None:
+    provider = FakeSelectorProvider(
+        """
+        {
+          "selection_kind": "collection",
+          "collection_slug": "fechamento_gerencial_por_mes",
+          "template_slug": null,
+          "measure": null,
+          "dimension": null,
+          "operation": "list",
+          "confidence": 0.94,
+          "reason": "A pergunta pede fechamento gerencial completo."
+        }
+        """
+    )
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    plan = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=("total",),
+        entities=("periodo",),
+        time_scope="2026-01-01/2026-01-31",
+    )
+
+    selected = await QueryTemplateSelector(provider).select(
+        "Quero o fechamento gerencial de janeiro de 2026",
+        cognitive_plan=plan,
+        capabilities=catalog,
+    )
+
+    assert provider.calls == 1
+    assert selected is not None
+    assert selected.selection_kind == "collection"
+    assert selected.collection_slug == "fechamento_gerencial_por_mes"
+    assert selected.template_slug is None
+    assert "collection_cards" in provider.last_messages[-1].content
 
 
 async def test_query_template_selector_returns_entity_filters_from_json() -> None:
@@ -121,6 +160,54 @@ def test_query_selection_validator_accepts_supported_selection() -> None:
     assert result.contract is not None
     assert result.contract.measure == "vendas"
     assert result.contract.dimension == "vendedor"
+
+
+def test_query_selection_validator_accepts_supported_collection() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = QuerySelectionValidator(catalog).validate(
+        QuerySelectionContract(
+            selection_kind="collection",
+            collection_slug="fechamento_gerencial_por_mes",
+            operation="list",
+            confidence=0.94,
+            reason="Pergunta pede fechamento gerencial completo.",
+        )
+    )
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.selection_kind == "collection"
+    assert result.contract.collection_slug == "fechamento_gerencial_por_mes"
+    assert result.contract.template_slug is None
+    assert result.contract.measure is None
+    assert result.contract.dimension is None
+
+
+def test_plan_with_collection_selection_does_not_contaminate_metrics_or_entities() -> None:
+    plan = CognitivePlan(
+        intent_type=IntentType.ANALYTICAL,
+        needs_analytics=True,
+        metrics=("total",),
+        entities=("periodo",),
+        time_scope="2026-01-01/2026-01-31",
+    )
+    selection = QuerySelectionContract(
+        selection_kind="collection",
+        collection_slug="fechamento_gerencial_por_mes",
+        operation="list",
+        confidence=0.94,
+        reason="Pergunta pede fechamento gerencial completo.",
+    )
+
+    updated = _plan_with_query_selection(plan, selection)
+
+    assert updated.metrics == ("total",)
+    assert updated.entities == ("periodo",)
+    assert updated.hints["collection_slug"] == "fechamento_gerencial_por_mes"
+    assert updated.hints["selected_operation"] == "list"
+    assert "template_slug" not in updated.hints
+    assert "selected_metric" not in updated.hints
+    assert "selected_dimension" not in updated.hints
 
 
 def test_query_selection_validator_accepts_itens_vendidos_synonyms() -> None:

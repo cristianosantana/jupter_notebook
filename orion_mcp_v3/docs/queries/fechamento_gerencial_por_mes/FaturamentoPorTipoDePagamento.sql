@@ -1,11 +1,12 @@
 SET @ano = 2026;
-SET @mes = 5; -- 0 = ano inteiro
+SET @mes = 3; -- 0 = ano inteiro
 SET @business_unit_id = 1; -- 0 = todas
 SET @tipo_grupo_servico = 0; -- 0 completo, 1 sem couro, 2 couro
 
 SELECT 
     ct.id AS caixa_tipo_id,
     ct.nome AS caixa_tipo,
+    DATE_FORMAT(CONCAT(@ano, '-', @mes, '-01'), '%Y-%m') AS periodo,
     -- Coalesce garante que se não houver registros, o valor retornado seja 0 em vez de NULL
     COALESCE(p.total_pagamentos, 0) AS total_pagamentos,
     COALESCE(e.total_estornos, 0) AS total_estornos,
@@ -44,7 +45,7 @@ LEFT JOIN (
       AND est.deleted_at IS NULL
       AND cx.deleted_at IS NULL
       AND est.status > 2
-      AND os.os_tipo_id IN (1, 2, 3, 4, 5) -- Nota: mantido sem o 11 conforme sua regra original
+      AND os.os_tipo_id IN (1, 2, 3, 4, 5, 11) -- Nota: mantido sem o 11 conforme sua regra original
       AND os.cancelada = 0
       AND YEAR(est.updated_at) = @ano
       AND (@mes = 0 OR MONTH(est.updated_at) = @mes)

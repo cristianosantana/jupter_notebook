@@ -55,7 +55,7 @@ class QueryTemplateSelector:
             contract = QuerySelectionContract.from_mapping(payload)
         except (TypeError, ValueError):
             return None
-        return contract if contract.template_slug else None
+        return contract if (contract.template_slug or contract.collection_slug) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +77,28 @@ class QuerySelectionValidator:
     def validate(self, contract: QuerySelectionContract) -> QuerySelectionValidationResult:
         if contract.confidence < self._min_confidence:
             return self._reject("confidence_too_low")
+        selection_kind = (contract.selection_kind or "template").strip().lower()
+        if selection_kind == "collection" or contract.collection_slug is not None:
+            collection = self._catalog.collection_card(contract.collection_slug)
+            if collection is None:
+                return self._reject("unsupported_collection")
+            operation = contract.operation.strip() if contract.operation else collection.default_operation
+            return QuerySelectionValidationResult(
+                accepted=True,
+                contract=QuerySelectionContract(
+                    selection_kind="collection",
+                    collection_slug=collection.collection_slug,
+                    template_slug=None,
+                    measure=None,
+                    dimension=None,
+                    operation=operation,
+                    entity_filters=(),
+                    confidence=contract.confidence,
+                    reason=contract.reason,
+                ),
+            )
+        if selection_kind != "template":
+            return self._reject("unsupported_selection_kind")
         entry = self._catalog.entry_for_template(contract.template_slug)
         if entry is None:
             return self._reject("unsupported_template")
@@ -95,7 +117,9 @@ class QuerySelectionValidator:
         return QuerySelectionValidationResult(
             accepted=True,
             contract=QuerySelectionContract(
+                selection_kind="template",
                 template_slug=entry.template_slug,
+                collection_slug=None,
                 measure=measure,
                 dimension=dimension,
                 operation=operation,
@@ -130,8 +154,11 @@ def _build_prompt(
             "time_scope": cognitive_plan.time_scope,
         },
         "query_cards": capabilities.query_cards_prompt(),
+        "collection_cards": capabilities.collection_cards_prompt(),
         "required_json_shape": {
+            "selection_kind": "template|collection",
             "template_slug": "string from query_cards",
+            "collection_slug": "string from collection_cards|null",
             "measure": "string|null",
             "dimension": "string|null",
             "operation": "string|null",
