@@ -7,6 +7,7 @@ Distribuicao mensal de pagamentos no cartao por quantidade de parcelas.
 
 SQL = """\
 SELECT
+    DATE_FORMAT(cx.data_pagamento, '%%Y-%%m') AS periodo,
     CONCAT(cx.quant_parcelas, 'X') AS parcelas,
     cx.quant_parcelas AS quant_parcelas,
     COUNT(DISTINCT os.id) AS quantidade,
@@ -32,7 +33,7 @@ WHERE os.os_tipo_id IN (1, 2, 3, 4, 5, 11)
   AND os.data_pagamento < DATE_ADD(%s, INTERVAL 1 DAY)
   AND (%s = 0 OR cx.empresa_faturamento_id = %s)
   AND (%s = 0 OR conc.business_unit_id = %s)
-GROUP BY cx.quant_parcelas
+GROUP BY cx.quant_parcelas, DATE_FORMAT(cx.data_pagamento, '%%Y-%%m')
 ORDER BY cx.quant_parcelas"""
 
 ANSWERS = (
@@ -43,7 +44,7 @@ ANSWERS = (
 )
 
 VALUE_KEY = "total"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "parcelas"
 DEFAULT_MEASURE = "total"
@@ -63,6 +64,10 @@ MEASURES = {
     },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "parcelas": {"label": "parcelas", "synonyms": ("parcelas", "parcelamento", "vezes")},
     "quant_parcelas": {"label": "quantidade de parcelas", "synonyms": ("quantidade parcelas", "quant_parcelas")},
 }

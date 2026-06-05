@@ -9,6 +9,7 @@ SQL = """\
 SELECT
     ost.id,
     ost.nome AS os_tipo,
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo,
     ROUND(SUM(oss.valor_venda_real), 2) AS total
 FROM os
 JOIN os_servicos AS oss ON oss.os_id = os.id
@@ -30,7 +31,7 @@ WHERE os.os_tipo_id IN (1, 2, 3, 4, 5)
       OR (%s = 1 AND serv.grupo_servico_id != 3)
       OR (%s = 2 AND serv.grupo_servico_id = 3)
   )
-GROUP BY ost.id
+GROUP BY ost.id, DATE_FORMAT(os.data_pagamento, '%%Y-%%m')
 ORDER BY ost.id"""
 
 ANSWERS = (
@@ -41,7 +42,7 @@ ANSWERS = (
 )
 
 VALUE_KEY = "total"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "os_tipo"
 DEFAULT_MEASURE = "total"
@@ -55,6 +56,10 @@ MEASURES = {
     },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "os_tipo": {"label": "tipo de venda", "synonyms": ("tipo de venda", "tipo de os", "os_tipo")},
     "id": {"label": "id do tipo de venda", "synonyms": ("id", "os_tipo_id")},
 }

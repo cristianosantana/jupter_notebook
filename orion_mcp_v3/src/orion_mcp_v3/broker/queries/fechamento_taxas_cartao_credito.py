@@ -2,7 +2,7 @@
 fechamento_taxas_cartao_credito
 ===============================
 
-Taxas de cartao de credito agrupadas por empresa, bandeira e quantidade de parcelas.
+Taxas de cartao de credito agrupadas por empresa.
 
 A query documental original calcula o mes anterior ao fechamento. Aqui o mesmo
 comportamento e preservado deslocando `date_from` e `date_to` em um mes.
@@ -19,7 +19,6 @@ SELECT
     ROUND(MAX(con_fin.taxa), 2) AS max_taxa,
     ROUND(SUM(con_fin.valor_bruto - con_fin.valor_liquido), 2) AS valor_taxa,
     COUNT(con_fin.id) AS quantidade_registros,
-    con_fin.quantidade_parcelas,
     LOWER(cax.bandeira_cartao) AS bandeira
 FROM conciliacoes_financeira AS con_fin
 JOIN empresas AS em ON con_fin.empresa_id = em.id
@@ -27,7 +26,7 @@ JOIN caixas AS cax ON con_fin.caixa_id = cax.id
 WHERE con_fin.data_transacao >= DATE_SUB(%s, INTERVAL 1 MONTH)
   AND con_fin.data_transacao < DATE_SUB(DATE_ADD(%s, INTERVAL 1 DAY), INTERVAL 1 MONTH)
   AND con_fin.deleted_at IS NULL
-GROUP BY empresa_id, bandeira, quantidade_parcelas"""
+GROUP BY empresa_id"""
 
 ANSWERS = (
     "taxas cartao credito agrupadas",
@@ -78,10 +77,6 @@ MEASURES = {
 DIMENSIONS = {
     "empresa_nome": {"label": "empresa", "synonyms": ("empresa", "empresa faturamento", "empresa_nome")},
     "bandeira": {"label": "bandeira", "synonyms": ("bandeira", "bandeira cartao")},
-    "quantidade_parcelas": {
-        "label": "quantidade de parcelas",
-        "synonyms": ("parcelas", "quantidade parcelas", "quantidade_parcelas"),
-    },
 }
 SUPPORTED_OPERATIONS = ("ranking_desc", "ranking_asc", "top_and_bottom", "list")
 PARAMETERS = ("date_from", "date_to")

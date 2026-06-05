@@ -6,6 +6,7 @@ SET @tipo_grupo_servico = 0; -- 0 completo, 1 sem couro, 2 couro
 SELECT
     ost.id,
     ost.nome AS os_tipo,
+    DATE_FORMAT(os.data_pagamento, '%Y-%m') AS periodo,
     SUM(oss.valor_venda_real) AS total
 FROM os
 JOIN os_servicos AS oss ON oss.os_id = os.id

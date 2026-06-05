@@ -7,6 +7,7 @@ Producao mensal por produto no fechamento gerencial.
 
 SQL = """\
 SELECT
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo,
     prod.id AS produto_id,
     prod.nome AS produto,
     COUNT(DISTINCT osp.id) AS quantidade,
@@ -24,7 +25,7 @@ WHERE os.os_tipo_id = 11
   AND os.data_pagamento >= %s
   AND os.data_pagamento < DATE_ADD(%s, INTERVAL 1 DAY)
   AND (%s = 0 OR conc.business_unit_id = %s)
-GROUP BY prod.id
+GROUP BY prod.id, DATE_FORMAT(os.data_pagamento, '%%Y-%%m')
 ORDER BY prod.nome"""
 
 ANSWERS = (
@@ -36,7 +37,7 @@ ANSWERS = (
 )
 
 VALUE_KEY = "total"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "produto"
 DEFAULT_MEASURE = "total"
@@ -56,6 +57,10 @@ MEASURES = {
     },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "produto": {"label": "produto", "synonyms": ("produto", "produtos", "item")},
     "produto_id": {"label": "id do produto", "synonyms": ("produto_id", "id produto")},
 }

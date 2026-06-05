@@ -326,6 +326,45 @@ def test_fechamento_faturamento_comissao_templates_use_period_aware_slugs() -> N
     assert "total_comissao" in detail.capability.measures
 
 
+def test_fechamento_gerencial_templates_follow_reference_sql_period_contract() -> None:
+    period_aware_slugs = (
+        "fechamento_faturamento_tipo_pagamento",
+        "fechamento_faturamento_tipo_venda",
+        "fechamento_faturamento_tipo_venda_produtos",
+        "fechamento_parcelamento_cartao",
+        "fechamento_producao_produto",
+        "fechamento_producao_servico",
+    )
+
+    for slug in period_aware_slugs:
+        tpl = ANALYTICS_TEMPLATES.get(slug)
+        assert tpl is not None
+        assert tpl.time_key == "periodo"
+        assert tpl.grain == "month"
+        assert "periodo" in tpl.capability.dimensions
+        assert " AS periodo" in tpl.sql
+
+    tipo_pagamento = ANALYTICS_TEMPLATES.get("fechamento_faturamento_tipo_pagamento")
+    assert tipo_pagamento is not None
+    assert "AND os.os_tipo_id IN (1, 2, 3, 4, 5, 11)" in tipo_pagamento.sql
+
+    venda_produtos = ANALYTICS_TEMPLATES.get("fechamento_faturamento_tipo_venda_produtos")
+    assert venda_produtos is not None
+    assert venda_produtos.label_key == "os_tipo"
+    assert venda_produtos.capability.default_dimension == "os_tipo"
+    assert "ost.nome AS os_tipo" in venda_produtos.sql
+
+
+def test_fechamento_taxas_cartao_credito_matches_grouped_reference_contract() -> None:
+    tpl = ANALYTICS_TEMPLATES.get("fechamento_taxas_cartao_credito")
+
+    assert tpl is not None
+    assert "con_fin.quantidade_parcelas" not in tpl.sql
+    assert "GROUP BY empresa_id, bandeira, quantidade_parcelas" not in tpl.sql
+    assert "GROUP BY empresa_id" in tpl.sql
+    assert "quantidade_parcelas" not in tpl.capability.dimensions
+
+
 def test_capability_catalog_exposes_semantic_view_details() -> None:
     catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
     entry = next(e for e in catalog.entries if e.template_slug == "performance_concessionaria")

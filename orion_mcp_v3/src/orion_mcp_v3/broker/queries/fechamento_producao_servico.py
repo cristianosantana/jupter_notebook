@@ -7,11 +7,11 @@ Producao mensal por servico no fechamento gerencial.
 
 SQL = """\
 SELECT
+    DATE_FORMAT(os.data_pagamento, '%%Y-%%m') AS periodo,
     serv.id AS servico_id,
     serv.nome AS servico,
     COUNT(DISTINCT oss.id) AS quantidade,
-    ROUND(SUM(oss.valor_venda_real), 2) AS total,
-    serv.custo_fixo AS custo
+    ROUND(SUM(oss.valor_venda_real), 2) AS total
 FROM os
 JOIN os_servicos AS oss ON oss.os_id = os.id
 JOIN concessionarias AS conc ON os.concessionaria_id = conc.id
@@ -30,7 +30,7 @@ WHERE os.os_tipo_id IN (1, 2, 3, 4, 5)
       OR (%s = 1 AND serv.grupo_servico_id != 3)
       OR (%s = 2 AND serv.grupo_servico_id = 3)
   )
-GROUP BY serv.id
+GROUP BY serv.id, DATE_FORMAT(os.data_pagamento, '%%Y-%%m')
 ORDER BY serv.nome"""
 
 ANSWERS = (
@@ -42,7 +42,7 @@ ANSWERS = (
 )
 
 VALUE_KEY = "total"
-TIME_KEY = None
+TIME_KEY = "periodo"
 GRAIN = "month"
 LABEL_KEY = "servico"
 DEFAULT_MEASURE = "total"
@@ -60,14 +60,12 @@ MEASURES = {
         "synonyms": ("total", "faturamento", "receita", "valor vendido"),
         "additive": True,
     },
-    "custo": {
-        "label": "custo fixo",
-        "kind": "money",
-        "synonyms": ("custo", "custo fixo"),
-        "additive": False,
-    },
 }
 DIMENSIONS = {
+    "periodo": {
+        "label": "periodo",
+        "synonyms": ("periodo", "mes", "competencia"),
+    },
     "servico": {"label": "servico", "synonyms": ("servico", "servicos", "item")},
     "servico_id": {"label": "id do servico", "synonyms": ("servico_id", "id servico")},
 }
