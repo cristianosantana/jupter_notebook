@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Sequence
 
@@ -138,6 +139,38 @@ class IntentThenNarrationProvider:
                         "source_periods": "explicit",
                         "inherits_from_previous": [],
                         "confidence": 0.92,
+                    }
+                ),
+                meta=LLMResponseMeta(model="fake"),
+            )
+        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+
+    async def stream(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
+        yield LLMStreamChunk(delta="narrativa ok", finish_reason="stop")
+
+
+class CollectionThenNarrationProvider:
+    def __init__(self) -> None:
+        self.chat_calls = 0
+
+    async def generate(self, prompt: str, **kwargs):  # type: ignore[no-untyped-def]
+        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+
+    async def chat(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
+        self.chat_calls += 1
+        content = messages[-1].content if messages else ""
+        if "collection_cards" in content:
+            return LLMResponse(
+                text=json.dumps(
+                    {
+                        "selection_kind": "collection",
+                        "collection_slug": "fechamento_gerencial_por_mes",
+                        "template_slug": None,
+                        "measure": None,
+                        "dimension": None,
+                        "operation": "list",
+                        "confidence": 0.94,
+                        "reason": "Pedido pede fechamento gerencial completo.",
                     }
                 ),
                 meta=LLMResponseMeta(model="fake"),
@@ -402,6 +435,161 @@ def _make_client_with_analytics(
         email_sender=email_sender,
     )
     return TestClient(app)
+
+
+def _make_client_with_mysql(provider, mysql, email_sender=None) -> TestClient:  # type: ignore[no-untyped-def]
+    from orion_mcp_v3.broker.executor import AnalyticsExecutor
+    from orion_mcp_v3.config.allowlists import ANALYTICS_ALLOWLIST
+
+    executor = AnalyticsExecutor(mysql, ANALYTICS_ALLOWLIST, default_limit=1000)
+    app = create_app(
+        llm_provider=provider,
+        analytics_executor=executor,
+        analytics_allowlist=ANALYTICS_ALLOWLIST,
+        email_sender=email_sender,
+    )
+    return TestClient(app)
+
+
+def _fechamento_row() -> dict[str, object]:
+    return {
+        "periodo": "2026-05",
+        "concessionaria": "Loja Centro",
+        "servico": "Instalacao",
+        "produto": "PPF",
+        "caixa_tipo": "PIX",
+        "os_tipo": "Venda Normal",
+        "parcelas": "1X",
+        "empresa_nome": "Visa",
+        "total": 100.0,
+        "total_liquido": 100.0,
+        "total_comissao": 10.0,
+        "comissao_venda_normal": 10.0,
+        "valor_taxa": 2.5,
+        "quantidade": 1,
+    }
+
+
+def test_chat_collection_fanout_executes_templates_concurrently() -> None:
+    from unittest.mock import MagicMock
+
+    from orion_mcp_v3.broker.query_collections import FECHAMENTO_GERENCIAL_TEMPLATES
+
+    state = {"active": 0, "max_active": 0, "calls": 0}
+
+    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+        state["calls"] += 1
+        state["active"] += 1
+        state["max_active"] = max(state["max_active"], state["active"])
+        try:
+            await asyncio.sleep(0.05)
+            return [_fechamento_row()]
+        finally:
+            state["active"] -= 1
+
+    mysql = MagicMock()
+    mysql.select = select
+    client = _make_client_with_mysql(CollectionThenNarrationProvider(), mysql)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "Quero o fechamento gerencial de maio de 2026"},
+    )
+
+    assert r.status_code == 200
+    assert state["calls"] == len(FECHAMENTO_GERENCIAL_TEMPLATES)
+    assert state["max_active"] > 1
+
+
+def test_chat_collection_fanout_keeps_valid_results_when_one_template_fails() -> None:
+    from unittest.mock import MagicMock
+
+    from orion_mcp_v3.broker.query_collections import FECHAMENTO_GERENCIAL_TEMPLATES
+
+    state = {"calls": 0}
+
+    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+        state["calls"] += 1
+        call_no = state["calls"]
+        await asyncio.sleep(0)
+        if call_no == 1:
+            raise RuntimeError("falha simulada")
+        return [_fechamento_row()]
+
+    mysql = MagicMock()
+    mysql.select = select
+    sender = FakeEmailSender()
+    client = _make_client_with_mysql(CollectionThenNarrationProvider(), mysql, email_sender=sender)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Quero o fechamento gerencial de maio de 2026",
+            "email_to": "destino@local.test",
+        },
+    )
+
+    assert r.status_code == 200
+    assert state["calls"] == len(FECHAMENTO_GERENCIAL_TEMPLATES)
+    safeguards = r.json()["meta"].get("safeguards", [])
+    assert "no_evidence" not in safeguards
+    assert len(sender.calls) == 1
+    assert sender.calls[0].structured_evidence
+
+
+def test_chat_collection_fanout_trace_includes_execute_duration(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from orion_mcp_v3.config.settings import get_settings
+    from orion_mcp_v3.runtime.analytics_pipeline_trace import shutdown_pipeline_file_logging
+
+    monkeypatch.setenv("ORION_ANALYTICS_PIPELINE_TRACE", "true")
+    monkeypatch.setenv("ORION_ANALYTICS_PIPELINE_LOG_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    shutdown_pipeline_file_logging()
+
+    state = {"calls": 0}
+
+    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+        state["calls"] += 1
+        call_no = state["calls"]
+        await asyncio.sleep(0)
+        if call_no == 1:
+            raise RuntimeError("falha simulada")
+        return [_fechamento_row()]
+
+    mysql = MagicMock()
+    mysql.select = select
+    client = _make_client_with_mysql(CollectionThenNarrationProvider(), mysql)
+
+    try:
+        r = client.post(
+            "/api/v1/chat",
+            json={"message": "Quero o fechamento gerencial de maio de 2026"},
+        )
+    finally:
+        get_settings.cache_clear()
+        shutdown_pipeline_file_logging()
+
+    assert r.status_code == 200
+    log_files = sorted(tmp_path.glob("analytics_pipeline_*.jsonl"))
+    assert len(log_files) == 1
+    payloads = [
+        json.loads(line)
+        for line in log_files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    execute_posts = [
+        payload
+        for payload in payloads
+        if payload["etapa"].startswith("analytics_execute[") and payload["fase"] == "post"
+    ]
+    assert execute_posts
+    assert all(isinstance(payload["dados"]["duration_ms"], (int, float)) for payload in execute_posts)
+    assert any(payload["dados"].get("erro") == "RuntimeError" for payload in execute_posts)
 
 
 def test_chat_analytical_with_evidence() -> None:

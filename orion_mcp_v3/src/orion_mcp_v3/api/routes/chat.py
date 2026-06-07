@@ -1019,12 +1019,18 @@ def create_chat_router(
                 },
             )
 
-        async def _exec_one(plan: Any) -> AnalyticsResult:
-            tpl = plan.hints.get("_template")
-            if tpl is not None:
-                params = plan.hints.get("template_params", {})
-                return await exec_.execute_template(tpl, params, plan=plan)
-            return await exec_.execute_plan(plan)
+        async def _exec_one(plan: Any) -> tuple[AnalyticsResult | Exception, float]:
+            started = time.perf_counter()
+            try:
+                tpl = plan.hints.get("_template")
+                if tpl is not None:
+                    params = plan.hints.get("template_params", {})
+                    result = await exec_.execute_template(tpl, params, plan=plan)
+                else:
+                    result = await exec_.execute_plan(plan)
+                return result, round((time.perf_counter() - started) * 1000.0, 2)
+            except Exception as exc:
+                return exc, round((time.perf_counter() - started) * 1000.0, 2)
 
         if trace_enabled:
             for i, p in enumerate(plans):
@@ -1035,27 +1041,40 @@ def create_chat_router(
                     dados=snapshot_semantic_plan(p),
                 )
 
-        results = await asyncio.gather(*[_exec_one(p) for p in plans], return_exceptions=True)
+        execution_results = await asyncio.gather(*[_exec_one(p) for p in plans], return_exceptions=True)
+        results_with_duration: list[tuple[AnalyticsResult | Exception, float]] = []
+        for item in execution_results:
+            if isinstance(item, tuple) and len(item) == 2:
+                result, duration_ms = item
+                results_with_duration.append((result, float(duration_ms)))
+            elif isinstance(item, Exception):
+                results_with_duration.append((item, 0.0))
 
         if trace_enabled:
-            for i, r in enumerate(results):
+            for i, (r, duration_ms) in enumerate(results_with_duration):
                 if isinstance(r, Exception):
                     log_pipeline_event(
                         etapa=f"analytics_execute[{i}]",
                         fase="post",
                         conversation_id=conversation_id,
-                        dados={"erro": type(r).__name__, "mensagem": str(r)[:300]},
+                        dados={
+                            "erro": type(r).__name__,
+                            "mensagem": str(r)[:300],
+                            "duration_ms": duration_ms,
+                        },
                     )
                 else:
+                    dados = snapshot_analytics_result(r)
+                    dados["duration_ms"] = duration_ms
                     log_pipeline_event(
                         etapa=f"analytics_execute[{i}]",
                         fase="post",
                         conversation_id=conversation_id,
-                        dados=snapshot_analytics_result(r),
+                        dados=dados,
                     )
 
-        failures = [r for r in results if isinstance(r, Exception)]
-        results = [r for r in results if r is not None and not isinstance(r, Exception)]
+        failures = [r for r, _ in results_with_duration if isinstance(r, Exception)]
+        results = [r for r, _ in results_with_duration if r is not None and not isinstance(r, Exception)]
         if not results:
             if trace_enabled:
                 log_pipeline_event(
