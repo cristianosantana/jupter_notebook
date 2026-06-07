@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Sequence
 
 from orion_mcp_v3.broker.query_capability_catalog import QueryCapabilityCatalog
-from orion_mcp_v3.contracts.analytical_intent import AnalyticalIntentContract
+from orion_mcp_v3.contracts.analytical_intent import (
+    AnalyticalDateRange,
+    AnalyticalIntentContract,
+    AnalyticalIntentType,
+    AnalyticalOperation,
+    SourcePeriods,
+)
 from orion_mcp_v3.contracts.cognitive_plan import CognitivePlan
 from orion_mcp_v3.memory.repositories.conversation_state import ConversationMessage
 from orion_mcp_v3.prompts import get_prompt_registry
@@ -88,6 +95,14 @@ class AnalyticalIntentInterpreter:
         regex_signals: HeuristicSignalCatalog,
         heuristic_plan: CognitivePlan,
     ) -> AnalyticalIntentContract | None:
+        collection_contract = _collection_contract_from_message(
+            message,
+            capabilities=capabilities,
+            heuristic_plan=heuristic_plan,
+        )
+        if collection_contract is not None:
+            return collection_contract
+
         prompt = _build_prompt(
             message,
             recent_context=recent_context,
@@ -133,6 +148,7 @@ def _build_prompt(
         "user_message": message,
         "recent_context": recent_context.as_prompt_dict(),
         "declared_capabilities": capabilities.as_prompt_dict(),
+        "collection_cards": capabilities.collection_cards_prompt(),
         "heuristic_signals": regex_signals.as_prompt_dict(),
         "heuristic_plan": {
             "intent_type": heuristic_plan.intent_type.value,
@@ -163,6 +179,7 @@ def _build_prompt(
                 "comparison",
                 "delta",
                 "summary",
+                "collection",
             ],
             "source_periods": [
                 "explicit",
@@ -178,6 +195,7 @@ def _build_prompt(
             "needs_memory": "boolean",
             "needs_comparison": "boolean",
             "template_slug": "string|null",
+            "collection_slug": "string|null",
             "metric": "string|null",
             "dimension": "string|null",
             "date_ranges": [
@@ -192,6 +210,47 @@ def _build_prompt(
         },
     }
     return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _collection_contract_from_message(
+    message: str,
+    *,
+    capabilities: QueryCapabilityCatalog,
+    heuristic_plan: CognitivePlan,
+) -> AnalyticalIntentContract | None:
+    text = _norm(message)
+    for card in capabilities.collections:
+        if not any(_norm(description) in text for description in card.descriptions):
+            continue
+        date_ranges = _date_ranges_from_time_scope(heuristic_plan.time_scope)
+        return AnalyticalIntentContract(
+            intent_type=AnalyticalIntentType.ANALYTICAL,
+            operation=AnalyticalOperation.COLLECTION,
+            needs_analytics=True,
+            needs_memory=heuristic_plan.needs_memory,
+            needs_comparison=False,
+            collection_slug=card.collection_slug,
+            date_ranges=date_ranges,
+            source_periods=SourcePeriods.EXPLICIT if date_ranges else SourcePeriods.NONE,
+            confidence=max(0.9, heuristic_plan.confidence),
+        )
+    return None
+
+
+def _date_ranges_from_time_scope(time_scope: str | None) -> tuple[AnalyticalDateRange, ...]:
+    if not time_scope or "/" not in time_scope:
+        return ()
+    date_from, date_to = (part.strip() for part in time_scope.split("/", 1))
+    if not date_from or not date_to:
+        return ()
+    return (AnalyticalDateRange(label="requested_period", date_from=date_from, date_to=date_to),)
+
+
+def _norm(text: str) -> str:
+    raw = "".join(
+        c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c)
+    )
+    return " ".join(raw.split())
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:

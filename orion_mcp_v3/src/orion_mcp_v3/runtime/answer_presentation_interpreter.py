@@ -31,6 +31,13 @@ class AnswerPresentationInterpreter:
         query_selection: QuerySelectionContract,
         capabilities: QueryCapabilityCatalog,
     ) -> AnswerPresentationContract | None:
+        if query_selection.selection_kind == "collection" or query_selection.collection_slug is not None:
+            return AnswerPresentationContract(
+                result_scope={"mode": "all", "limit": None},
+                sort=None,
+                confidence=max(0.9, query_selection.confidence),
+                reason="collection_default_presentation",
+            )
         if isinstance(self._provider, NullLLMProvider):
             return None
         prompt = _build_prompt(
@@ -81,6 +88,20 @@ class AnswerPresentationValidator:
     ) -> AnswerPresentationValidationResult:
         if contract.confidence < self._min_confidence:
             return self._reject("confidence_too_low")
+        if query_selection.selection_kind == "collection" or query_selection.collection_slug is not None:
+            collection = self._catalog.collection_card(query_selection.collection_slug)
+            if collection is None:
+                return self._reject("unsupported_collection")
+            result_scope = _normalize_result_scope(contract.result_scope) or {"mode": "all", "limit": None}
+            return AnswerPresentationValidationResult(
+                accepted=True,
+                contract=AnswerPresentationContract(
+                    result_scope=result_scope,
+                    sort=None,
+                    confidence=contract.confidence,
+                    reason=contract.reason or "collection_default_presentation",
+                ),
+            )
         entry = self._catalog.entry_for_template(query_selection.template_slug)
         if entry is None:
             return self._reject("unsupported_template")
