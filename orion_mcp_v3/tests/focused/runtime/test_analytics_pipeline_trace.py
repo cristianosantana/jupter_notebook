@@ -45,6 +45,8 @@ def test_log_pipeline_event_emits_json(caplog: pytest.LogCaptureFixture) -> None
     assert payload["fase"] == "pre"
     assert payload["conversation_id"] == "cid-1"
     assert payload["dados"]["x"] == 1
+    assert payload["timestamp_utc"].endswith("+00:00")
+    assert isinstance(payload["timestamp_ms"], int)
 
 
 def test_configure_pipeline_file_logging_writes_jsonl(tmp_path) -> None:

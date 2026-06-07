@@ -66,6 +66,30 @@ async def test_answer_presentation_interpreter_returns_contract_from_json() -> N
     assert "selected_query_card" in provider.last_messages[-1].content
 
 
+async def test_answer_presentation_interpreter_uses_collection_default_without_llm() -> None:
+    provider = FakePresentationProvider("isso nao deveria ser chamado")
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    query_selection = QuerySelectionContract(
+        selection_kind="collection",
+        collection_slug="fechamento_gerencial_por_mes",
+        operation="list",
+        confidence=0.94,
+    )
+
+    contract = await AnswerPresentationInterpreter(provider).interpret(
+        "Quero o fechamento gerencial de maio de 2026",
+        cognitive_plan=CognitivePlan(intent_type=IntentType.ANALYTICAL, needs_analytics=True),
+        query_selection=query_selection,
+        capabilities=catalog,
+    )
+
+    assert provider.calls == 0
+    assert contract is not None
+    assert contract.result_scope == {"mode": "all", "limit": None}
+    assert contract.sort is None
+    assert contract.reason == "collection_default_presentation"
+
+
 def test_answer_presentation_validator_normalizes_sort_alias() -> None:
     catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
     result = AnswerPresentationValidator(catalog).validate(
@@ -88,3 +112,24 @@ def test_answer_presentation_validator_normalizes_sort_alias() -> None:
     assert result.contract is not None
     assert result.contract.result_scope == {"mode": "all", "limit": None}
     assert result.contract.sort == {"field": "vendas", "direction": "desc"}
+
+
+def test_answer_presentation_validator_rejects_unknown_collection() -> None:
+    catalog = build_query_capability_catalog(ANALYTICS_TEMPLATES)
+    result = AnswerPresentationValidator(catalog).validate(
+        AnswerPresentationContract(
+            result_scope={"mode": "all", "limit": None},
+            sort=None,
+            confidence=0.9,
+            reason="Colecao deve usar apresentacao padrao.",
+        ),
+        query_selection=QuerySelectionContract(
+            selection_kind="collection",
+            collection_slug="colecao_inexistente",
+            operation="list",
+            confidence=0.9,
+        ),
+    )
+
+    assert result.accepted is False
+    assert result.rejected_reason == "unsupported_collection"

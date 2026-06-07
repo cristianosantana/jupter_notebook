@@ -46,6 +46,31 @@ class IntentContractValidator:
         if template_slug is not None and self._catalog.entry_for_template(template_slug) is None:
             return self._reject("unsupported_template")
 
+        collection_slug = contract.collection_slug.strip() if contract.collection_slug else None
+        if contract.operation == AnalyticalOperation.COLLECTION:
+            if collection_slug is None or self._catalog.collection_card(collection_slug) is None:
+                return self._reject("unsupported_collection")
+            normalized = AnalyticalIntentContract(
+                intent_type=contract.intent_type,
+                operation=contract.operation,
+                needs_analytics=contract.needs_analytics,
+                needs_memory=contract.needs_memory,
+                needs_comparison=contract.needs_comparison,
+                collection_slug=collection_slug,
+                date_ranges=contract.date_ranges,
+                source_periods=contract.source_periods,
+                inherits_from_previous=contract.inherits_from_previous,
+                entity_filters=contract.entity_filters,
+                confidence=contract.confidence,
+            )
+            if contract.needs_comparison and not _comparison_has_sources(contract, has_analytical_memory):
+                return self._reject("comparison_without_sources")
+            return IntentValidationResult(
+                accepted=True,
+                contract=normalized,
+                cognitive_plan=_contract_to_plan(normalized, heuristic_plan),
+            )
+
         dimension = _resolve_key(contract.dimension, self._dimension_aliases(template_slug))
         metric = self._resolve_metric(contract.metric, dimension=dimension, template_slug=template_slug)
         operation = contract.operation.value
@@ -82,6 +107,7 @@ class IntentContractValidator:
             needs_memory=contract.needs_memory,
             needs_comparison=contract.needs_comparison,
             template_slug=template_slug,
+            collection_slug=collection_slug,
             metric=metric,
             dimension=dimension,
             date_ranges=contract.date_ranges,
@@ -176,6 +202,17 @@ def _contract_to_plan(contract: AnalyticalIntentContract, heuristic_plan: Cognit
     }
     if contract.template_slug:
         hints["template_slug"] = contract.template_slug
+    if contract.collection_slug:
+        hints.pop("template_slug", None)
+        hints.pop("selected_metric", None)
+        hints.pop("selected_dimension", None)
+        hints.update(
+            {
+                "collection_slug": contract.collection_slug,
+                "selected_operation": contract.operation.value,
+                "semantic_reason": "llm_intent_collection",
+            }
+        )
     if contract.entity_filters:
         hints["entity_filters"] = contract.entity_filters
     if time_scope:

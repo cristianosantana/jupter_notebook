@@ -89,6 +89,49 @@ def test_validator_rejects_unknown_template() -> None:
     assert result.rejected_reason == "unsupported_template"
 
 
+def test_validator_accepts_supported_collection() -> None:
+    heuristic = IntentResolver().resolve("Quero o fechamento gerencial de maio de 2026")
+    contract = AnalyticalIntentContract(
+        intent_type=AnalyticalIntentType.ANALYTICAL,
+        operation=AnalyticalOperation.COLLECTION,
+        needs_analytics=True,
+        needs_memory=False,
+        needs_comparison=False,
+        collection_slug="fechamento_gerencial_por_mes",
+        date_ranges=(AnalyticalDateRange("maio", "2026-05-01", "2026-05-31"),),
+        source_periods=SourcePeriods.EXPLICIT,
+        confidence=0.94,
+    )
+
+    result = _validator().validate(contract, heuristic_plan=heuristic)
+
+    assert result.accepted is True
+    assert result.contract is not None
+    assert result.contract.collection_slug == "fechamento_gerencial_por_mes"
+    assert result.cognitive_plan is not None
+    assert result.cognitive_plan.hints["collection_slug"] == "fechamento_gerencial_por_mes"
+    assert result.cognitive_plan.hints["selected_operation"] == "collection"
+    assert "template_slug" not in result.cognitive_plan.hints
+
+
+def test_validator_rejects_unknown_collection() -> None:
+    heuristic = IntentResolver().resolve("Quero o fechamento gerencial de maio de 2026")
+    contract = AnalyticalIntentContract(
+        intent_type=AnalyticalIntentType.ANALYTICAL,
+        operation=AnalyticalOperation.COLLECTION,
+        needs_analytics=True,
+        needs_memory=False,
+        needs_comparison=False,
+        collection_slug="colecao_inexistente",
+        confidence=0.94,
+    )
+
+    result = _validator().validate(contract, heuristic_plan=heuristic)
+
+    assert result.accepted is False
+    assert result.rejected_reason == "unsupported_collection"
+
+
 def test_validator_rejects_metric_outside_selected_template() -> None:
     heuristic = IntentResolver().resolve("qual pix por vendedor?")
     contract = AnalyticalIntentContract(

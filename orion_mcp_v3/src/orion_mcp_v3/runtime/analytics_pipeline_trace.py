@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -125,10 +126,13 @@ def log_pipeline_event(
     dados: Mapping[str, Any] | None = None,
 ) -> None:
     """Emite um evento único (JSON numa linha de log). ``fase`` ∈ {pre, post}."""
+    now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "canal": "analytics_pipeline",
         "etapa": etapa,
         "fase": fase,
+        "timestamp_utc": now.isoformat(),
+        "timestamp_ms": int(time.time() * 1000),
     }
     if conversation_id:
         payload["conversation_id"] = conversation_id

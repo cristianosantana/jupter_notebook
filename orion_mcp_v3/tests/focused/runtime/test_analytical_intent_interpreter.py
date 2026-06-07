@@ -69,6 +69,26 @@ async def test_interpreter_returns_contract_from_json() -> None:
     assert contract.template_slug == "performance_vendedor"
 
 
+async def test_interpreter_recognizes_managerial_closing_collection_without_llm() -> None:
+    provider = FakeIntentProvider("isso nao deveria ser chamado")
+    message = "Quero o fechamento gerencial de maio de 2026"
+    heuristic = IntentResolver().resolve(message)
+
+    contract = await AnalyticalIntentInterpreter(provider).interpret(
+        message,
+        recent_context=AnalyticalMemoryContext(),
+        capabilities=build_query_capability_catalog(ANALYTICS_TEMPLATES),
+        regex_signals=extract_heuristic_signals(message),
+        heuristic_plan=heuristic,
+    )
+
+    assert provider.calls == 0
+    assert contract is not None
+    assert contract.operation.value == "collection"
+    assert contract.collection_slug == "fechamento_gerencial_por_mes"
+    assert contract.needs_analytics is True
+
+
 async def test_interpreter_returns_none_for_non_json() -> None:
     provider = FakeIntentProvider("isso não é json")
     message = "olá"
