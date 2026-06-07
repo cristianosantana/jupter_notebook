@@ -156,6 +156,78 @@ async def test_email_factory_merges_structured_evidence_with_narrator_feedback()
     assert report.actions[0] == "Priorizar conciliação de cartão e revisar tarifas."
 
 
+async def test_email_factory_preserves_short_composition_synthesis_from_narrator() -> None:
+    provider = FakeLLMProvider(
+        """
+        {
+          "headline": "Fechamento gerencial",
+          "alerts": [],
+          "actions": []
+        }
+        """
+    )
+    narrative = (
+        "Faturamento líquido por forma de pagamento: R$ 2.092.080,94.\n"
+        "Síntese curta de composição: cartão e concessionária concentram a maior parte do caixa, "
+        "enquanto a comissão por tipo de O.S. mostra predominância de venda normal sobre financiamento."
+    )
+
+    report = await EmailMessageFactory(provider=provider).build_report(
+        subject="Fechamento gerencial de fevereiro de 2026",
+        body=narrative,
+        structured_evidence=FIXTURE.read_text(encoding="utf-8"),
+        from_name="CarSoul",
+    )
+    html = render_response_email_html(
+        subject="Fechamento gerencial de fevereiro de 2026",
+        body=narrative,
+        from_name="CarSoul",
+        report=report,
+    )
+
+    assert provider.calls == 1
+    assert report.executive_summary is not None
+    assert report.executive_summary.startswith("cartão e concessionária concentram")
+    assert "Resumo executivo" in html
+    assert "comissão por tipo de O.S." in html
+
+
+async def test_email_factory_preserves_prefixed_or_suffixed_synthesis_heading_from_narrator() -> None:
+    provider = FakeLLMProvider(
+        """
+        {
+          "headline": "Faturamento líquido do período analisado",
+          "executive_summary": "No período analisado o faturamento mostrou forte concentração em pagamentos por cartão.",
+          "alerts": [],
+          "actions": []
+        }
+        """
+    )
+    synthesis = (
+        "No período analisado (2025-07-01 a 2025-07-31) o faturamento líquido foi de "
+        "R$ 2.798.721,45, fortemente concentrado em Cartão de Crédito (62,42%) e em Venda Normal (85,95%). "
+        "Produção e serviços principais (PPF e filmes) respondem por parcela relevante da receita, enquanto "
+        "parcelamento e taxas mostram concentrações operacionais específicas (10X e BH ESTÉTICA)."
+    )
+    narrative = "\n".join(
+        [
+            "Faturamento líquido do período analisado.",
+            "Síntese executiva (2–3 linhas)",
+            synthesis,
+        ]
+    )
+
+    report = await EmailMessageFactory(provider=provider).build_report(
+        subject="fechamento gerencial de julho de 2025",
+        body=narrative,
+        structured_evidence=FIXTURE.read_text(encoding="utf-8"),
+        from_name="CarSoul",
+    )
+
+    assert provider.calls == 1
+    assert report.executive_summary == synthesis
+
+
 async def test_email_factory_enriches_short_llm_sections_with_fallback_top_10() -> None:
     provider = FakeLLMProvider(
         """

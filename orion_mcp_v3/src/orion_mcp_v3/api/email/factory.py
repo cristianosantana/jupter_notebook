@@ -22,6 +22,7 @@ _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 _PERIOD_RX = re.compile(r"(\d{4}-\d{2}-\d{2}\s+a\s+\d{4}-\d{2}-\d{2})")
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _NUMBERED_RX = re.compile(r"^\d+\.\s+(?P<text>.+?)\s*$")
+_SYNTHESIS_HEADING_RX = re.compile(r"\b(s[ií]ntese|resumo executivo)\b", re.I)
 _SCHEMA_BY_TYPE: dict[str, dict[str, Any]] = {
     "fechamento_gerencial": {
         "type": "fechamento_gerencial",
@@ -78,7 +79,7 @@ _SCHEMA_BY_TYPE: dict[str, dict[str, Any]] = {
 }
 _NARRATIVE_SCHEMA: dict[str, Any] = {
     "headline": "string|null",
-    "executive_summary": "string|null, 2-3 executive synthesis sentences from the narrator",
+    "executive_summary": "string|null, prefer the explicit 'Síntese curta de composição' when present",
     "alerts": ["strings explicitly mentioned as alerts or attention points"],
     "actions": ["strings explicitly mentioned as concrete recommendations"],
 }
@@ -109,8 +110,15 @@ class EmailMessageFactory:
                 report_type=message_type,
             )
             narrative_report = await self._try_narrative_report(subject=subject, body=body, from_name=from_name)
+            narrative_fallback = _narrative_report_from_text(subject=subject, body=body, from_name=from_name)
             if narrative_report is None:
-                narrative_report = _narrative_report_from_text(subject=subject, body=body, from_name=from_name)
+                narrative_report = narrative_fallback
+            else:
+                narrative_report = _merge_narrative_reports(
+                    narrative_report,
+                    narrative_fallback,
+                    prefer_fallback_summary=_has_explicit_synthesis(body),
+                )
             return _merge_data_with_narrative(data_report, narrative_report)
         if message_type == "conversacional":
             return _simple_report(subject=subject, body=body, from_name=from_name, report_type=message_type)
@@ -365,28 +373,82 @@ def _simple_report(*, subject: str, body: str, from_name: str, report_type: str)
 def _narrative_report_from_text(*, subject: str, body: str, from_name: str) -> EmailReport:
     lines = _normalized_lines(body)
     summary_lines: list[str] = []
+    explicit_synthesis_lines: list[str] = []
     alerts: list[str] = []
     actions: list[str] = []
     mode: str | None = None
     for line in lines:
         normalized = line.casefold()
+        extracted_summary = _extract_inline_synthesis(line)
+        if extracted_summary:
+            explicit_synthesis_lines = [extracted_summary]
+            mode = None
+            continue
+        if _is_synthesis_heading(line):
+            mode = "synthesis"
+            continue
         if "alerta" in normalized or "atenção" in normalized or "atencao" in normalized:
             mode = "alerts"
         elif "conclus" in normalized or "recomenda" in normalized or _is_action(line):
             mode = "actions"
-        if mode == "alerts":
+        if mode == "synthesis":
+            explicit_synthesis_lines.append(line)
+            if len(explicit_synthesis_lines) >= 3:
+                mode = None
+        elif mode == "alerts":
             alerts.append(line)
         elif mode == "actions":
             actions.append(line)
         elif len(summary_lines) < 3:
             summary_lines.append(line)
+    executive_summary = " ".join(explicit_synthesis_lines) or (" ".join(summary_lines) or None)
     return EmailReport(
         subject=subject,
         from_name=from_name,
         headline=summary_lines[0] if summary_lines else None,
-        executive_summary=" ".join(summary_lines) or None,
+        executive_summary=executive_summary,
         alerts=tuple(alerts),
         actions=tuple(actions),
+    )
+
+
+def _has_explicit_synthesis(body: str) -> bool:
+    return any(_is_synthesis_heading(line) for line in _normalized_lines(body))
+
+
+def _is_synthesis_heading(line: str) -> bool:
+    return bool(_SYNTHESIS_HEADING_RX.search(line))
+
+
+def _extract_inline_synthesis(line: str) -> str | None:
+    for separator in (":", " — "):
+        before, sep, after = line.partition(separator)
+        if sep and after.strip() and _is_synthesis_heading(before):
+            return after.strip()
+    return None
+
+
+def _merge_narrative_reports(
+    report: EmailReport,
+    fallback: EmailReport,
+    *,
+    prefer_fallback_summary: bool = False,
+) -> EmailReport:
+    executive_summary = (
+        fallback.executive_summary
+        if prefer_fallback_summary and fallback.executive_summary
+        else report.executive_summary or fallback.executive_summary
+    )
+    return EmailReport(
+        report_type=report.report_type or fallback.report_type,
+        subject=report.subject or fallback.subject,
+        from_name=report.from_name or fallback.from_name,
+        headline=report.headline or fallback.headline,
+        executive_summary=executive_summary,
+        period=report.period or fallback.period,
+        sections=report.sections or fallback.sections,
+        alerts=_merge_texts(report.alerts, fallback.alerts),
+        actions=_merge_texts(report.actions, fallback.actions),
     )
 
 

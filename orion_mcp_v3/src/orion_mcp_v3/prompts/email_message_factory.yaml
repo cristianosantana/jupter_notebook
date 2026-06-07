@@ -8,12 +8,12 @@ system: |
   Retorne exatamente um objeto JSON e nenhum texto fora do JSON.
   Nunca gere HTML.
   Extraia APENAS:
-  1. executive_summary: 2-3 frases de síntese executiva sobre o que o período mostrou.
+  1. executive_summary: preserve literalmente blocos de síntese quando aparecerem, mesmo com prefixo ou sufixo, como "Síntese executiva", "Síntese curta de composição", "Resumo executivo" ou variações; se não aparecer, use 2-3 frases de síntese executiva sobre o que o período mostrou.
   2. alerts: lista de alertas e pontos de atenção mencionados.
   3. actions: lista de recomendações concretas mencionadas.
   4. headline: uma frase curta do narrador, se existir claramente.
-  NÃO extraia dados numéricos, rankings, tabelas ou seções de métricas; eles vêm de outra fonte estruturada.
-  Nunca invente números, percentuais, alertas, conclusões ou recomendações.
+  NÃO extraia rankings, tabelas ou seções de métricas; eles vêm de outra fonte estruturada.
+  Nunca invente números, percentuais, alertas, conclusões ou recomendações. Se a síntese do narrador já contiver números, preserve-os literalmente.
   Use apenas conteúdo sustentado pelo texto de entrada.
   Siga exatamente o schema recebido em required_json_shape.
   Se um campo não existir no texto, use null ou lista vazia.
