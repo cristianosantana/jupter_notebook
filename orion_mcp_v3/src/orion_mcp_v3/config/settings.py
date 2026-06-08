@@ -13,6 +13,7 @@ Uso::
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Any, Literal
 
@@ -58,13 +59,23 @@ class OrionSettings(BaseSettings):
     llm_max_tokens: int = Field(2048, ge=64, le=128000)
 
     # ── E-mail ───────────────────────────────────────────────────────
-    email_enabled: bool = Field(False, description="Habilitar envio SMTP de respostas do chat.")
+    email_enabled: bool = Field(False, description="Habilitar envio de respostas do chat por e-mail.")
+    email_drive: str = Field("", description="Driver de e-mail legado/compatível (ex.: smtp, mailgun).")
+    email_driver: str = Field("", description="Driver de e-mail (ex.: smtp, mailgun).")
+    email_host: str = Field("", description="Host do provedor de e-mail.")
+    email_port: int | None = Field(None, ge=1, le=65535)
+    email_username: str = Field("", description="Usuário do provedor de e-mail; vazio = sem autenticação.")
+    email_password: str = Field("", description="Senha/token do provedor de e-mail; nunca deve ser logada.")
     email_smtp_host: str = Field("", description="Host SMTP para envio de e-mail.")
     email_smtp_port: int = Field(587, ge=1, le=65535)
     email_smtp_username: str = Field("", description="Usuário SMTP; vazio = sem autenticação.")
     email_smtp_password: str = Field("", description="Senha SMTP; nunca deve ser logada.")
     email_from_address: str = Field("", description="Endereço remetente usado pelo Orion.")
     email_from_name: str = Field("Orion", description="Nome exibido do remetente.")
+    mailgun_domain: str = Field("", description="Domínio Mailgun (ex.: mg.example.com).")
+    mailgun_secret: str = Field("", description="API key/secret do Mailgun; nunca deve ser logada.")
+    mail_from_name: str = Field("", description="Nome exibido do remetente para provedores de e-mail HTTP.")
+    mailgun_endpoint: str = Field("https://api.mailgun.net/v3", description="Endpoint base da API Mailgun.")
     email_start_tls: bool = Field(True, description="Usar STARTTLS ao conectar no SMTP.")
     email_timeout: float = Field(10.0, ge=1.0, description="Timeout SMTP em segundos.")
 
@@ -158,11 +169,69 @@ class OrionSettings(BaseSettings):
     @property
     def email_configured(self) -> bool:
         """Envio de e-mail disponível sem expor credenciais."""
+        if self.email_driver_name == "mailgun":
+            return (
+                self.email_enabled
+                and bool(self.effective_email_host.strip())
+                and bool(self.effective_email_password)
+                and bool(self.email_from_address.strip())
+            )
         return (
             self.email_enabled
-            and bool(self.email_smtp_host.strip())
+            and bool(self.effective_email_host.strip())
             and bool(self.email_from_address.strip())
         )
+
+    @property
+    def email_driver_name(self) -> str:
+        """Driver normalizado; ``ORION_EMAIL_DRIVE`` é aceito por compatibilidade."""
+        return (self.email_driver or self.email_drive or "smtp").strip().lower() or "smtp"
+
+    @property
+    def effective_email_host(self) -> str:
+        if self.email_driver_name == "mailgun":
+            return self._field_or_env(self.mailgun_domain, "MAILGUN_DOMAIN").strip()
+        if self.email_driver_name == "smtp" and self.email_smtp_host.strip():
+            return self.email_smtp_host.strip()
+        return self.email_host.strip() or self.email_smtp_host.strip()
+
+    @property
+    def effective_email_port(self) -> int:
+        if self.email_driver_name == "smtp" and self.email_smtp_port != 587:
+            return self.email_smtp_port
+        return self.email_port if self.email_port is not None else self.email_smtp_port
+
+    @property
+    def effective_email_username(self) -> str:
+        if self.email_driver_name == "smtp" and self.email_smtp_username.strip():
+            return self.email_smtp_username.strip()
+        return self.email_username.strip() or self.email_smtp_username.strip()
+
+    @property
+    def effective_email_password(self) -> str:
+        if self.email_driver_name == "mailgun":
+            return self._field_or_env(self.mailgun_secret, "MAILGUN_SECRET")
+        if self.email_driver_name == "smtp" and self.email_smtp_password:
+            return self.email_smtp_password
+        return self.email_password or self.email_smtp_password
+
+    @property
+    def effective_email_from_name(self) -> str:
+        if self.email_driver_name == "mailgun":
+            return self._field_or_env(self.mail_from_name, "MAIL_FROM_NAME").strip() or self.email_from_name
+        return self.email_from_name
+
+    @property
+    def effective_mailgun_endpoint(self) -> str:
+        default_endpoint = "https://api.mailgun.net/v3"
+        endpoint = self.mailgun_endpoint.strip()
+        if endpoint == default_endpoint:
+            endpoint = os.getenv("MAILGUN_ENDPOINT", "").strip() or endpoint
+        return endpoint.rstrip("/") or "https://api.mailgun.net/v3"
+
+    @staticmethod
+    def _field_or_env(field_value: str, env_name: str) -> str:
+        return field_value.strip() or os.getenv(env_name, "").strip()
 
     @property
     def effective_embedding_mode(self) -> Literal["off", "index_only", "retrieve"]:

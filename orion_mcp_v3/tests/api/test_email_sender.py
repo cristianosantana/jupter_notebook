@@ -35,6 +35,7 @@ async def test_email_sender_sends_plain_text_response_with_settings() -> None:
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_smtp_port=1025,
         email_smtp_username="user",
@@ -79,6 +80,86 @@ async def test_email_sender_sends_plain_text_response_with_settings() -> None:
     assert kwargs["timeout"] == 3.5
 
 
+async def test_email_sender_accepts_generic_email_settings() -> None:
+    calls: list[tuple[EmailMessage, dict]] = []
+
+    async def fake_send(message: EmailMessage, **kwargs):
+        calls.append((message, kwargs))
+        return {}
+
+    settings = get_settings_uncached(
+        email_enabled=True,
+        email_driver="smtp",
+        email_host="smtp.generic.local",
+        email_port=2525,
+        email_username="generic-user",
+        email_password="generic-secret",
+        email_from_address="generic@local.test",
+        email_from_name="Generic",
+        email_start_tls=False,
+    )
+    sender = EmailSender.from_settings(settings, send_func=fake_send)
+
+    result = await sender.send_response(
+        EmailSendRequest(
+            to="destino@local.test",
+            subject="Resposta Orion",
+            body="Resposta gerada pelo chat",
+        )
+    )
+
+    assert result.status == "sent"
+    _, kwargs = calls[0]
+    assert kwargs["hostname"] == "smtp.generic.local"
+    assert kwargs["port"] == 2525
+    assert kwargs["username"] == "generic-user"
+    assert kwargs["password"] == "generic-secret"
+    assert kwargs["start_tls"] is False
+
+
+async def test_email_sender_uses_mailgun_api_when_driver_is_mailgun() -> None:
+    calls: list[dict] = []
+
+    async def fake_send(**kwargs):
+        calls.append(kwargs)
+        return {"id": "mailgun-message-id"}
+
+    settings = get_settings_uncached(
+        email_enabled=True,
+        email_driver="mailgun",
+        mailgun_domain="mg.local.test",
+        mailgun_secret="mailgun-key",
+        mail_from_name="Mailgun Sender",
+        mailgun_endpoint="https://api.eu.mailgun.net/v3",
+        email_username="",
+        email_from_address="orion@local.test",
+        email_timeout=4.0,
+    )
+    sender = EmailSender.from_settings(settings, send_func=fake_send)
+
+    result = await sender.send_response(
+        EmailSendRequest(
+            to="destino@local.test",
+            subject="Resposta Orion",
+            body="Resposta gerada pelo chat",
+            conversation_id="conv-mailgun",
+        )
+    )
+
+    assert result.status == "sent"
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["url"] == "https://api.eu.mailgun.net/v3/mg.local.test/messages"
+    assert call["auth"] == ("api", "mailgun-key")
+    assert call["timeout"] == 4.0
+    assert call["data"]["from"] == "Mailgun Sender <orion@local.test>"
+    assert call["data"]["to"] == "destino@local.test"
+    assert call["data"]["subject"] == "Resposta Orion"
+    assert call["data"]["text"] == "Resposta gerada pelo chat"
+    assert "<!doctype html>" in call["data"]["html"]
+    assert call["data"]["h:X-Orion-Conversation-Id"] == "conv-mailgun"
+
+
 async def test_email_sender_builds_structured_html_from_report_text() -> None:
     calls: list[tuple[EmailMessage, dict]] = []
 
@@ -88,6 +169,7 @@ async def test_email_sender_builds_structured_html_from_report_text() -> None:
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_smtp_port=1025,
         email_from_address="orion@local.test",
@@ -124,6 +206,7 @@ async def test_email_sender_passes_structured_evidence_to_factory() -> None:
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_smtp_port=1025,
         email_from_address="orion@local.test",
@@ -166,6 +249,7 @@ async def test_email_sender_returns_failed_without_leaking_body_or_password() ->
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_from_address="orion@local.test",
         email_smtp_password="secret",
@@ -193,6 +277,7 @@ async def test_email_sender_logs_failure_detail_without_sensitive_data(caplog) -
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_smtp_port=1025,
         email_from_address="orion@local.test",
@@ -225,6 +310,7 @@ async def test_email_sender_logs_attempt_and_success_without_sensitive_data(capl
 
     settings = get_settings_uncached(
         email_enabled=True,
+        email_driver="smtp",
         email_smtp_host="smtp.local",
         email_smtp_port=1025,
         email_from_address="orion@local.test",

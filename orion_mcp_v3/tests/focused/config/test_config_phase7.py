@@ -71,6 +71,7 @@ def test_settings_email_defaults(monkeypatch) -> None:
 
 def test_settings_email_configured_from_env(monkeypatch) -> None:
     monkeypatch.setenv("ORION_EMAIL_ENABLED", "true")
+    monkeypatch.setenv("ORION_EMAIL_DRIVER", "smtp")
     monkeypatch.setenv("ORION_EMAIL_SMTP_HOST", "localhost")
     monkeypatch.setenv("ORION_EMAIL_SMTP_PORT", "1025")
     monkeypatch.setenv("ORION_EMAIL_FROM_ADDRESS", "orion@local.test")
@@ -86,6 +87,55 @@ def test_settings_email_configured_from_env(monkeypatch) -> None:
     assert s.email_from_name == "Orion Test"
     assert s.email_start_tls is False
     assert s.email_configured is True
+
+
+def test_settings_email_configured_from_generic_env(monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("ORION_EMAIL_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("ORION_EMAIL_ENABLED", "true")
+    monkeypatch.setenv("ORION_EMAIL_DRIVE", "smtp")
+    monkeypatch.setenv("ORION_EMAIL_HOST", "smtp.generic.local")
+    monkeypatch.setenv("ORION_EMAIL_PORT", "2525")
+    monkeypatch.setenv("ORION_EMAIL_USERNAME", "generic-user")
+    monkeypatch.setenv("ORION_EMAIL_PASSWORD", "generic-secret")
+    monkeypatch.setenv("ORION_EMAIL_FROM_ADDRESS", "generic@local.test")
+    monkeypatch.setenv("ORION_EMAIL_FROM_NAME", "Generic Sender")
+    monkeypatch.setenv("ORION_EMAIL_START_TLS", "false")
+
+    s = get_settings_uncached()
+
+    assert s.email_configured is True
+    assert s.email_driver_name == "smtp"
+    assert s.effective_email_host == "smtp.generic.local"
+    assert s.effective_email_port == 2525
+    assert s.effective_email_username == "generic-user"
+    assert s.effective_email_password == "generic-secret"
+    assert s.email_from_address == "generic@local.test"
+    assert s.email_from_name == "Generic Sender"
+    assert s.email_start_tls is False
+
+
+def test_settings_mailgun_configured_from_mailgun_env(monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("ORION_EMAIL_") or key.startswith("MAILGUN_") or key == "MAIL_FROM_NAME":
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("ORION_EMAIL_ENABLED", "true")
+    monkeypatch.setenv("ORION_EMAIL_DRIVER", "mailgun")
+    monkeypatch.setenv("ORION_EMAIL_FROM_ADDRESS", "orion@local.test")
+    monkeypatch.setenv("MAILGUN_DOMAIN", "mg.local.test")
+    monkeypatch.setenv("MAILGUN_SECRET", "mailgun-secret")
+    monkeypatch.setenv("MAIL_FROM_NAME", "Mailgun Sender")
+    monkeypatch.setenv("MAILGUN_ENDPOINT", "https://api.eu.mailgun.net/v3")
+
+    s = get_settings_uncached()
+
+    assert s.email_configured is True
+    assert s.email_driver_name == "mailgun"
+    assert s.effective_email_host == "mg.local.test"
+    assert s.effective_email_password == "mailgun-secret"
+    assert s.effective_email_from_name == "Mailgun Sender"
+    assert s.effective_mailgun_endpoint == "https://api.eu.mailgun.net/v3"
 
 
 def test_settings_cors_origins_list() -> None:

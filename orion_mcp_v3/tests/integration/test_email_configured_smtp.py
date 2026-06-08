@@ -9,18 +9,21 @@ from orion_mcp_v3.api.email_sender import EmailSender, EmailSendRequest
 from orion_mcp_v3.config.settings import get_settings_uncached
 
 
-async def test_configured_smtp_sends_email_from_env() -> None:
-    if os.getenv("ORION_RUN_CONFIGURED_SMTP_TEST", "").strip().lower() not in {"1", "true", "yes"}:
-        pytest.skip("defina ORION_RUN_CONFIGURED_SMTP_TEST=true para testar o SMTP real configurado")
-
+async def test_configured_email_sends_email_from_env() -> None:
     settings = get_settings_uncached()
+    driver = settings.email_driver_name
+    driver_flag = f"ORION_RUN_CONFIGURED_{driver.upper()}_TEST"
+    run_enabled = os.getenv("ORION_RUN_CONFIGURED_EMAIL_TEST", "").strip().lower() in {"1", "true", "yes"}
+    run_enabled = run_enabled or os.getenv(driver_flag, "").strip().lower() in {"1", "true", "yes"}
+    if not run_enabled:
+        pytest.skip(f"defina {driver_flag}=true ou ORION_RUN_CONFIGURED_EMAIL_TEST=true para testar envio real")
     if not settings.email_configured:
-        pytest.skip("ORION_EMAIL_* não está configurado para envio SMTP")
+        pytest.skip(f"ORION_EMAIL_* não está configurado para envio real via {driver}")
 
     token = uuid4().hex
-    to = f"orion-test-{token}@local.test"
-    subject = f"Teste Orion SMTP {token}"
-    body = f"Mensagem de teste do Orion SMTP configurado. token={token}"
+    to = f"cristiano@carsoul.com.br"
+    subject = f"Teste Orion {driver} {token}"
+    body = f"Mensagem de teste do Orion via {driver}. token={token}"
 
     result = await EmailSender.from_settings(settings).send_response(
         EmailSendRequest(

@@ -218,9 +218,10 @@ def create_app(
     if resolved_email_sender is None and s.email_configured:
         resolved_email_sender = EmailSender.from_settings(s, llm_provider=provider)
         _LOG.info(
-            "Email sender enabled (smtp=%s:%s, start_tls=%s, from=%s)",
-            s.email_smtp_host,
-            s.email_smtp_port,
+            "Email sender enabled (driver=%s, host=%s:%s, start_tls=%s, from=%s)",
+            s.email_driver_name,
+            s.effective_email_host,
+            s.effective_email_port,
             s.email_start_tls,
             s.email_from_address,
         )
@@ -228,7 +229,7 @@ def create_app(
         _LOG.info(
             "Email sender disabled (enabled=%s, host_present=%s, from_present=%s)",
             s.email_enabled,
-            bool(s.email_smtp_host.strip()),
+            bool(s.effective_email_host.strip()),
             bool(s.email_from_address.strip()),
         )
     else:
