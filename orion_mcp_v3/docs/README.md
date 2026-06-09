@@ -22,6 +22,7 @@
 | Documento | Caminho |
 |-----------|---------|
 | Índice mestre (3 níveis: infra × execução × cognição) | [`architecture/ORION_V3_MASTER_ARCHITECTURE.md`](architecture/ORION_V3_MASTER_ARCHITECTURE.md) |
+| Memória remissiva V2 — destilação supervisionada e índice N:M | [`architecture/MEMORIA_REMISSIVA_V2.md`](architecture/MEMORIA_REMISSIVA_V2.md) |
 | O que implementar primeiro | [`execution/PLANO_EXECUCAO.md`](execution/PLANO_EXECUCAO.md) |
 | Dados reais MySQL + broker | [`roadmaps/ROADMAP_COM_MYSQL_INTEGRADO.md`](roadmaps/ROADMAP_COM_MYSQL_INTEGRADO.md) |
 | Roadmap por fases 0–6 (genérico) | [`roadmaps/ROADMAP_EXECUTÁVEL.md`](roadmaps/ROADMAP_EXECUTÁVEL.md) |
