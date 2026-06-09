@@ -2,7 +2,7 @@
 
 ## Pré-requisito: pgvector
 
-As migrações `003_memory_embeddings.sql` e índices IVFFlat usam o tipo `vector`. É preciso o **pacote pgvector no servidor PostgreSQL** (o erro `extension "vector" is not available` / ficheiro `vector.control` em falta indica que falta instalar no OS/imagem).
+As migrações `003_memory_embeddings.sql`, `008_chat_turn_embeddings.sql` e `010_remissive_memory_schema.sql` usam o tipo `vector`. É preciso o **pacote pgvector no servidor PostgreSQL** (o erro `extension "vector" is not available` / ficheiro `vector.control` em falta indica que falta instalar no OS/imagem).
 
 - **Docker:** imagem com pgvector, por exemplo `pgvector/pgvector:pg16`.
 - **Debian/Ubuntu:** por exemplo `sudo apt install postgresql-16-pgvector` (ajuste à versão do seu servidor).
@@ -15,17 +15,20 @@ Ordem de aplicação (prefixo numérico):
 |----------|-----------|
 | `001_extensions.sql` | Notas; `CREATE EXTENSION vector` é feito pelo script ou manualmente antes do `psql`. |
 | `002_conversation_state.sql` | Camada 1 — literal (sessão actual). |
-| `003_memory_embeddings.sql` | Camada 2 — embeddings + índice IVFFlat. |
-| `004_memory_curta.sql` | Camada 2 — memória estruturada curta. |
-| `005_memory_essence.sql` | Camada 3 — essência estável. |
-| `006_memory_compression_log.sql` | Auditoria de compactação. |
-| `003_conversation_external_id.sql` | `external_id` em `conversation_state` (IDs de sessão não-UUID). |
-| `007_chat_turn_embeddings.sql` | **(experimental)** Embeddings por turno de chat — ver abaixo. |
-| `008_chat_turn_embeddings_content.sql` | **(experimental)** Coluna `content` em `chat_turn_embeddings`. |
+| `003_memory_embeddings.sql` | Camada 2 legada — embeddings + índice IVFFlat. |
+| `004_conversation_external_id.sql` | `external_id` em `conversation_state` (IDs de sessão não-UUID). |
+| `005_memory_curta.sql` | Camada 2 legada — memória estruturada curta. |
+| `006_memory_essence.sql` | Camada 3 legada — essência estável. |
+| `007_memory_compression_log.sql` | Auditoria legada de compactação. |
+| `008_chat_turn_embeddings.sql` | Embeddings por turno de chat — fonte read-only para destilação V2. |
+| `009_chat_turn_embeddings_content.sql` | Coluna `content` em `chat_turn_embeddings`. |
+| `010_remissive_memory_schema.sql` | V2 destrutiva de `memory_curta`, `memory_embeddings`, `memory_essence` e `memory_compression_log`. |
+| `011_memory_compression_log_wide_keys.sql` | Aumenta campos de auditoria do `memory_compression_log` para payloads reais do destilador. |
+| `012_memory_essence_wide_keys.sql` | Aumenta campos curtos de `memory_essence` para temas/confianças reais do destilador. |
 
-### Migrações 007/008 — experimental (Memory Augmentation)
+### Migrações 008/009 — embeddings por turno
 
-Estas migrações alimentam apenas o subsistema opcional `chat_turn_embeddings` (`ChatTurnEmbeddingStore`, `VectorRetriever`). **Não** fazem parte do núcleo analítico (planner, evidence, MySQL).
+Estas migrações alimentam apenas o subsistema opcional `chat_turn_embeddings` (`ChatTurnEmbeddingStore`, `VectorRetriever`) e a leitura read-only do comando externo de destilação remissiva. **Não** fazem parte do núcleo analítico (planner, evidence, MySQL).
 
 - Documentação: [`docs/architecture/MEMORY_AUGMENTATION_LAYER.md`](../../../../docs/architecture/MEMORY_AUGMENTATION_LAYER.md)
 - Activar via `ORION_EMBEDDING_MODE=index_only|retrieve` (e API key LLM); default é `off`.
@@ -38,6 +41,27 @@ Estas migrações alimentam apenas o subsistema opcional `chat_turn_embeddings` 
 - Async no `broker/` / `runtime/` apenas por causa de embeddings.
 - Substituir `SemanticRetriever` lexical quando vector estiver activo (usar **paralelo**).
 - Tornar embeddings obrigatórios para `POST /chat`.
+
+### Migração 010 — memória remissiva V2
+
+`010_remissive_memory_schema.sql` recria a visão materializada de memória remissiva:
+
+- `memory_curta`: conteúdo validado, com upsert por `context_key`.
+- `memory_embeddings`: perguntas curtas vetoriais apontando para `memory_curta` por `origin_id`/`origin_type`.
+- `memory_essence`: achados estáveis com unique `(user_id, theme)`.
+- `memory_compression_log`: auditoria da destilação de uma janela supervisionada, idempotente por `batch_key`.
+- `011_memory_compression_log_wide_keys.sql`: amplia `batch_key`, `from_state` e `to_state` para `VARCHAR(255)` para evitar truncamento de janelas ISO e estados descritivos.
+- `012_memory_essence_wide_keys.sql`: amplia `memory_essence.theme` para `VARCHAR(255)` e `confidence` para `VARCHAR(50)` para preservar rótulos gerados pelo LLM.
+
+A rotina que grava essas tabelas é o comando independente:
+
+```bash
+python scripts/distill_supervised_memory.py \
+  --start 2026-06-09T00:00:00Z \
+  --end 2026-06-10T00:00:00Z
+```
+
+Esse comando deve ser chamado por cron externo. Ele lê `conversation_state` e `chat_turn_embeddings` em modo read-only e não é registrado no lifespan, nas rotas de chat, no retrieval runtime ou no `ChatTurnEmbeddingStore`.
 
 **Conexão:** definir `ORION_POSTGRES_URL` ou `ORION_DATABASE_URL` em `orion_mcp_v3/.env` (ex.: `postgresql://postgres:secret@cs_postgres:5432/dev`). Não commitar credenciais.
 
@@ -69,4 +93,6 @@ for f in *.sql; do psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 
 ## Notas de modelo
 
-- `memory_curta` e `memory_essence` usam chave primária **composta** `(user_id, category)` e `(user_id, theme)` para permitir várias linhas por utilizador (alinhado ao Redis `memory:{user}:{categoria}`).
+- Antes da migração `010`, as tabelas `memory_*` tinham formato legado usado por planos anteriores.
+- Depois da migração `010`, `memory_curta` e `memory_essence` usam `id` sequencial; a idempotência vem de `memory_curta.context_key`, de `memory_essence` unique `(user_id, theme)` e de `memory_compression_log.batch_key`.
+- `memory_embeddings` representa múltiplas perguntas de índice apontando para um conteúdo validado em `memory_curta`.

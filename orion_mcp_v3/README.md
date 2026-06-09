@@ -92,3 +92,27 @@ Sugestões práticas de refatoração ou redesenho de fluxo para tornar o projet
 5. Utilize diagramas de sequência em texto (estilo Mermaid) para ilustrar o fluxo dos dados e a interação entre os componentes.
 
 Adote um tom analítico, técnico, direto e extremamente detalhado."
+
+### Geração de Memorias
+
+A rotina é:
+
+```bash
+python scripts/distill_supervised_memory.py \
+  --start 2026-06-09T00:00:00Z \
+  --end 2026-06-10T00:00:00Z
+```
+
+Para cron diário, você precisa passar a janela do dia anterior. Exemplo rodando todo dia às 02:00:
+
+```cron
+0 2 * * * cd /home/lenovo/code/jupter_notebook/orion_mcp_v3 && python3 scripts/distill_supervised_memory.py --start "$(date -u -d 'yesterday 00:00' +\%Y-\%m-\%dT\%H:\%M:\%SZ)" --end "$(date -u -d 'today 00:00' +\%Y-\%m-\%dT\%H:\%M:\%SZ)" >> logs/distill_supervised_memory.log 2>&1
+```
+
+Ela espera no `.env`:
+- `ORION_POSTGRES_URL` ou `ORION_DATABASE_URL`
+- `ORION_LLM_API_KEY`
+- configs de embedding já existentes, como `ORION_EMBEDDING_MODEL` e `ORION_EMBEDDING_DIMENSIONS`
+
+Opcional:
+- `--limit 500` para limitar quantas sessões ler na janela.
