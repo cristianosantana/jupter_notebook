@@ -22,6 +22,9 @@ WIDE_LOG_MIGRATION = Path(
 WIDE_ESSENCE_MIGRATION = Path(
     "src/orion_mcp_v3/infra/postgres/migrations/012_memory_essence_wide_keys.sql"
 )
+LAST_SEEN_MIGRATION = Path(
+    "src/orion_mcp_v3/infra/postgres/migrations/013_memory_curta_last_seen.sql"
+)
 
 
 def test_remissive_schema_migration_defines_v2_tables() -> None:
@@ -32,15 +35,20 @@ def test_remissive_schema_migration_defines_v2_tables() -> None:
     assert '"context_key" VARCHAR(100) NOT NULL' in sql
     assert 'UNIQUE ("context_key")' in sql
     assert '"validated_answer" TEXT NOT NULL' in sql
+    assert '"last_seen_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()' in sql
+    assert 'CREATE INDEX "idx_memory_curta_last_seen"' in sql
     assert 'CREATE TABLE "public"."memory_embeddings"' in sql
+    assert '"embedding" vector(1536) NOT NULL' in sql
     assert '"origin_id" INTEGER NOT NULL' in sql
     assert '"origin_type" VARCHAR(50) NOT NULL' in sql
     assert 'FOREIGN KEY ("origin_id")' in sql
     assert 'ON DELETE CASCADE' in sql
+    assert 'USING ivfflat ("embedding" vector_cosine_ops)' in sql
+    assert 'WITH (lists = 100)' in sql
     assert 'CREATE TABLE "public"."memory_essence"' in sql
     assert 'UNIQUE ("user_id", "theme")' in sql
     assert 'CREATE TABLE "public"."memory_compression_log"' in sql
-    assert '"batch_key" VARCHAR(100) NOT NULL' in sql
+    assert '"batch_key" VARCHAR(255) NOT NULL' in sql
     assert 'UNIQUE ("batch_key")' in sql
 
 
@@ -58,7 +66,17 @@ def test_memory_essence_wide_key_migration_extends_varchar_limits() -> None:
 
     assert 'ALTER TABLE "public"."memory_essence"' in sql
     assert 'ALTER COLUMN "theme" TYPE VARCHAR(255)' in sql
-    assert 'ALTER COLUMN "confidence" TYPE VARCHAR(50)' in sql
+    assert 'ALTER COLUMN "confidence" TYPE VARCHAR(255)' in sql
+
+
+def test_memory_curta_last_seen_migration_adds_rotation_marker() -> None:
+    sql = LAST_SEEN_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'ALTER TABLE "public"."memory_curta"' in sql
+    assert 'ADD COLUMN IF NOT EXISTS "last_seen_at" TIMESTAMP WITH TIME ZONE' in sql
+    assert 'UPDATE "public"."memory_curta"' in sql
+    assert 'ALTER COLUMN "last_seen_at" SET NOT NULL' in sql
+    assert 'CREATE INDEX IF NOT EXISTS "idx_memory_curta_last_seen"' in sql
 
 
 def _pool_with_conn(conn: AsyncMock) -> MagicMock:
@@ -105,6 +123,9 @@ async def test_upsert_knowledge_replaces_index_embeddings_by_origin_id() -> None
     assert 'DELETE FROM "public"."memory_embeddings"' in execute_sql
     assert '"origin_id" = $1' in execute_sql
     assert 'INSERT INTO "public"."memory_embeddings"' in execute_sql
+    upsert_sql = conn.fetchval.await_args.args[0]
+    assert '"last_seen_at"' in upsert_sql
+    assert '"last_seen_at" = now()' in upsert_sql
     assert conn.execute.await_count == 3
 
 
@@ -181,3 +202,49 @@ async def test_write_compression_log_preserves_long_audit_fields_for_wide_schema
     assert args[1] == batch_key
     assert args[3] == from_state
     assert args[4] == to_state
+
+
+@pytest.mark.asyncio
+async def test_search_origin_ids_sets_ivfflat_probes_before_vector_query() -> None:
+    embed = AsyncMock()
+    embed.embed.return_value = [[0.1, 0.2, 0.3]]
+
+    conn = AsyncMock()
+    conn.fetch.return_value = [{"origin_id": 301}, {"origin_id": 302}]
+
+    store = RemissiveMemoryStore(_pool_with_conn(conn), embed)
+
+    origin_ids = await store.search_origin_ids(
+        "Qual foi o faturamento de maio?",
+        user_id="sistema_background",
+        limit=5,
+        probes=10,
+    )
+
+    assert origin_ids == [301, 302]
+    embed.embed.assert_awaited_once_with(["Qual foi o faturamento de maio?"])
+    conn.execute.assert_awaited_once_with("SELECT set_config('ivfflat.probes', $1, true)", "10")
+    conn.fetch.assert_awaited_once()
+    query_sql = conn.fetch.await_args.args[0]
+    assert 'FROM "public"."memory_embeddings"' in query_sql
+    assert 'WHERE "user_id" = $2' in query_sql
+    assert 'ORDER BY "embedding" <=> $1::vector' in query_sql
+    assert "LIMIT $3" in query_sql
+
+
+@pytest.mark.asyncio
+async def test_delete_stale_knowledge_removes_items_not_seen_recently() -> None:
+    embed = AsyncMock()
+    conn = AsyncMock()
+    conn.execute.return_value = "DELETE 7"
+
+    store = RemissiveMemoryStore(_pool_with_conn(conn), embed)
+
+    deleted = await store.delete_stale_knowledge(days=90)
+
+    assert deleted == 7
+    conn.execute.assert_awaited_once()
+    sql, days = conn.execute.await_args.args
+    assert 'DELETE FROM "public"."memory_curta"' in sql
+    assert '"last_seen_at" < now() - ($1::int * INTERVAL' in sql
+    assert days == 90

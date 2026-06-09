@@ -49,7 +49,7 @@ O fluxo implementado é:
 2. `SupervisedConversationReader` lê sessões em `conversation_state` e turnos indexados em `chat_turn_embeddings` em modo read-only.
 3. O comando monta um prompt com as janelas supervisionadas.
 4. O LLM retorna um JSON estruturado com `knowledge`, `essence` e `compression_log`.
-5. `parse_distillation_payload` valida e normaliza o JSON.
+5. `parse_distillation_payload` valida, normaliza e aplica filtros mínimos de qualidade ao JSON.
 6. `RemissiveMemoryStore` grava o lote nas tabelas `memory_*`.
 7. O comando imprime um resumo JSON com `windows_read`, `knowledge_written` e `origin_ids`.
 
@@ -64,14 +64,26 @@ python3 scripts/distill_supervised_memory.py \
 Exemplo de cron diário:
 
 ```cron
-5 2 * * * cd /home/lenovo/code/jupter_notebook/orion_mcp_v3 && python3 scripts/distill_supervised_memory.py --start "$(date -u -d '1 day ago' +\%Y-\%m-\%dT00:00:00Z)" --end "$(date -u +\%Y-\%m-\%dT00:00:00Z)" >> logs/distill_supervised_memory.log 2>&1
+5 2 * * * cd /home/lenovo/code/jupter_notebook/orion_mcp_v3 && python3 scripts/distill_supervised_memory.py --start "$(TZ=UTC date -d '1 day ago' +\%Y-\%m-\%dT00:00:00Z)" --end "$(TZ=UTC date +\%Y-\%m-\%dT00:00:00Z)" >> logs/distill_supervised_memory.log 2>&1
 ```
+
+O `TZ=UTC` torna o cálculo da janela explicitamente UTC, sem depender do fuso local do servidor antes da formatação da data.
 
 ## Modelo de Dados
 
-`memory_curta` é a fonte de verdade do conhecimento validado. Cada registro tem um `context_key` único e recebe upsert. Quando um item de conhecimento é atualizado, o conteúdo validado é substituído e as perguntas de índice relacionadas são recriadas.
+`memory_curta` é a fonte de verdade do conhecimento validado. Cada registro tem um `context_key` único e recebe upsert. Quando um item de conhecimento é atualizado, o conteúdo validado é substituído, `last_seen_at` é renovado e as perguntas de índice relacionadas são recriadas.
+
+O `context_key` é calculado pelo código, não pelo LLM. O parser exige campos semânticos em `knowledge[]`: `user_id`, `category`, `theme`/`tema` e `periodo`/`period` opcional. A chave final usa o formato `{user_id}:{category_slug}:{theme_slug}` ou `{user_id}:{category_slug}:{theme_slug}:{periodo}`.
+
+Qualquer `context_key`, UUID, hash ou slug livre retornado pelo modelo é ignorado. Isso mantém o upsert idempotente mesmo quando o LLM oscila na forma textual da resposta.
 
 `memory_embeddings` é o índice N:M. Cada linha contém uma pergunta curta vetorizada em `embedding`, com `origin_type = 'memory_curta'` e `origin_id` apontando para o conteúdo validado. Isso permite várias perguntas apontarem para a mesma resposta consolidada.
+
+O índice vetorial usa IVFFlat com `vector_cosine_ops` e `WITH (lists = 100)`. Esse valor é uma escolha inicial para a visão materializada atual; quando o volume esperado crescer, ele deve ser revisado próximo de `sqrt(n_linhas)` ou conforme medição real.
+
+A consulta vetorial precisa configurar probes antes do `ORDER BY embedding <=> ...`. O método `RemissiveMemoryStore.search_origin_ids` faz isso dentro de uma transação com `set_config('ivfflat.probes', ..., true)`, usando `10` como padrão. Isso evita que o Chat Público, quando integrado, faça busca IVFFlat com recall baixo sem perceber.
+
+Se `memory_embeddings` permanecer pequeno, abaixo de aproximadamente 10 mil linhas, uma migração futura para HNSW pode ser mais simples operacionalmente, pois remove a necessidade de ajustar probes por consulta e tende a ter recall melhor em bases menores.
 
 `memory_essence` guarda achados estáveis por `(user_id, theme)`. A rotina faz upsert por esse par, atualizando observação, recomendação, métricas estáveis e confiança.
 
@@ -81,8 +93,10 @@ Exemplo de cron diário:
 
 O parser foi endurecido para lidar com variações reais de resposta do modelo:
 
-- Aceita chaves em inglês e aliases em português para itens de conhecimento.
+- Aceita chaves em inglês e aliases em português para itens de conhecimento, mas calcula `context_key` localmente a partir de `theme`/`tema` e `periodo`/`period`.
 - Normaliza `confidence` numérico para `high`, `medium` ou `low`.
+- Descarta `knowledge` com `validated_answer` menor que 50 caracteres, por ser conteúdo suspeito para virar memória vetorial.
+- Descarta `knowledge` com `confidence = low` e registra warning com o identificador disponível do item.
 - Aceita `compression_ratio` numérico, percentual e razão textual como `49:1`.
 - Serializa detalhes estruturados de `what_was_kept` e `what_was_dropped` como JSON compacto.
 - Ignora itens de conhecimento sem `validated_answer` válido.
@@ -109,6 +123,23 @@ O desenho permite reprocessar uma janela com segurança operacional:
 - `memory_compression_log` faz upsert por `batch_key`.
 
 Essa abordagem privilegia a visão materializada mais recente para cada conhecimento validado.
+
+Como a chave é derivada de campos canônicos, reprocessar a mesma janela com o mesmo tema e período atualiza o conteúdo existente em vez de criar duplicatas por UUID, timestamp ou slug instável gerado pelo modelo.
+
+## Rotação de Memórias Antigas
+
+Nem todo conhecimento antigo será reemitido para sempre pela destilação. Um relatório pode mudar de nome, um template SQL pode desaparecer ou um conceito operacional pode deixar de ser relevante.
+
+Para evitar acúmulo silencioso de índice obsoleto, `memory_curta` possui `last_seen_at`. O upsert da rotina diária renova esse campo com `now()` sempre que o `context_key` aparece novamente.
+
+A limpeza periódica deve chamar `RemissiveMemoryStore.delete_stale_knowledge(days=90)` ou executar comando equivalente contra o banco. A remoção ocorre em `memory_curta`; os registros associados em `memory_embeddings` são removidos por `ON DELETE CASCADE`.
+
+Consulta equivalente:
+
+```sql
+DELETE FROM "public"."memory_curta"
+WHERE "last_seen_at" < now() - INTERVAL '90 days';
+```
 
 ## Uso Futuro no Chat Público
 

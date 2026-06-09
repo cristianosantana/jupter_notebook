@@ -26,9 +26,10 @@ INSERT INTO "public"."memory_curta" (
     "recent_questions",
     "key_metrics",
     "consolidated_at",
+    "last_seen_at",
     "ttl_expires_at"
 )
-VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, COALESCE($7, now()), $8)
+VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, COALESCE($7, now()), now(), $8)
 ON CONFLICT ("context_key")
 DO UPDATE SET
     "user_id" = EXCLUDED."user_id",
@@ -37,6 +38,7 @@ DO UPDATE SET
     "recent_questions" = EXCLUDED."recent_questions",
     "key_metrics" = EXCLUDED."key_metrics",
     "consolidated_at" = EXCLUDED."consolidated_at",
+    "last_seen_at" = now(),
     "ttl_expires_at" = EXCLUDED."ttl_expires_at"
 RETURNING "id"
 """
@@ -104,6 +106,23 @@ DO UPDATE SET
     "what_was_kept" = EXCLUDED."what_was_kept",
     "what_was_dropped" = EXCLUDED."what_was_dropped",
     "compressed_at" = EXCLUDED."compressed_at"
+"""
+
+
+_SEARCH_ORIGIN_IDS = """
+SELECT "origin_id"
+FROM "public"."memory_embeddings"
+WHERE "user_id" = $2
+  AND "origin_type" = 'memory_curta'
+  AND ("ttl_expires_at" IS NULL OR "ttl_expires_at" > now())
+ORDER BY "embedding" <=> $1::vector
+LIMIT $3
+"""
+
+
+_DELETE_STALE_MEMORY_CURTA = """
+DELETE FROM "public"."memory_curta"
+WHERE "last_seen_at" < now() - ($1::int * INTERVAL '1 day')
 """
 
 
@@ -183,6 +202,37 @@ class RemissiveMemoryStore:
                 entry.what_was_dropped,
                 entry.compressed_at,
             )
+
+    async def search_origin_ids(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        limit: int = 5,
+        probes: int = 10,
+    ) -> list[int]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return []
+
+        vectors = await self._embed.embed([normalized_query])
+        if not vectors:
+            return []
+        vector = OpenAIEmbeddingService.to_pgvector(vectors[0])
+
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT set_config('ivfflat.probes', $1, true)", str(max(1, probes)))
+                rows = await conn.fetch(_SEARCH_ORIGIN_IDS, vector, user_id, max(1, limit))
+        return [int(row["origin_id"]) for row in rows]
+
+    async def delete_stale_knowledge(self, *, days: int = 90) -> int:
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(_DELETE_STALE_MEMORY_CURTA, max(1, days))
+        parts = result.split()
+        if len(parts) == 2 and parts[0].upper() == "DELETE" and parts[1].isdigit():
+            return int(parts[1])
+        return 0
 
     async def persist_batch(self, batch: SupervisedMemoryBatch) -> list[int]:
         origin_ids: list[int] = []
