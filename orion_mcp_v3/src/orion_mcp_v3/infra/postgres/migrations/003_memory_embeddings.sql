@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     ttl_expires_at TIMESTAMPTZ
 );
 
+-- Idempotência: se a tabela já existir em formato V2, o CREATE acima é ignorado.
+-- A coluna legada `type` precisa existir antes do COMMENT abaixo.
+ALTER TABLE memory_embeddings
+    ADD COLUMN IF NOT EXISTS type VARCHAR(50);
+
 CREATE INDEX IF NOT EXISTS idx_memory_embeddings_user_id ON memory_embeddings (user_id);
 CREATE INDEX IF NOT EXISTS idx_memory_embeddings_ttl ON memory_embeddings (ttl_expires_at);
 CREATE INDEX IF NOT EXISTS idx_memory_embeddings_category ON memory_embeddings (category);
