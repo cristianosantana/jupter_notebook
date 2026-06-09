@@ -123,10 +123,10 @@ def test_settings_mailgun_configured_from_mailgun_env(monkeypatch) -> None:
     monkeypatch.setenv("ORION_EMAIL_ENABLED", "true")
     monkeypatch.setenv("ORION_EMAIL_DRIVER", "mailgun")
     monkeypatch.setenv("ORION_EMAIL_FROM_ADDRESS", "orion@local.test")
-    monkeypatch.setenv("MAILGUN_DOMAIN", "mg.local.test")
-    monkeypatch.setenv("MAILGUN_SECRET", "mailgun-secret")
-    monkeypatch.setenv("MAIL_FROM_NAME", "Mailgun Sender")
-    monkeypatch.setenv("MAILGUN_ENDPOINT", "https://api.eu.mailgun.net/v3")
+    monkeypatch.setenv("ORION_MAILGUN_DOMAIN", "mg.local.test")
+    monkeypatch.setenv("ORION_MAILGUN_SECRET", "mailgun-secret")
+    monkeypatch.setenv("ORION_MAIL_FROM_NAME", "Mailgun Sender")
+    monkeypatch.setenv("ORION_MAILGUN_ENDPOINT", "https://api.eu.mailgun.net/v3")
 
     s = get_settings_uncached()
 

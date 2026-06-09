@@ -2,9 +2,44 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Mapping, Sequence
+
+
+def _slugify(text: str) -> str:
+    """Normaliza texto para slug estável: lowercase, sem acentos, separado por _."""
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^\w\s-]", "", ascii_text.lower())
+    return re.sub(r"[\s-]+", "_", slug).strip("_")
+
+
+def _period_slug(periodo: str) -> str:
+    normalized = unicodedata.normalize("NFKD", periodo.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    safe = re.sub(r"[:/\\]+", "-", ascii_text)
+    safe = re.sub(r"[^a-z0-9_\s-]", "", safe)
+    return re.sub(r"[\s_]+", "-", safe).strip("-")
+
+
+def build_context_key(
+    user_id: str,
+    category: str,
+    theme: str,
+    periodo: str | None = None,
+) -> str:
+    """Gera context_key determinístico a partir de campos semânticos canônicos."""
+    parts = [
+        user_id.strip(),
+        _slugify(category),
+        _slugify(theme),
+    ]
+    if periodo is not None and periodo.strip():
+        parts.append(_period_slug(periodo))
+    return ":".join(parts)
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,7 @@ CREATE TABLE "public"."memory_curta" (
   "recent_questions" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "key_metrics" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "consolidated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  "last_seen_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   "ttl_expires_at" TIMESTAMP WITH TIME ZONE NULL,
   CONSTRAINT "memory_curta_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "unq_memory_curta_context" UNIQUE ("context_key")
@@ -21,6 +22,7 @@ CREATE TABLE "public"."memory_curta" (
 
 CREATE INDEX "idx_memory_curta_ttl" ON "public"."memory_curta" ("ttl_expires_at" ASC);
 CREATE INDEX "idx_memory_curta_context" ON "public"."memory_curta" ("context_key");
+CREATE INDEX "idx_memory_curta_last_seen" ON "public"."memory_curta" ("last_seen_at" ASC);
 
 CREATE TABLE "public"."memory_embeddings" (
   "id" SERIAL,

@@ -25,6 +25,7 @@ Ordem de aplicação (prefixo numérico):
 | `010_remissive_memory_schema.sql` | V2 destrutiva de `memory_curta`, `memory_embeddings`, `memory_essence` e `memory_compression_log`. |
 | `011_memory_compression_log_wide_keys.sql` | Aumenta campos de auditoria do `memory_compression_log` para payloads reais do destilador. |
 | `012_memory_essence_wide_keys.sql` | Aumenta campos curtos de `memory_essence` para temas/confianças reais do destilador. |
+| `013_memory_curta_last_seen.sql` | Adiciona `last_seen_at` para rotação de conhecimento remissivo não renovado. |
 
 ### Migrações 008/009 — embeddings por turno
 
@@ -46,12 +47,13 @@ Estas migrações alimentam apenas o subsistema opcional `chat_turn_embeddings` 
 
 `010_remissive_memory_schema.sql` recria a visão materializada de memória remissiva:
 
-- `memory_curta`: conteúdo validado, com upsert por `context_key`.
-- `memory_embeddings`: perguntas curtas vetoriais apontando para `memory_curta` por `origin_id`/`origin_type`.
+- `memory_curta`: conteúdo validado, com upsert por `context_key` calculado no código a partir de `user_id`, `category`, `theme` e `periodo` opcional; renova `last_seen_at` a cada destilação.
+- `memory_embeddings`: perguntas curtas vetoriais apontando para `memory_curta` por `origin_id`/`origin_type`; usa `vector(1536)` com IVFFlat `lists = 100`, e as consultas devem configurar `ivfflat.probes` localmente antes da busca.
 - `memory_essence`: achados estáveis com unique `(user_id, theme)`.
 - `memory_compression_log`: auditoria da destilação de uma janela supervisionada, idempotente por `batch_key`.
 - `011_memory_compression_log_wide_keys.sql`: amplia `batch_key`, `from_state` e `to_state` para `VARCHAR(255)` para evitar truncamento de janelas ISO e estados descritivos.
-- `012_memory_essence_wide_keys.sql`: amplia `memory_essence.theme` para `VARCHAR(255)` e `confidence` para `VARCHAR(50)` para preservar rótulos gerados pelo LLM.
+- `012_memory_essence_wide_keys.sql`: amplia `memory_essence.theme` e `confidence` para `VARCHAR(255)` para preservar rótulos gerados pelo LLM.
+- `013_memory_curta_last_seen.sql`: adiciona `memory_curta.last_seen_at` e índice para limpeza periódica de conhecimento que deixou de aparecer na destilação.
 
 A rotina que grava essas tabelas é o comando independente:
 

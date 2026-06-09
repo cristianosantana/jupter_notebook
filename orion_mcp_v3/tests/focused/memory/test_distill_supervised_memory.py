@@ -79,8 +79,12 @@ async def test_command_distills_window_with_fake_llm_and_persists_batch() -> Non
                 {
                     "user_id": "sistema_background",
                     "category": "Financeiro",
-                    "context_key": "faturamento_2026_05",
-                    "validated_answer": "Faturamento validado de maio.",
+                    "theme": "Faturamento mensal",
+                    "periodo": "2026-05",
+                    "validated_answer": (
+                        "Faturamento validado de maio com base na conferência supervisionada "
+                        "dos indicadores financeiros e operacionais do período."
+                    ),
                     "recent_questions": ["Qual foi o faturamento?"],
                     "key_metrics": {"faturamento": 2696125.56},
                     "index_questions": ["Qual foi o faturamento de maio?"],
@@ -111,8 +115,11 @@ async def test_command_distills_window_with_fake_llm_and_persists_batch() -> Non
     assert result == module.DistillationResult(windows_read=1, knowledge_written=1, origin_ids=[301])
     assert reader.calls == [(start, end, 25)]
     assert "sess-1" in llm.prompts[0]
+    assert "knowledge[]: user_id, category, theme, periodo opcional" in llm.prompts[0]
+    assert "NUNCA gere context_key" in llm.prompts[0]
+    assert "category, context_key" not in llm.prompts[0]
     assert len(store.batches) == 1
-    assert store.batches[0].knowledge[0].context_key == "faturamento_2026_05"
+    assert store.batches[0].knowledge[0].context_key == "sistema_background:financeiro:faturamento_mensal:2026-05"
     assert store.batches[0].essence[0].theme == "fechamento_mensal"
     assert store.batches[0].compression_log.messages_compressed == 1
     assert (
@@ -240,8 +247,12 @@ def test_parse_distillation_payload_accepts_portuguese_knowledge_keys() -> None:
             {
                 "conhecimento_lote": [
                     {
-                        "contexto_chave": "fechamento_gerencial_2026_05",
-                        "conteudo_resposta_validada": "Faturamento validado de maio.",
+                        "tema": "Fechamento Gerencial",
+                        "periodo": "2026-05",
+                        "conteudo_resposta_validada": (
+                            "Faturamento validado de maio com base na conferência supervisionada "
+                            "dos indicadores financeiros e operacionais do período."
+                        ),
                         "variacoes_perguntas_indice": [
                             "Qual foi o faturamento de maio?",
                             "Quanto a empresa vendeu em maio?",
@@ -257,8 +268,8 @@ def test_parse_distillation_payload_accepts_portuguese_knowledge_keys() -> None:
     assert len(batch.knowledge) == 1
     assert batch.knowledge[0].user_id == "sistema_background"
     assert batch.knowledge[0].category == "Financeiro"
-    assert batch.knowledge[0].context_key == "fechamento_gerencial_2026_05"
-    assert batch.knowledge[0].validated_answer == "Faturamento validado de maio."
+    assert batch.knowledge[0].context_key == "sistema_background:financeiro:fechamento_gerencial:2026-05"
+    assert batch.knowledge[0].validated_answer.startswith("Faturamento validado de maio")
     assert batch.knowledge[0].index_questions == (
         "Qual foi o faturamento de maio?",
         "Quanto a empresa vendeu em maio?",
@@ -273,8 +284,11 @@ def test_parse_distillation_payload_accepts_common_validated_answer_aliases() ->
             {
                 "knowledge": [
                     {
-                        "context_key": "fechamento_gerencial_2026_05",
-                        "resposta_validada": "Faturamento validado de maio.",
+                        "theme": "Fechamento Gerencial",
+                        "resposta_validada": (
+                            "Faturamento validado de maio com base na conferência supervisionada "
+                            "dos indicadores financeiros e operacionais do período."
+                        ),
                         "index_questions": ["Qual foi o faturamento de maio?"],
                     }
                 ],
@@ -282,7 +296,37 @@ def test_parse_distillation_payload_accepts_common_validated_answer_aliases() ->
         )
     )
 
-    assert batch.knowledge[0].validated_answer == "Faturamento validado de maio."
+    assert batch.knowledge[0].validated_answer.startswith("Faturamento validado de maio")
+
+
+def test_parse_distillation_payload_ignores_model_context_key_and_builds_canonical_key() -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "Financeiro",
+                        "theme": "Comissão por Concessionária",
+                        "periodo": "2025-08",
+                        "context_key": "a3f9-uuid-instavel",
+                        "validated_answer": (
+                            "A comissão por concessionária foi validada com base nos dados "
+                            "supervisionados do fechamento financeiro do período informado."
+                        ),
+                        "index_questions": ["Qual foi a comissão por concessionária?"],
+                    }
+                ],
+            }
+        )
+    )
+
+    assert (
+        batch.knowledge[0].context_key
+        == "sistema_background:financeiro:comissao_por_concessionaria:2025-08"
+    )
 
 
 def test_parse_distillation_payload_skips_empty_knowledge_items() -> None:
@@ -326,6 +370,55 @@ def test_parse_distillation_payload_skips_empty_knowledge_items() -> None:
     assert batch.compression_log is not None
 
 
+def test_parse_distillation_payload_skips_short_knowledge_answers() -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "Financeiro",
+                        "context_key": "resumo_curto_suspeito",
+                        "validated_answer": "Faturamento ok.",
+                        "index_questions": ["Qual foi o faturamento?"],
+                    }
+                ],
+            }
+        )
+    )
+
+    assert batch.knowledge == ()
+
+
+def test_parse_distillation_payload_skips_low_confidence_knowledge_items(caplog) -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "Financeiro",
+                        "context_key": "fechamento_baixa_confianca",
+                        "validated_answer": (
+                            "O fechamento informado depende de validação adicional, pois os valores "
+                            "do período ainda apresentam divergências entre fontes supervisionadas."
+                        ),
+                        "confidence": "low",
+                        "index_questions": ["Qual foi o fechamento do período?"],
+                    }
+                ],
+            }
+        )
+    )
+
+    assert batch.knowledge == ()
+    assert "Item com baixa confiança ignorado: fechamento_baixa_confianca" in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_command_logs_raw_model_response_when_parse_fails(tmp_path) -> None:
     module = _load_script_module()
@@ -337,7 +430,10 @@ async def test_command_logs_raw_model_response_when_parse_fails(tmp_path) -> Non
         {
             "knowledge": [
                 {
-                    "validated_answer": "Resposta sem chave de contexto.",
+                    "validated_answer": (
+                        "Resposta validada longa o bastante para chegar à validação de chave "
+                        "de contexto ausente durante o parse do lote supervisionado."
+                    ),
                     "index_questions": ["pergunta sem resposta"],
                 }
             ]
@@ -357,8 +453,10 @@ async def test_command_logs_raw_model_response_when_parse_fails(tmp_path) -> Non
     logs = list(tmp_path.glob("distill_supervised_memory_failed_*.json"))
     assert len(logs) == 1
     payload = json.loads(logs[0].read_text(encoding="utf-8"))
-    assert payload["model_response"]["knowledge"][0]["validated_answer"] == "Resposta sem chave de contexto."
-    assert "context_key" in payload["error"]
+    assert payload["model_response"]["knowledge"][0]["validated_answer"].startswith(
+        "Resposta validada longa"
+    )
+    assert "theme | tema" in payload["error"]
     assert payload["input_summary"]["windows_count"] == 1
     assert payload["input_summary"]["total_messages"] == 1
     assert payload["input_summary"]["total_indexed_turns"] == 1

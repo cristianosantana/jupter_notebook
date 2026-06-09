@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from dataclasses import asdict, dataclass, replace
@@ -29,11 +30,15 @@ from orion_mcp_v3.memory.remissive_models import (
     RemissiveEssenceItem,
     RemissiveKnowledgeItem,
     SupervisedMemoryBatch,
+    build_context_key,
 )
 from orion_mcp_v3.memory.supervised_conversation_reader import SupervisedConversationReader
 from orion_mcp_v3.protocols.llm import LLMProvider
 from orion_mcp_v3.providers.openai_embedding import OpenAIEmbeddingService
 from orion_mcp_v3.providers.openai_provider import OpenAIProvider
+
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationReader(Protocol):
@@ -233,14 +238,37 @@ _VALIDATED_ANSWER_KEYS = (
 )
 
 
+def _validate_knowledge_item(item: dict[str, Any], validated_answer: str) -> bool:
+    item_label = (
+        item.get("context_key")
+        or item.get("contexto_chave")
+        or item.get("theme")
+        or item.get("tema")
+        or "<sem-identificador>"
+    )
+    if len(validated_answer.strip()) < 50:
+        logger.warning("Item com resposta validada curta ignorado: %s", item_label)
+        return False
+    if _confidence(item) == "low":
+        logger.warning("Item com baixa confiança ignorado: %s", item_label)
+        return False
+    return True
+
+
 def _knowledge_item_or_none(item: dict[str, Any]) -> RemissiveKnowledgeItem | None:
     validated_answer = _optional_str_any(item, *_VALIDATED_ANSWER_KEYS)
     if validated_answer is None:
         return None
+    if not _validate_knowledge_item(item, validated_answer):
+        return None
+    user_id = _optional_str(item, "user_id") or "sistema_background"
+    category = _optional_str_any(item, "category", "categoria") or "Geral"
+    theme = _required_str_any(item, "theme", "tema")
+    periodo = _optional_str_any(item, "periodo", "period")
     return RemissiveKnowledgeItem(
-        user_id=_optional_str(item, "user_id") or "sistema_background",
-        category=_optional_str_any(item, "category", "categoria") or "Geral",
-        context_key=_required_str_any(item, "context_key", "contexto_chave"),
+        user_id=user_id,
+        category=category,
+        context_key=build_context_key(user_id, category, theme, periodo),
         validated_answer=validated_answer,
         recent_questions=_string_tuple_any(item, "recent_questions", "perguntas_recentes"),
         key_metrics=_mapping(item, "key_metrics"),
@@ -328,8 +356,9 @@ def _build_prompt(windows: Sequence[RemissiveConversationWindow]) -> str:
     return (
         "Destile conversas supervisionadas em memoria remissiva V2.\n"
         "Responda somente JSON estrito com chaves: knowledge, essence, compression_log.\n"
-        "knowledge[]: user_id, category, context_key, validated_answer, "
-        "recent_questions, key_metrics, index_questions.\n"
+        "knowledge[]: user_id, category, theme, periodo opcional, validated_answer, "
+        "recent_questions, key_metrics, index_questions, confidence opcional.\n"
+        "NUNCA gere context_key, UUID ou hash; o sistema calcula isso.\n"
         "essence[]: user_id, theme, observation, key_finding, recommendation, "
         "stable_metrics, confidence.\n"
         "compression_log: user_id, from_state, to_state, messages_compressed, "
