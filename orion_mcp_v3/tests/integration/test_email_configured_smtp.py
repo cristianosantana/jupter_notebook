@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from orion_mcp_v3.api.email_sender import EmailSender, EmailSendRequest
+from orion_mcp_v3.api.email.sender import EmailSender, EmailSendRequest
 from orion_mcp_v3.config.settings import get_settings_uncached
 
 

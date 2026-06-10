@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from orion_mcp_v3.api.main import create_app
 from orion_mcp_v3.api.models import ChatRequest, ChatResponse, HealthResponse
-from orion_mcp_v3.api.email_sender import EmailSendResult
+from orion_mcp_v3.api.email.sender import EmailSendResult
 from orion_mcp_v3.api.routes.chat import _structured_email_evidence_from
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.provenance import CoverageInfo

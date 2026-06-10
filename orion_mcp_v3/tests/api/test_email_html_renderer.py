@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection, EmailTable
-from orion_mcp_v3.api.email_html_renderer import render_response_email_html
+from orion_mcp_v3.api.email.html_renderer import render_response_email_html
 
 
 def test_render_response_email_html_builds_executive_sections() -> None:
