@@ -117,6 +117,50 @@ async def test_email_factory_skips_llm_for_conversational_message() -> None:
     assert report.sections[0].items[0].label == "Olá, envie um período para eu consultar o fechamento."
 
 
+def test_build_report_from_text_preserves_simple_direct_answer_items() -> None:
+    body = (
+        "Resposta direta: total pagamentos por tipo de pagamento:\n"
+        "1. Cartão de Crédito: R$ 1.286.059,42\n"
+        "2. Concessionária: R$ 913.134,71\n"
+        "3. PIX: R$ 401.301,70\n"
+        "4. Dinheiro: R$ 65.119,00\n"
+        "5. Depósito Bancário: R$ 37.877,13\n"
+        "6. Permuta: R$ 7.300,00\n"
+        "7. Parcelamento: R$ 6.556,00\n"
+        "8. Cheque: R$ 0,00"
+    )
+
+    report = build_report_from_text(
+        subject="Formas de pagamento",
+        body=body,
+        from_name="CarSoul",
+        report_type="ranking",
+    )
+    html = render_response_email_html(
+        subject="Formas de pagamento",
+        body=body,
+        from_name="CarSoul",
+        report=report,
+    )
+
+    assert report.sections[0].title == "Resposta direta"
+    assert report.sections[0].notes == ("total pagamentos por tipo de pagamento:",)
+    assert [item.label for item in report.sections[0].items] == [
+        "Cartão de Crédito",
+        "Concessionária",
+        "PIX",
+        "Dinheiro",
+        "Depósito Bancário",
+        "Permuta",
+        "Parcelamento",
+        "Cheque",
+    ]
+    assert "Cartão de Crédito" in html
+    assert "R$ 1.286.059,42" in html
+    assert "Cheque" in html
+    assert "R$ 0,00" in html
+
+
 async def test_email_factory_merges_structured_evidence_with_narrator_feedback() -> None:
     provider = FakeLLMProvider(
         """

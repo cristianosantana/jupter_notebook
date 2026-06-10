@@ -94,6 +94,9 @@ async def test_email_sender_accepts_generic_email_settings() -> None:
         email_port=2525,
         email_username="generic-user",
         email_password="generic-secret",
+        email_smtp_host="",
+        email_smtp_username="",
+        email_smtp_password="",
         email_from_address="generic@local.test",
         email_from_name="Generic",
         email_start_tls=False,
@@ -132,6 +135,7 @@ async def test_email_sender_uses_mailgun_api_when_driver_is_mailgun() -> None:
         mail_from_name="Mailgun Sender",
         mailgun_endpoint="https://api.eu.mailgun.net/v3",
         email_username="",
+        email_smtp_username="smtp-user-from-env",
         email_from_address="orion@local.test",
         email_timeout=4.0,
     )

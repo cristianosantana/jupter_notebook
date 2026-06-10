@@ -203,6 +203,8 @@ class OrionSettings(BaseSettings):
 
     @property
     def effective_email_username(self) -> str:
+        if self.email_driver_name == "mailgun":
+            return self.email_username.strip()
         if self.email_driver_name == "smtp" and self.email_smtp_username.strip():
             return self.email_smtp_username.strip()
         return self.email_username.strip() or self.email_smtp_username.strip()
