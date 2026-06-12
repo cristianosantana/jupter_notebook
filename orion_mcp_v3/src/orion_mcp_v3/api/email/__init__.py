@@ -8,7 +8,13 @@ from orion_mcp_v3.api.email.parsing_config import (
     apply_parsing_policy,
     get_parsing_config,
 )
-from orion_mcp_v3.api.email.parsing_rules import ParsingRulesConfig, SectionOpenRule, default_section_rules
+from orion_mcp_v3.api.email.parsing_rules import (
+    LineRule,
+    ParsingRulesConfig,
+    SectionOpenRule,
+    default_line_rules,
+    default_section_rules,
+)
 from orion_mcp_v3.api.email.rule_engine import RuleEngine, build_report_from_rules
 from orion_mcp_v3.api.email.html_renderer import render_response_email_html
 from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection, EmailTable
@@ -30,9 +36,11 @@ __all__ = [
     "apply_parsing_policy",
     "build_report_from_text",
     "get_parsing_config",
+    "LineRule",
     "ParsingRulesConfig",
     "RuleEngine",
     "SectionOpenRule",
+    "default_line_rules",
     "build_report_from_rules",
     "default_section_rules",
     "classify_message",

@@ -6,7 +6,13 @@ import pytest
 
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email.parsing import build_report_from_text
-from orion_mcp_v3.api.email.parsing_rules import ParsingRulesConfig, SectionOpenRule, default_section_rules
+from orion_mcp_v3.api.email.parsing_rules import (
+    LineRule,
+    ParsingRulesConfig,
+    SectionOpenRule,
+    default_line_rules,
+    default_section_rules,
+)
 from orion_mcp_v3.api.email.rule_engine import RuleEngine, build_report_from_rules
 
 FIXTURE = Path("tests/fixtures/email/fechamento_gerencial_marco.txt")
@@ -113,6 +119,53 @@ def test_rule_engine_matches_pipe_table_section() -> None:
     assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
 
 
+def test_line_rule_highlight_sets_highlight_on_active_section() -> None:
+    body = (
+        "Faturamento por forma de pagamento — Total: R$ 2.713.158,18\n"
+        "Destaque: Cartão de Crédito — R$ 1.352.045,28 (49,83%)\n"
+        "Cartão de Crédito: R$ 1.352.045,28 (49,83%)"
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    section = rules.sections[0]
+    assert section.title == "Faturamento por forma de pagamento"
+    assert section.highlight is not None
+    assert "Cartão de Crédito" in section.highlight
+
+
+def test_line_rule_highlight_opens_destaques_from_direct_answer() -> None:
+    body = "Resposta direta: total por tipo:\nDestaque: PIX lidera o período"
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    destaques = next(section for section in rules.sections if section.title == "Destaques")
+    assert destaques.highlight == "PIX lidera o período"
+
+
+def test_line_rule_highlight_disabled_skips_destaque_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=(
+            LineRule(
+                id="highlight",
+                pattern=r"^Destaque:\s*(?P<highlight>.+)$",
+                effect="set_highlight",
+                enabled=False,
+            ),
+        ),
+    )
+    body = (
+        "Faturamento por forma de pagamento — Total: R$ 2.713.158,18\n"
+        "Destaque: Cartão de Crédito — R$ 1.352.045,28 (49,83%)"
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    section = report.sections[0]
+    assert section.highlight is None
+
+
 def test_rule_engine_respects_custom_section_rule() -> None:
     custom = ParsingRulesConfig(
         sections=(
@@ -123,7 +176,8 @@ def test_rule_engine_respects_custom_section_rule() -> None:
                 kind="overview",
                 pattern=r"^Visão geral\b",
             ),
-        )
+        ),
+        line_rules=default_line_rules(),
     )
     body = "Visão geral\nResposta direta: total: R$ 10,00"
     report = RuleEngine(custom).parse_report(subject="Teste", body=body, from_name="Orion")

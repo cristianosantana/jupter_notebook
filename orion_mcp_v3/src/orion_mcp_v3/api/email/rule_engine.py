@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email.parsing import (
@@ -21,16 +22,18 @@ from orion_mcp_v3.api.email.parsing import (
 )
 from orion_mcp_v3.api.email.parsing_config import EmailParsingConfig, apply_parsing_policy
 from orion_mcp_v3.api.email.parsing_rules import (
+    LineRule,
+    LineRuleMatch,
     ParsingRulesConfig,
     SectionOpenRule,
     SectionRuleMatch,
+    match_line_rules,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
-_HIGHLIGHT_RX = re.compile(r"^Destaque:\s*(?P<highlight>.+)$", re.I)
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 _DOMINANTE_RX = re.compile(r"^Dominante:\s*(?P<text>.+)$", re.I)
 _CONCENTRACAO_RX = re.compile(r"^Concentra[cç][aã]o:\s*(?P<text>.+)$", re.I)
@@ -43,6 +46,7 @@ class RuleEngine:
     def __init__(self, rules_config: ParsingRulesConfig | None = None) -> None:
         self._rules_config = rules_config or ParsingRulesConfig.default()
         self._compiled_by_id = self._rules_config.compile_by_id()
+        self._compiled_line_rules = self._rules_config.compile_line_rules()
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
         compiled = self._compiled_by_id.get(rule_id)
@@ -62,6 +66,23 @@ class RuleEngine:
             if matched is not None:
                 return matched
         return None
+
+    def _apply_line_rule(
+        self,
+        match: LineRuleMatch,
+        *,
+        current: SectionDraft | None,
+        flush: Callable[[], None],
+    ) -> SectionDraft:
+        rule = match.rule
+        if rule.effect == "set_highlight":
+            return _apply_set_highlight(
+                match,
+                rule,
+                current=current,
+                flush=flush,
+            )
+        return current
 
     def parse_report(
         self,
@@ -169,12 +190,9 @@ class RuleEngine:
                 apply_section_match(total_match, raw_line=raw)
                 continue
 
-            highlight_match = _HIGHLIGHT_RX.match(raw)
-            if highlight_match:
-                if current is None or current.title == "Resposta direta":
-                    flush()
-                    current = SectionDraft(title="Destaques", kind="default")
-                current.highlight = highlight_match.group("highlight").strip()
+            line_match = match_line_rules(raw, self._compiled_line_rules, phase="promotion")
+            if line_match is not None:
+                current = self._apply_line_rule(line_match, current=current, flush=flush)
                 continue
 
             note_match = _NOTE_RX.match(raw)
@@ -266,3 +284,19 @@ def _resolve_kind(rule: SectionOpenRule, title: str) -> str:
     if rule.kind_resolver == "section_kind":
         return section_kind(title)
     return rule.kind
+
+
+def _apply_set_highlight(
+    match: LineRuleMatch,
+    rule: LineRule,
+    *,
+    current: SectionDraft | None,
+    flush: callable,
+) -> SectionDraft:
+    if current is None or current.title in rule.flush_if_missing_or_current_title_in:
+        flush()
+        current = SectionDraft(title=rule.target_section_title, kind=rule.target_section_kind)
+    highlight = match.groups.get(rule.value_from_group, "").strip()
+    if highlight:
+        current.highlight = highlight
+    return current

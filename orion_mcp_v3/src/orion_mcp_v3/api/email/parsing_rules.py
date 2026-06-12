@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_with_total"]
+LineRuleEffect = Literal["set_highlight"]
+LineRulePhase = Literal["promotion"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,10 +40,38 @@ class SectionRuleMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class LineRule:
+    """Regra de linha com efeito sobre a seção ativa (Fase 3 — PR1+)."""
+
+    id: str
+    pattern: str
+    effect: LineRuleEffect
+    phase: LineRulePhase = "promotion"
+    value_from_group: str = "highlight"
+    target_section_title: str = "Destaques"
+    target_section_kind: str = "default"
+    flush_if_missing_or_current_title_in: tuple[str, ...] = ("Resposta direta",)
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledLineRule:
+    rule: LineRule
+    pattern: re.Pattern[str]
+
+
+@dataclass(frozen=True, slots=True)
+class LineRuleMatch:
+    rule: LineRule
+    groups: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
-    """Configuração do motor de regras — ordem de `sections` define prioridade."""
+    """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
     sections: tuple[SectionOpenRule, ...]
+    line_rules: tuple[LineRule, ...] = ()
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -58,6 +88,13 @@ class ParsingRulesConfig:
     def compile_by_id(self) -> dict[str, CompiledSectionRule]:
         return {compiled.rule.id: compiled for compiled in self.compile()}
 
+    def compile_line_rules(self) -> tuple[CompiledLineRule, ...]:
+        return tuple(
+            CompiledLineRule(rule=rule, pattern=re.compile(rule.pattern, re.I))
+            for rule in self.line_rules
+            if rule.enabled
+        )
+
     def rule_by_id(self, rule_id: str) -> SectionOpenRule | None:
         for rule in self.sections:
             if rule.id == rule_id and rule.enabled:
@@ -66,7 +103,7 @@ class ParsingRulesConfig:
 
     @classmethod
     def default(cls) -> ParsingRulesConfig:
-        return cls(sections=default_section_rules())
+        return cls(sections=default_section_rules(), line_rules=default_line_rules())
 
 
 def default_section_rules() -> tuple[SectionOpenRule, ...]:
@@ -110,6 +147,38 @@ def default_section_rules() -> tuple[SectionOpenRule, ...]:
             kind_resolver="section_kind",
         ),
     )
+
+
+def default_line_rules() -> tuple[LineRule, ...]:
+    """Regras de linha padrão — PR1: Destaque: → highlight da seção ativa."""
+    return (
+        LineRule(
+            id="highlight",
+            pattern=r"^Destaque:\s*(?P<highlight>.+)$",
+            effect="set_highlight",
+            value_from_group="highlight",
+            target_section_title="Destaques",
+            target_section_kind="default",
+            flush_if_missing_or_current_title_in=("Resposta direta",),
+        ),
+    )
+
+
+def match_line_rules(
+    raw: str,
+    compiled_rules: tuple[CompiledLineRule, ...],
+    *,
+    phase: LineRulePhase | None = None,
+) -> LineRuleMatch | None:
+    for compiled in compiled_rules:
+        if phase is not None and compiled.rule.phase != phase:
+            continue
+        match = compiled.pattern.match(raw)
+        if match is None:
+            continue
+        groups = {key: (value or "").strip() for key, value in match.groupdict().items() if value is not None}
+        return LineRuleMatch(rule=compiled.rule, groups=groups)
+    return None
 
 
 def match_section_rule(raw: str, compiled_rules: tuple[CompiledSectionRule, ...]) -> SectionRuleMatch | None:
