@@ -10,6 +10,7 @@ SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_w
 LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note", "append_omitted"]
 LineRulePhase = Literal["promotion_early", "promotion_late", "omitted"]
 HeadingRouteEffect = Literal["open_section", "collect_alerts", "collect_actions"]
+CollectionMode = Literal["alerts", "actions"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,12 +94,23 @@ class MarkdownHeadingRouter:
 
 
 @dataclass(frozen=True, slots=True)
+class CollectionPrefixRule:
+    """Gatilho standalone por prefixo de linha — entra em modo de coleta (PR6+)."""
+
+    id: str
+    collection_mode: CollectionMode
+    prefixes: tuple[str, ...]
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
     """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
     sections: tuple[SectionOpenRule, ...]
     line_rules: tuple[LineRule, ...] = ()
     heading_router: MarkdownHeadingRouter | None = None
+    collection_prefix_rules: tuple[CollectionPrefixRule, ...] = ()
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -134,6 +146,7 @@ class ParsingRulesConfig:
             sections=default_section_rules(),
             line_rules=default_line_rules(),
             heading_router=default_heading_router(),
+            collection_prefix_rules=default_collection_prefix_rules(),
         )
 
 
@@ -198,6 +211,21 @@ def default_heading_router() -> MarkdownHeadingRouter:
     )
 
 
+def default_collection_prefix_rules() -> tuple[CollectionPrefixRule, ...]:
+    """Prefixos standalone padrão espelhando `is_alert()` do parser legado."""
+    return (
+        CollectionPrefixRule(
+            id="alert_standalone",
+            collection_mode="alerts",
+            prefixes=(
+                "registros com valor zero",
+                "discrepância",
+                "discrepancia",
+            ),
+        ),
+    )
+
+
 def default_line_rules() -> tuple[LineRule, ...]:
     """Regras de linha padrão — PR1–PR4 Destaque, Dominante, Concentração, Omitted."""
     return (
@@ -237,6 +265,20 @@ def default_line_rules() -> tuple[LineRule, ...]:
             flush_if_missing_or_current_title_in=("Resposta direta",),
         ),
     )
+
+
+def match_collection_prefix_rule(
+    raw: str,
+    rules: tuple[CollectionPrefixRule, ...],
+) -> CollectionPrefixRule | None:
+    """Retorna a primeira regra cujo prefixo casa com a linha normalizada."""
+    normalized = raw.casefold()
+    for rule in rules:
+        if not rule.enabled:
+            continue
+        if normalized.startswith(rule.prefixes):
+            return rule
+    return None
 
 
 def match_heading_route(title: str, routes: tuple[HeadingRoute, ...]) -> HeadingRoute | None:

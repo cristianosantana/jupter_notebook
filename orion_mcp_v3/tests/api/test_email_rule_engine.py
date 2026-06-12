@@ -7,6 +7,7 @@ import pytest
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email.parsing import build_report_from_text
 from orion_mcp_v3.api.email.parsing_rules import (
+    CollectionPrefixRule,
     HeadingRoute,
     LineRule,
     MarkdownHeadingRouter,
@@ -389,6 +390,65 @@ def test_heading_router_disabled_alerts_route_opens_section_instead() -> None:
     assert len(report.sections) == 1
     assert report.sections[0].title == "Alertas e conciliações"
     assert not report.alerts
+
+
+def test_alert_standalone_matches_fechamento_marco_alerts_and_actions() -> None:
+    body = FIXTURE.read_text(encoding="utf-8")
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.alerts) == 5
+    assert len(rules.actions) == 3
+    assert rules.alerts[0] == "Registros com valor zero identificados:"
+    assert rules.alerts[-1].startswith("Discrepância a verificar:")
+
+
+def test_alert_standalone_discrepancia_line_parity() -> None:
+    body = "Discrepância a verificar: somatório divergente em R$ 3.770,00."
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.alerts) == 1
+    assert not rules.sections
+
+
+def test_alert_standalone_continues_collecting_detail_lines() -> None:
+    body = (
+        "Registros com valor zero identificados:\n"
+        "Faturamento por tipo de pagamento: 2 registro(s) com valor zero.\n"
+        "Produção por serviço: 2 registro(s) com valor zero."
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.alerts) == 3
+
+
+def test_alert_standalone_disabled_skips_alert_prefix_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=(
+            CollectionPrefixRule(
+                id="alert_standalone",
+                collection_mode="alerts",
+                prefixes=(
+                    "registros com valor zero",
+                    "discrepância",
+                    "discrepancia",
+                ),
+                enabled=False,
+            ),
+        ),
+    )
+    body = "Discrepância a verificar: somatório divergente em R$ 3.770,00."
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert not report.alerts
+    assert not report.sections
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

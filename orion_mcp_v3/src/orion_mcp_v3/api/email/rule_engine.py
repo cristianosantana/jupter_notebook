@@ -12,7 +12,6 @@ from orion_mcp_v3.api.email.parsing import (
     first_meaningful_line,
     inline_detail_items,
     is_action,
-    is_alert,
     looks_like_metric,
     looks_like_pipe_table_line,
     normalized_lines,
@@ -28,7 +27,9 @@ from orion_mcp_v3.api.email.parsing_rules import (
     ParsingRulesConfig,
     SectionOpenRule,
     SectionRuleMatch,
+    default_collection_prefix_rules,
     default_heading_router,
+    match_collection_prefix_rule,
     match_heading_route,
     match_line_rules,
 )
@@ -48,6 +49,9 @@ class RuleEngine:
         self._compiled_line_rules = self._rules_config.compile_line_rules()
         self._heading_router = self._rules_config.heading_router or default_heading_router()
         self._heading_rx = self._heading_router.compile()
+        self._collection_prefix_rules = (
+            self._rules_config.collection_prefix_rules or default_collection_prefix_rules()
+        )
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
         compiled = self._compiled_by_id.get(rule_id)
@@ -235,10 +239,14 @@ class RuleEngine:
                     current.notes.append(raw)
                 continue
 
-            if is_alert(raw):
+            prefix_rule = match_collection_prefix_rule(raw, self._collection_prefix_rules)
+            if prefix_rule is not None:
                 flush()
-                collection_mode = "alerts"
-                alerts.append(raw)
+                set_collection_mode(prefix_rule.collection_mode)
+                if prefix_rule.collection_mode == "alerts":
+                    alerts.append(raw)
+                else:
+                    actions.append(raw)
                 continue
 
             if is_action(raw):
