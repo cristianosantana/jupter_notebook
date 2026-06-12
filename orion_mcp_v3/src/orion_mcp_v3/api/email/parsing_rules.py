@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_with_total"]
-LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note"]
-LineRulePhase = Literal["promotion_early", "promotion_late"]
+LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note", "append_omitted"]
+LineRulePhase = Literal["promotion_early", "promotion_late", "omitted"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +151,7 @@ def default_section_rules() -> tuple[SectionOpenRule, ...]:
 
 
 def default_line_rules() -> tuple[LineRule, ...]:
-    """Regras de linha padrão — PR1 Destaque, PR2 Dominante, PR3 Concentração."""
+    """Regras de linha padrão — PR1–PR4 Destaque, Dominante, Concentração, Omitted."""
     return (
         LineRule(
             id="dominante",
@@ -171,6 +171,12 @@ def default_line_rules() -> tuple[LineRule, ...]:
             note_prefix="Concentração: ",
             target_section_title="Destaques",
             target_section_kind="default",
+        ),
+        LineRule(
+            id="omitted_categories",
+            pattern=r"^\.\.\.\s*\(\+\s*\d+",
+            effect="append_omitted",
+            phase="omitted",
         ),
         LineRule(
             id="highlight",

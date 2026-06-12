@@ -247,12 +247,63 @@ def test_line_rule_concentracao_disabled_skips_concentracao_lines() -> None:
                 note_prefix="Concentração: ",
                 enabled=False,
             ),
-            default_line_rules()[2],
+            default_line_rules()[3],
         ),
     )
     body = "Concentração: alta (HHI=0,35)."
     report = RuleEngine(config).parse_report(subject="Ranking", body=body, from_name="Orion")
     assert not any(section.title == "Destaques" for section in report.sections)
+
+
+def test_line_rule_omitted_appends_note_to_active_section() -> None:
+    body = (
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        "Ranking por `total_liquido`:\n"
+        "  1. Cartão de Crédito  R$ 1.088.298,35  (41,6%)\n"
+        "  ... (+ 3 categorias)\n"
+        "Dominante: Cartão de Crédito (41,6% do total)."
+    )
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    ranking = next(section for section in rules.sections if section.title == "Resumo estatístico complementar")
+    assert any("... (+ 3 categorias)" in note for note in ranking.notes)
+
+
+def test_line_rule_omitted_skips_when_no_active_section() -> None:
+    body = "... (+ 3 categorias)"
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert not rules.sections
+
+
+def test_line_rule_omitted_disabled_skips_omitted_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=(
+            default_line_rules()[0],
+            default_line_rules()[1],
+            LineRule(
+                id="omitted_categories",
+                pattern=r"^\.\.\.\s*\(\+\s*\d+",
+                effect="append_omitted",
+                phase="omitted",
+                enabled=False,
+            ),
+            default_line_rules()[3],
+        ),
+    )
+    body = (
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        "Ranking por `total_liquido`:\n"
+        "  ... (+ 3 categorias)"
+    )
+    report = RuleEngine(config).parse_report(subject="Ranking", body=body, from_name="Orion")
+    ranking = next(section for section in report.sections if section.title == "Resumo estatístico complementar")
+    assert not any("... (+ 3 categorias)" in note for note in ranking.notes)
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

@@ -35,7 +35,6 @@ _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
-_OMITTED_CATEGORIES_RX = re.compile(r"^\.\.\.\s*\(\+\s*\d+", re.I)
 
 
 class RuleEngine:
@@ -70,9 +69,10 @@ class RuleEngine:
         match: LineRuleMatch,
         *,
         current: SectionDraft | None,
+        raw_line: str,
         flush: Callable[[], None],
         clear_collection_mode: Callable[[], None],
-    ) -> SectionDraft:
+    ) -> SectionDraft | None:
         rule = match.rule
         if rule.effect == "set_highlight":
             return _apply_set_highlight(
@@ -95,7 +95,9 @@ class RuleEngine:
                 current=current,
                 flush=flush,
             )
-        return current or SectionDraft(title="Destaques", kind="default")
+        if rule.effect == "append_omitted":
+            return _apply_append_omitted(current=current, raw_line=raw_line)
+        return current
 
     def parse_report(
         self,
@@ -182,14 +184,21 @@ class RuleEngine:
                 current = self._apply_line_rule(
                     early_line_match,
                     current=current,
+                    raw_line=raw,
                     flush=flush,
                     clear_collection_mode=clear_collection_mode,
                 )
                 continue
 
-            if _OMITTED_CATEGORIES_RX.match(raw):
-                if current is not None:
-                    current.notes.append(raw)
+            omitted_line_match = match_line_rules(raw, self._compiled_line_rules, phase="omitted")
+            if omitted_line_match is not None:
+                current = self._apply_line_rule(
+                    omitted_line_match,
+                    current=current,
+                    raw_line=raw,
+                    flush=flush,
+                    clear_collection_mode=clear_collection_mode,
+                )
                 continue
 
             if raw.casefold().startswith(self._rules_config.skip_line_prefixes):
@@ -205,6 +214,7 @@ class RuleEngine:
                 current = self._apply_line_rule(
                     line_match,
                     current=current,
+                    raw_line=raw,
                     flush=flush,
                     clear_collection_mode=clear_collection_mode,
                 )
@@ -346,4 +356,14 @@ def _apply_append_note(
     text = match.groups.get(rule.value_from_group, "").strip()
     if text:
         current.notes.append(f"{rule.note_prefix}{text}")
+    return current
+
+
+def _apply_append_omitted(
+    *,
+    current: SectionDraft | None,
+    raw_line: str,
+) -> SectionDraft | None:
+    if current is not None:
+        current.notes.append(raw_line)
     return current
