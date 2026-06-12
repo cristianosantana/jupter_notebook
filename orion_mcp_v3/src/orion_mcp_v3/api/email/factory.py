@@ -21,6 +21,7 @@ from orion_mcp_v3.api.email.parsing import (
     narrative_report_from_text,
 )
 from orion_mcp_v3.api.email.parsing_config import EmailParsingConfig, apply_parsing_policy
+from orion_mcp_v3.api.email.rule_engine import build_report_from_rules
 from orion_mcp_v3.prompts import get_prompt_registry
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider, NullLLMProvider
 
@@ -127,10 +128,12 @@ class EmailMessageFactory:
         *,
         max_tokens: int = 1200,
         parsing_config: EmailParsingConfig | None = None,
+        use_rule_engine: bool = False,
     ) -> None:
         self._provider = provider or NullLLMProvider()
         self._max_tokens = max_tokens
         self._parsing_config = parsing_config
+        self._use_rule_engine = use_rule_engine
 
     async def build_report(
         self,
@@ -145,12 +148,12 @@ class EmailMessageFactory:
         source = structured_evidence or body
         message_type = classify_message(source)
         if structured_evidence:
-            data_report = build_report_from_text(
+            data_report = self._build_report_from_evidence_text(
                 subject=subject,
                 body=structured_evidence,
                 from_name=from_name,
                 report_type=message_type,
-                config=effective_config,
+                parsing_config=effective_config,
             )
             narrative_report = await self._try_narrative_report(subject=subject, body=body, from_name=from_name)
             narrative_fallback = narrative_report_from_text(subject=subject, body=body, from_name=from_name)
@@ -168,12 +171,12 @@ class EmailMessageFactory:
             )
         if message_type == "conversacional":
             return _simple_report(subject=subject, body=body, from_name=from_name, report_type=message_type)
-        fallback = build_report_from_text(
+        fallback = self._build_report_from_evidence_text(
             subject=subject,
             body=source,
             from_name=from_name,
             report_type=message_type,
-            config=effective_config,
+            parsing_config=effective_config,
         )
         report_type = REGISTRY.get(message_type)
         if report_type is not None and report_type.use_llm and not isinstance(self._provider, NullLLMProvider):
@@ -184,6 +187,31 @@ class EmailMessageFactory:
                     effective_config,
                 )
         return fallback
+
+    def _build_report_from_evidence_text(
+        self,
+        *,
+        subject: str,
+        body: str,
+        from_name: str,
+        report_type: str,
+        parsing_config: EmailParsingConfig | None,
+    ) -> EmailReport:
+        if self._use_rule_engine:
+            return build_report_from_rules(
+                subject=subject,
+                body=body,
+                from_name=from_name,
+                report_type=report_type,
+                parsing_config=parsing_config,
+            )
+        return build_report_from_text(
+            subject=subject,
+            body=body,
+            from_name=from_name,
+            report_type=report_type,
+            config=parsing_config,
+        )
 
     @staticmethod
     def _with_parsing_policy(

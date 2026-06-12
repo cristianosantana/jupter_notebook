@@ -619,6 +619,32 @@ def test_get_parsing_config_reads_settings_profile() -> None:
     assert get_parsing_config(settings) == EmailParsingConfig.executive()
 
 
+async def test_email_factory_uses_rule_engine_when_flag_enabled() -> None:
+    body = (
+        "Resposta direta: total pagamentos por tipo de pagamento:\n"
+        "1. Cartão de Crédito: R$ 1.286.059,42\n"
+        "2. Concessionária: R$ 913.134,71"
+    )
+    legacy_factory = EmailMessageFactory(use_rule_engine=False)
+    rules_factory = EmailMessageFactory(use_rule_engine=True)
+
+    legacy_report = await legacy_factory.build_report(
+        subject="Formas de pagamento",
+        body=body,
+        structured_evidence=body,
+        from_name="CarSoul",
+    )
+    rules_report = await rules_factory.build_report(
+        subject="Formas de pagamento",
+        body=body,
+        structured_evidence=body,
+        from_name="CarSoul",
+    )
+
+    assert [section.title for section in legacy_report.sections] == [section.title for section in rules_report.sections]
+    assert legacy_report.sections[0].items[0].label == rules_report.sections[0].items[0].label == "Cartão de Crédito"
+
+
 def test_structured_email_renderer_outputs_cards_badges_and_metric_rows() -> None:
     report = EmailReport.from_mapping(
         {

@@ -82,6 +82,10 @@ class OrionSettings(BaseSettings):
         "default",
         description="Perfil de exibição do e-mail: default (completo), minimal (só resposta direta), executive (sem complementar).",
     )
+    email_use_rule_engine: bool = Field(
+        False,
+        description="Usar motor de regras (build_report_from_rules) em vez do parser legado para evidência estruturada.",
+    )
 
     # ── Runtime cognitivo ────────────────────────────────────────────
     max_tokens: int = Field(4096, ge=64, le=128000, description="Orçamento default do prompt.")

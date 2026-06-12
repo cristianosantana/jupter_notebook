@@ -86,6 +86,7 @@ class EmailSender:
             factory=EmailMessageFactory(
                 provider=llm_provider,
                 parsing_config=get_parsing_config(settings),
+                use_rule_engine=settings.email_use_rule_engine,
             ),
         )
 
