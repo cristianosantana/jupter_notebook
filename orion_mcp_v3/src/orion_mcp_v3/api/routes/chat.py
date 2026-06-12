@@ -993,8 +993,13 @@ def create_chat_router(
                 dados={"cognitive_plan": snapshot_cognitive_plan(cognitive_plan), "query_chars": len(message or "")},
             )
 
+        #print("DEBUG _run_analytics: starting")
+
         expander = QueryExpander(registry=ANALYTICS_TEMPLATES)
         plans = expander.expand(cognitive_plan, al, query_text=message)
+
+        #print(f"DEBUG _run_analytics: plans = {len(plans)}")
+
         if trace_enabled:
             log_pipeline_event(
                 etapa="analytics_expand",
@@ -1007,6 +1012,37 @@ def create_chat_router(
             )
         if not plans:
             return AnalyticsOutcome.no_plan()
+
+        #async def _exec_one(plan: Any) -> tuple[AnalyticsResult | Exception, float]:
+            started = time.perf_counter()
+            try:
+                print(f"DEBUG _exec_one: starting plan {plan.intent_slug}")
+                tpl = plan.hints.get("_template")
+                if tpl is not None:
+                    params = plan.hints.get("template_params", {})
+                    print(f"DEBUG _exec_one: executing template {tpl.slug}")
+                    result = await exec_.execute_template(tpl, params, plan=plan)
+                else:
+                    print(f"DEBUG _exec_one: executing plan {plan.intent_slug}")
+                    result = await exec_.execute_plan(plan)
+                print(f"DEBUG _exec_one: success, rows={result.row_count}")
+                return result, round((time.perf_counter() - started) * 1000.0, 2)
+            except Exception as exc:
+                print(f"DEBUG _exec_one: EXCEPTION {type(exc).__name__}: {exc}")
+                return exc, round((time.perf_counter() - started) * 1000.0, 2)
+        
+
+        #for i, p in enumerate(plans):
+            print(f"DEBUG _run_analytics: executing plan {i}: {p.intent_slug}")  # ← adicionar
+        
+        #execution_results = await asyncio.gather(*[_exec_one(p) for p in plans], return_exceptions=True)
+        
+        #print(f"DEBUG _run_analytics: execution_results = {len(execution_results)}")  # ← adicionar
+        
+        #for i, result in enumerate(execution_results):
+            print(f"DEBUG _run_analytics: result {i} = {type(result)}")  # ← adicionar
+            if isinstance(result, Exception):
+                print(f"DEBUG _run_analytics: EXCEPTION {i}: {result}")  # ← adicionar
 
         if trace_enabled:
             log_pipeline_event(

@@ -477,7 +477,7 @@ def test_chat_collection_fanout_executes_templates_concurrently() -> None:
 
     state = {"active": 0, "max_active": 0, "calls": 0}
 
-    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+    async def select(sql, params=None, **kwargs):  # type: ignore[no-untyped-def]
         state["calls"] += 1
         state["active"] += 1
         state["max_active"] = max(state["max_active"], state["active"])
@@ -508,7 +508,7 @@ def test_chat_collection_fanout_keeps_valid_results_when_one_template_fails() ->
 
     state = {"calls": 0}
 
-    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+    async def select(sql, params=None, **kwargs):  # type: ignore[no-untyped-def]
         state["calls"] += 1
         call_no = state["calls"]
         await asyncio.sleep(0)
@@ -553,7 +553,7 @@ def test_chat_collection_fanout_trace_includes_execute_duration(
 
     state = {"calls": 0}
 
-    async def select(sql, params=None):  # type: ignore[no-untyped-def]
+    async def select(sql, params=None, **kwargs):  # type: ignore[no-untyped-def]
         state["calls"] += 1
         call_no = state["calls"]
         await asyncio.sleep(0)

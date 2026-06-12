@@ -18,6 +18,7 @@ _LOG = logging.getLogger("orion.api.email")
 _SECTION_TOTAL_RX = re.compile(r"^(?P<title>.+?)\s+—\s+Total(?:\s*\(.+?\))?:\s*(?P<total>R\$\s*[\d.,]+)", re.I)
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
 _HIGHLIGHT_RX = re.compile(r"^Destaque:\s*(?P<highlight>.+)$", re.I)
+_DIRECT_ANSWER_RX = re.compile(r"^Resposta direta:\s*(?P<detail>.*)$", re.I)
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 _PERIOD_RX = re.compile(r"(\d{4}-\d{2}-\d{2}\s+a\s+\d{4}-\d{2}-\d{2})")
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
@@ -204,6 +205,16 @@ def build_report_from_text(
         if headline_match:
             headline = headline_match.group("headline").strip()
             period = _extract_period(headline) or period
+            continue
+
+        direct_answer_match = _DIRECT_ANSWER_RX.match(raw)
+        if direct_answer_match:
+            flush()
+            collection_mode = None
+            current = _SectionDraft(title="Resposta direta", kind="ranking")
+            detail = direct_answer_match.group("detail").strip()
+            if detail:
+                current.notes.append(detail)
             continue
 
         heading_match = _HEADING_RX.match(raw)

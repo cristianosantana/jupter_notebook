@@ -92,6 +92,7 @@ def _build_lifespan(
                         client,
                         ANALYTICS_ALLOWLIST,
                         default_limit=s.default_limit,
+                        timeout=s.mysql_timeout,
                     )
                     state["pool"] = pool
                     state["executor"] = executor

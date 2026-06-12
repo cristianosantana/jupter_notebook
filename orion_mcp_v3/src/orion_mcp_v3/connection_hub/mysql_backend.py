@@ -25,10 +25,14 @@ class MysqlDatastoreClient(AbstractDatastoreClient):
         self,
         query: str,
         params: Sequence[Any] | Mapping[str, Any] | None = None,
+        timeout: float | None = None,  # novo parâmetro para timeout em segundos
     ) -> list[dict[str, Any]]:
         args = _exec_args(params)
         async with self._pool.acquire() as conn:
             async with conn.cursor(DictCursor) as cur:
+                # Define timeout na sessão/statement
+                if timeout is not None:
+                    await cur.execute(f"SET SESSION max_execution_time = {int(timeout * 1000)}")
                 await cur.execute(query, args)
                 rows = await cur.fetchall()
         return list(rows) if rows else []
