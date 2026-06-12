@@ -78,6 +78,10 @@ class OrionSettings(BaseSettings):
     mailgun_endpoint: str = Field("https://api.mailgun.net/v3", description="Endpoint base da API Mailgun.")
     email_start_tls: bool = Field(True, description="Usar STARTTLS ao conectar no SMTP.")
     email_timeout: float = Field(10.0, ge=1.0, description="Timeout SMTP em segundos.")
+    email_parsing_profile: Literal["default", "minimal", "executive"] = Field(
+        "default",
+        description="Perfil de exibição do e-mail: default (completo), minimal (só resposta direta), executive (sem complementar).",
+    )
 
     # ── Runtime cognitivo ────────────────────────────────────────────
     max_tokens: int = Field(4096, ge=64, le=128000, description="Orçamento default do prompt.")

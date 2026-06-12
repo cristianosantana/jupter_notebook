@@ -6,7 +6,7 @@ import html
 import re
 from dataclasses import dataclass, field
 
-from orion_mcp_v3.api.email.factory import build_report_from_text
+from orion_mcp_v3.api.email.parsing import build_report_from_text
 from orion_mcp_v3.api.email.models import EmailMetricItem, EmailReport, EmailSection, EmailTable
 
 @dataclass(slots=True)
@@ -38,7 +38,11 @@ def render_response_email_html(
     email_report = report or build_report_from_text(subject=subject, body=body, from_name=from_name)
     escaped_subject = html.escape(subject or email_report.subject or "Resposta Orion")
     escaped_from = html.escape(from_name or email_report.from_name or "Orion")
-    if report is None and (not email_report.sections or _uses_legacy_direct_answer(body)):
+    if report is None and (
+        not email_report.sections
+        or _uses_legacy_direct_answer(body)
+        or _uses_legacy_narrative_layout(body)
+    ):
         content = "\n".join(_render_legacy_section(section) for section in _parse_legacy_sections(body))
     else:
         content = _render_report(email_report, fallback_body=body)
@@ -256,6 +260,23 @@ def _section_kicker(kind: str) -> str:
 
 def _uses_legacy_direct_answer(body: str) -> bool:
     return "Resposta direta composta" in (body or "")
+
+
+def _uses_legacy_narrative_layout(body: str) -> bool:
+    """Narração executiva do chat (Visão geral / Destaques / Alertas), não evidência SQL."""
+    legacy_headers = {
+        "visão geral",
+        "visao geral",
+        "destaques",
+        "alertas",
+        "conclusão acionável",
+        "conclusao acionavel",
+    }
+    for raw_line in (body or "").splitlines():
+        line = raw_line.strip().casefold().rstrip(":")
+        if line in legacy_headers:
+            return True
+    return False
 
 
 def _parse_legacy_sections(body: str) -> list[_LegacySection]:

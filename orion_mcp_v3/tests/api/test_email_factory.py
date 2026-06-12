@@ -3,7 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, AsyncIterator, Sequence
 
-from orion_mcp_v3.api.email import EmailMessageFactory, EmailReport, build_report_from_text, render_response_email_html
+from orion_mcp_v3.api.email import (
+    EmailMessageFactory,
+    EmailMetricItem,
+    EmailParsingConfig,
+    EmailReport,
+    EmailSection,
+    apply_parsing_policy,
+    build_report_from_text,
+    get_parsing_config,
+    render_response_email_html,
+)
+from orion_mcp_v3.config.settings import get_settings_uncached
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMResponse, LLMResponseMeta, LLMStreamChunk
 
 
@@ -115,6 +126,56 @@ async def test_email_factory_skips_llm_for_conversational_message() -> None:
     assert report.report_type == "conversacional"
     assert report.sections[0].title == "Mensagem"
     assert report.sections[0].items[0].label == "Olá, envie um período para eu consultar o fechamento."
+
+
+def test_build_report_from_text_parses_complementary_ranking_and_destaques() -> None:
+    body = (
+        "Resposta direta: maior total liquido por tipo de pagamento: "
+        "Cartão de Crédito (R$ 1.088.298,35).\n\n"
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        "Ranking por `total_liquido`:\n"
+        "  1. Cartão de Crédito  R$ 1.088.298,35  (41,6%)\n"
+        "  2. Concessionária  R$ 996.963,01  (38,1%)\n"
+        "  3. PIX  R$ 367.870,98  (14,1%)\n"
+        "  ... (+ 3 categorias)\n"
+        "Dominante: Cartão de Crédito (41,6% do total). Concentração: alta (HHI=0,35)."
+    )
+
+    report = build_report_from_text(
+        subject="Forma de pagamento abril 2026",
+        body=body,
+        from_name="CarSoul",
+        report_type="ranking",
+    )
+    html = render_response_email_html(
+        subject="Forma de pagamento abril 2026",
+        body=body,
+        from_name="CarSoul",
+        report=report,
+    )
+
+    titles = [section.title for section in report.sections]
+    assert "Resposta direta" in titles
+    assert "Resumo estatístico complementar" in titles
+    assert "Destaques" in titles
+
+    direct = next(section for section in report.sections if section.title == "Resposta direta")
+    ranking = next(section for section in report.sections if section.title == "Resumo estatístico complementar")
+    destaques = next(section for section in report.sections if section.title == "Destaques")
+
+    assert direct.notes
+    assert "Cartão de Crédito" in direct.notes[0]
+    assert len(ranking.items) == 3
+    assert ranking.items[0].label == "Cartão de Crédito"
+    assert ranking.items[0].value == "R$ 1.088.298,35"
+    assert ranking.items[0].detail == "(41,6%)"
+    assert any("... (+ 3 categorias)" in note for note in ranking.notes)
+    assert destaques.highlight is not None
+    assert "Cartão de Crédito" in destaques.highlight
+    assert "Concentração" in destaques.highlight
+    assert "badge-highlight" in html
+    assert "Cartão de Crédito" in html
+    assert "R$ 1.088.298,35" in html
 
 
 def test_build_report_from_text_preserves_simple_direct_answer_items() -> None:
@@ -479,6 +540,83 @@ def test_email_factory_fallback_parses_pipe_table_sections() -> None:
     assert section.tables
     assert section.tables[0].headers == ("concessionaria", "venda normal", "financiamento", "total comissão")
     assert section.tables[0].rows[0] == ("Concessionária A", "R$ 120.000,00", "R$ 80.000,00", "R$ 200.000,00")
+
+
+_RANKING_EVIDENCE_BODY = (
+    "Resposta direta: maior total liquido por tipo de pagamento: "
+    "Cartão de Crédito (R$ 1.088.298,35).\n\n"
+    "Resumo estatístico complementar (não substitui a resposta direta):\n"
+    "Ranking por `total_liquido`:\n"
+    "  1. Cartão de Crédito  R$ 1.088.298,35  (41,6%)\n"
+    "  2. Concessionária  R$ 996.963,01  (38,1%)\n"
+    "Dominante: Cartão de Crédito (41,6% do total). Concentração: alta (HHI=0,35)."
+)
+
+
+def test_parsing_policy_default_keeps_all_ranking_sections() -> None:
+    report = build_report_from_text(
+        subject="Forma de pagamento abril 2026",
+        body=_RANKING_EVIDENCE_BODY,
+        from_name="CarSoul",
+        report_type="ranking",
+        config=EmailParsingConfig.default(),
+    )
+    titles = [section.title for section in report.sections]
+    assert "Resposta direta" in titles
+    assert "Resumo estatístico complementar" in titles
+    assert "Destaques" in titles
+
+
+def test_parsing_policy_minimal_keeps_only_direct_answer() -> None:
+    report = build_report_from_text(
+        subject="Forma de pagamento abril 2026",
+        body=_RANKING_EVIDENCE_BODY,
+        from_name="CarSoul",
+        report_type="ranking",
+        config=EmailParsingConfig.minimal(),
+    )
+    assert [section.title for section in report.sections] == ["Resposta direta"]
+    assert report.alerts == ()
+    assert report.actions == ()
+
+
+def test_parsing_policy_executive_drops_complementary_keeps_highlights() -> None:
+    report = build_report_from_text(
+        subject="Forma de pagamento abril 2026",
+        body=_RANKING_EVIDENCE_BODY,
+        from_name="CarSoul",
+        report_type="ranking",
+        config=EmailParsingConfig.executive(),
+    )
+    titles = [section.title for section in report.sections]
+    assert "Resposta direta" in titles
+    assert "Destaques" in titles
+    assert "Resumo estatístico complementar" not in titles
+
+
+def test_apply_parsing_policy_strips_alerts_and_actions() -> None:
+    base = EmailReport(
+        subject="Teste",
+        alerts=("Discrepância a verificar",),
+        actions=("Conciliar cartão",),
+        sections=(
+            EmailSection(
+                title="Resposta direta",
+                kind="ranking",
+                items=(EmailMetricItem(label="PIX", value="R$ 10,00"),),
+            ),
+            EmailSection(title="Destaques", kind="default", highlight="PIX"),
+        ),
+    )
+    filtered = apply_parsing_policy(base, EmailParsingConfig.minimal())
+    assert filtered.alerts == ()
+    assert filtered.actions == ()
+    assert [section.title for section in filtered.sections] == ["Resposta direta"]
+
+
+def test_get_parsing_config_reads_settings_profile() -> None:
+    settings = get_settings_uncached(email_parsing_profile="executive")
+    assert get_parsing_config(settings) == EmailParsingConfig.executive()
 
 
 def test_structured_email_renderer_outputs_cards_badges_and_metric_rows() -> None:

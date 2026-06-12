@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from orion_mcp_v3.api.email.factory import EmailMessageFactory
+from orion_mcp_v3.api.email.parsing_config import get_parsing_config
 from orion_mcp_v3.api.email.html_renderer import render_response_email_html
 from orion_mcp_v3.config.settings import OrionSettings
 from orion_mcp_v3.protocols.llm import LLMProvider
@@ -82,7 +83,10 @@ class EmailSender:
             start_tls=settings.email_start_tls,
             timeout=settings.email_timeout,
             send_func=send_func,
-            factory=EmailMessageFactory(provider=llm_provider),
+            factory=EmailMessageFactory(
+                provider=llm_provider,
+                parsing_config=get_parsing_config(settings),
+            ),
         )
 
     async def send_response(self, request: EmailSendRequest) -> EmailSendResult:
