@@ -37,11 +37,13 @@ class AnalyticsExecutor:
         *,
         default_limit: int = 1000,
         default_sql_table: str = "os",
+        timeout: float | None = None,  # novo parâmetro para timeout em segundos
     ) -> None:
         self._mysql = mysql_client
         self._allowlist = allowlist
         self.default_limit = default_limit
         self._default_sql_table = default_sql_table
+        self._timeout = timeout
 
     def prepare_execution_plan(
         self,
@@ -66,7 +68,7 @@ class AnalyticsExecutor:
         """Executa um :class:`SemanticQueryPlan` já construído (sem ``IntentResolver``)."""
         plan = self.prepare_execution_plan(plan, sql_hints)
         compiled = compile_select(plan, self._allowlist, default_limit=self.default_limit)
-        rows = await self._mysql.select(compiled.sql, params=compiled.params)
+        rows = await self._mysql.select(compiled.sql, params=compiled.params, timeout=self._timeout)
         return AnalyticsResult(
             plan=plan,
             sql=compiled.sql,
@@ -83,7 +85,7 @@ class AnalyticsExecutor:
     ) -> AnalyticsResult:
         """Executa um QueryTemplate parametrizado directamente (sem compilador)."""
         param_values = tuple(params[k] for k in template.parameters)
-        rows = await self._mysql.select(template.sql, params=param_values)
+        rows = await self._mysql.select(template.sql, params=param_values, timeout=self._timeout)
         if plan is None:
             plan = SemanticQueryPlan(
                 intent_slug=f"template.{template.slug}",
@@ -123,7 +125,7 @@ class AnalyticsExecutor:
         )
         plan = self.prepare_execution_plan(plan, sql_hints)
         compiled = compile_select(plan, self._allowlist, default_limit=self.default_limit)
-        rows = await self._mysql.select(compiled.sql, params=compiled.params)
+        rows = await self._mysql.select(compiled.sql, params=compiled.params, timeout=self._timeout)
         return AnalyticsResult(
             plan=plan,
             sql=compiled.sql,

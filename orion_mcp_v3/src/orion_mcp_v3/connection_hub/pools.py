@@ -41,6 +41,8 @@ async def create_mysql_pool(
         minsize=minsize,
         maxsize=maxsize,
         autocommit=True,
+        connect_timeout=5,      # segundos para conectar
+        read_timeout=30,        # segundos para leitura
     )
 
 

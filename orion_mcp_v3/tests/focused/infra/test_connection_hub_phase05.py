@@ -37,7 +37,7 @@ def _mysql_pool_with_cursor(rows: list[dict]) -> MagicMock:
     conn = MagicMock()
     conn.cursor = MagicMock(return_value=_AsyncCM(cur))
     pool.acquire = MagicMock(return_value=_AsyncCM(conn))
-    return pool
+    return pool, cur
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def test_create_mysql_pool_calls_asyncmy_with_parsed_url() -> None:
 
 
 def test_mysql_client_select_uses_dict_cursor(mysql_select_rows: list[dict]) -> None:
-    pool = _mysql_pool_with_cursor(mysql_select_rows)
+    pool, _ = _mysql_pool_with_cursor(mysql_select_rows)
     client = MysqlDatastoreClient(pool)
 
     async def run() -> None:
@@ -87,6 +87,27 @@ def test_mysql_client_select_uses_dict_cursor(mysql_select_rows: list[dict]) -> 
     asyncio.run(run())
     pool.acquire.assert_called_once()
 
+def test_mysql_client_select_applies_session_timeout(mysql_select_rows: list[dict]) -> None:
+    pool, cur = _mysql_pool_with_cursor(mysql_select_rows) 
+    cur.execute = AsyncMock()
+    cur.fetchall = AsyncMock(return_value=mysql_select_rows)
+    conn = MagicMock()
+    conn.cursor = MagicMock(return_value=_AsyncCM(cur))
+    pool.acquire = MagicMock(return_value=_AsyncCM(conn))
+    client = MysqlDatastoreClient(pool)
+
+    async def run() -> None:
+        rows = await client.select(
+            "SELECT id, name FROM t WHERE id = %s",
+            (1,),
+            timeout=10.0,
+        )
+        assert rows == mysql_select_rows
+
+    asyncio.run(run())
+    assert cur.execute.await_count == 2
+    cur.execute.assert_any_await("SET SESSION max_execution_time = 10000")
+    cur.execute.assert_any_await("SELECT id, name FROM t WHERE id = %s", (1,))
 
 def test_mysql_client_mutation_returns_rowcount() -> None:
     pool = MagicMock()

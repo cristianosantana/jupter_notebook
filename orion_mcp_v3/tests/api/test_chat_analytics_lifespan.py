@@ -38,7 +38,7 @@ class _FakeCursor:
     def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
 
-    async def execute(self, query: str, params: object) -> None:
+    async def execute(self, query: str, params: object = None) -> None:
         self._last_query = query
 
     async def fetchall(self) -> list[dict]:
@@ -59,6 +59,11 @@ class _FakeCursorCM:
 class _FakeConn:
     def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
+
+    async def execute(self, query: str, params: object = None) -> None:
+        """Mock do método execute para compatibilidade com timeout."""
+        # Apenas ignora a chamada (não precisamos do timeout no teste)
+        pass
 
     def cursor(self, cursor_cls: object | None = None) -> _FakeCursorCM:
         return _FakeCursorCM(self._rows)
