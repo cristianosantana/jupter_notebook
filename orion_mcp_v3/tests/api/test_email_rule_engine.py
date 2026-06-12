@@ -150,9 +150,17 @@ def test_line_rule_highlight_disabled_skips_destaque_lines() -> None:
         sections=default_section_rules(),
         line_rules=(
             LineRule(
+                id="dominante",
+                pattern=r"^Dominante:\s*(?P<text>.+)$",
+                effect="open_highlights",
+                phase="promotion_early",
+                enabled=False,
+            ),
+            LineRule(
                 id="highlight",
                 pattern=r"^Destaque:\s*(?P<highlight>.+)$",
                 effect="set_highlight",
+                phase="promotion_late",
                 enabled=False,
             ),
         ),
@@ -164,6 +172,40 @@ def test_line_rule_highlight_disabled_skips_destaque_lines() -> None:
     report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
     section = report.sections[0]
     assert section.highlight is None
+
+
+def test_line_rule_dominante_opens_destaques_with_highlight() -> None:
+    body = (
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        "Ranking por `total_liquido`:\n"
+        "  1. Cartão de Crédito  R$ 1.088.298,35  (41,6%)\n"
+        "Dominante: Cartão de Crédito (41,6% do total)."
+    )
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    destaques = next(section for section in rules.sections if section.title == "Destaques")
+    assert destaques.highlight == "Cartão de Crédito (41,6% do total)."
+
+
+def test_line_rule_dominante_disabled_skips_dominante_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=(
+            LineRule(
+                id="dominante",
+                pattern=r"^Dominante:\s*(?P<text>.+)$",
+                effect="open_highlights",
+                phase="promotion_early",
+                enabled=False,
+            ),
+            *default_line_rules()[1:],
+        ),
+    )
+    body = "Dominante: Cartão de Crédito (41,6% do total)."
+    report = RuleEngine(config).parse_report(subject="Ranking", body=body, from_name="Orion")
+    assert not any(section.title == "Destaques" for section in report.sections)
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

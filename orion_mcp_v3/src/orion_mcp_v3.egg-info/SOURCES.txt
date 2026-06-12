@@ -18,6 +18,8 @@ src/orion_mcp_v3/api/email/merging.py
 src/orion_mcp_v3/api/email/models.py
 src/orion_mcp_v3/api/email/parsing.py
 src/orion_mcp_v3/api/email/parsing_config.py
+src/orion_mcp_v3/api/email/parsing_rules.py
+src/orion_mcp_v3/api/email/rule_engine.py
 src/orion_mcp_v3/api/email/sender.py
 src/orion_mcp_v3/api/routes/__init__.py
 src/orion_mcp_v3/api/routes/chat.py

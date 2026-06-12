@@ -35,7 +35,6 @@ _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
-_DOMINANTE_RX = re.compile(r"^Dominante:\s*(?P<text>.+)$", re.I)
 _CONCENTRACAO_RX = re.compile(r"^Concentra[cç][aã]o:\s*(?P<text>.+)$", re.I)
 _OMITTED_CATEGORIES_RX = re.compile(r"^\.\.\.\s*\(\+\s*\d+", re.I)
 
@@ -73,6 +72,7 @@ class RuleEngine:
         *,
         current: SectionDraft | None,
         flush: Callable[[], None],
+        clear_collection_mode: Callable[[], None],
     ) -> SectionDraft:
         rule = match.rule
         if rule.effect == "set_highlight":
@@ -82,7 +82,14 @@ class RuleEngine:
                 current=current,
                 flush=flush,
             )
-        return current
+        if rule.effect == "open_highlights":
+            return _apply_open_highlights(
+                match,
+                rule,
+                flush=flush,
+                clear_collection_mode=clear_collection_mode,
+            )
+        return current or SectionDraft(title="Destaques", kind="default")
 
     def parse_report(
         self,
@@ -106,6 +113,10 @@ class RuleEngine:
             if current is not None:
                 sections.append(current.to_section())
             current = None
+
+        def clear_collection_mode() -> None:
+            nonlocal collection_mode
+            collection_mode = None
 
         def apply_section_match(match: SectionRuleMatch, *, raw_line: str) -> None:
             nonlocal current, collection_mode
@@ -160,12 +171,14 @@ class RuleEngine:
                 apply_section_match(section_match, raw_line=raw)
                 continue
 
-            dominante_match = _DOMINANTE_RX.match(raw)
-            if dominante_match:
-                flush()
-                collection_mode = None
-                current = SectionDraft(title="Destaques", kind="default", total=None)
-                current.highlight = dominante_match.group("text").strip()
+            early_line_match = match_line_rules(raw, self._compiled_line_rules, phase="promotion_early")
+            if early_line_match is not None:
+                current = self._apply_line_rule(
+                    early_line_match,
+                    current=current,
+                    flush=flush,
+                    clear_collection_mode=clear_collection_mode,
+                )
                 continue
 
             concentracao_match = _CONCENTRACAO_RX.match(raw)
@@ -190,9 +203,14 @@ class RuleEngine:
                 apply_section_match(total_match, raw_line=raw)
                 continue
 
-            line_match = match_line_rules(raw, self._compiled_line_rules, phase="promotion")
+            line_match = match_line_rules(raw, self._compiled_line_rules, phase="promotion_late")
             if line_match is not None:
-                current = self._apply_line_rule(line_match, current=current, flush=flush)
+                current = self._apply_line_rule(
+                    line_match,
+                    current=current,
+                    flush=flush,
+                    clear_collection_mode=clear_collection_mode,
+                )
                 continue
 
             note_match = _NOTE_RX.match(raw)
@@ -291,11 +309,27 @@ def _apply_set_highlight(
     rule: LineRule,
     *,
     current: SectionDraft | None,
-    flush: callable,
+    flush: Callable[[], None],
 ) -> SectionDraft:
     if current is None or current.title in rule.flush_if_missing_or_current_title_in:
         flush()
         current = SectionDraft(title=rule.target_section_title, kind=rule.target_section_kind)
+    highlight = match.groups.get(rule.value_from_group, "").strip()
+    if highlight:
+        current.highlight = highlight
+    return current
+
+
+def _apply_open_highlights(
+    match: LineRuleMatch,
+    rule: LineRule,
+    *,
+    flush: Callable[[], None],
+    clear_collection_mode: Callable[[], None],
+) -> SectionDraft:
+    flush()
+    clear_collection_mode()
+    current = SectionDraft(title=rule.target_section_title, kind=rule.target_section_kind, total=None)
     highlight = match.groups.get(rule.value_from_group, "").strip()
     if highlight:
         current.highlight = highlight
