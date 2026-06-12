@@ -208,6 +208,53 @@ def test_line_rule_dominante_disabled_skips_dominante_lines() -> None:
     assert not any(section.title == "Destaques" for section in report.sections)
 
 
+def test_line_rule_concentracao_appends_note_to_destaques() -> None:
+    body = (
+        "Resumo estatístico complementar (não substitui a resposta direta):\n"
+        "Dominante: Cartão de Crédito (41,6% do total).\n"
+        "Concentração: alta (HHI=0,35)."
+    )
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    destaques = next(section for section in rules.sections if section.title == "Destaques")
+    assert destaques.highlight == "Cartão de Crédito (41,6% do total)."
+    assert list(destaques.notes) == ["Concentração: alta (HHI=0,35)."]
+
+
+def test_line_rule_concentracao_opens_destaques_when_missing() -> None:
+    body = "Concentração: alta (HHI=0,35)."
+    legacy = build_report_from_text(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+    rules = build_report_from_rules(subject="Ranking", body=body, from_name="Orion", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    destaques = next(section for section in rules.sections if section.title == "Destaques")
+    assert list(destaques.notes) == ["Concentração: alta (HHI=0,35)."]
+
+
+def test_line_rule_concentracao_disabled_skips_concentracao_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=(
+            default_line_rules()[0],
+            LineRule(
+                id="concentracao",
+                pattern=r"^Concentra[cç][aã]o:\s*(?P<text>.+)$",
+                effect="append_note",
+                phase="promotion_early",
+                value_from_group="text",
+                note_prefix="Concentração: ",
+                enabled=False,
+            ),
+            default_line_rules()[2],
+        ),
+    )
+    body = "Concentração: alta (HHI=0,35)."
+    report = RuleEngine(config).parse_report(subject="Ranking", body=body, from_name="Orion")
+    assert not any(section.title == "Destaques" for section in report.sections)
+
+
 def test_rule_engine_respects_custom_section_rule() -> None:
     custom = ParsingRulesConfig(
         sections=(

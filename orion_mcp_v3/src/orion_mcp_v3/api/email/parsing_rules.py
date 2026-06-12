@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_with_total"]
-LineRuleEffect = Literal["set_highlight", "open_highlights"]
+LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note"]
 LineRulePhase = Literal["promotion_early", "promotion_late"]
 
 
@@ -48,6 +48,7 @@ class LineRule:
     effect: LineRuleEffect
     phase: LineRulePhase = "promotion_late"
     value_from_group: str = "highlight"
+    note_prefix: str = ""
     target_section_title: str = "Destaques"
     target_section_kind: str = "default"
     flush_if_missing_or_current_title_in: tuple[str, ...] = ("Resposta direta",)
@@ -150,7 +151,7 @@ def default_section_rules() -> tuple[SectionOpenRule, ...]:
 
 
 def default_line_rules() -> tuple[LineRule, ...]:
-    """Regras de linha padrão — PR1 Destaque, PR2 Dominante."""
+    """Regras de linha padrão — PR1 Destaque, PR2 Dominante, PR3 Concentração."""
     return (
         LineRule(
             id="dominante",
@@ -158,6 +159,16 @@ def default_line_rules() -> tuple[LineRule, ...]:
             effect="open_highlights",
             phase="promotion_early",
             value_from_group="text",
+            target_section_title="Destaques",
+            target_section_kind="default",
+        ),
+        LineRule(
+            id="concentracao",
+            pattern=r"^Concentra[cç][aã]o:\s*(?P<text>.+)$",
+            effect="append_note",
+            phase="promotion_early",
+            value_from_group="text",
+            note_prefix="Concentração: ",
             target_section_title="Destaques",
             target_section_kind="default",
         ),

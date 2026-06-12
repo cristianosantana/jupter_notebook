@@ -35,7 +35,6 @@ _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
 _HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
-_CONCENTRACAO_RX = re.compile(r"^Concentra[cç][aã]o:\s*(?P<text>.+)$", re.I)
 _OMITTED_CATEGORIES_RX = re.compile(r"^\.\.\.\s*\(\+\s*\d+", re.I)
 
 
@@ -88,6 +87,13 @@ class RuleEngine:
                 rule,
                 flush=flush,
                 clear_collection_mode=clear_collection_mode,
+            )
+        if rule.effect == "append_note":
+            return _apply_append_note(
+                match,
+                rule,
+                current=current,
+                flush=flush,
             )
         return current or SectionDraft(title="Destaques", kind="default")
 
@@ -179,15 +185,6 @@ class RuleEngine:
                     flush=flush,
                     clear_collection_mode=clear_collection_mode,
                 )
-                continue
-
-            concentracao_match = _CONCENTRACAO_RX.match(raw)
-            if concentracao_match:
-                if current is None or current.title != "Destaques":
-                    flush()
-                    current = SectionDraft(title="Destaques", kind="default")
-                note = f"Concentração: {concentracao_match.group('text').strip()}"
-                current.notes.append(note)
                 continue
 
             if _OMITTED_CATEGORIES_RX.match(raw):
@@ -333,4 +330,20 @@ def _apply_open_highlights(
     highlight = match.groups.get(rule.value_from_group, "").strip()
     if highlight:
         current.highlight = highlight
+    return current
+
+
+def _apply_append_note(
+    match: LineRuleMatch,
+    rule: LineRule,
+    *,
+    current: SectionDraft | None,
+    flush: Callable[[], None],
+) -> SectionDraft:
+    if current is None or current.title != rule.target_section_title:
+        flush()
+        current = SectionDraft(title=rule.target_section_title, kind=rule.target_section_kind)
+    text = match.groups.get(rule.value_from_group, "").strip()
+    if text:
+        current.notes.append(f"{rule.note_prefix}{text}")
     return current
