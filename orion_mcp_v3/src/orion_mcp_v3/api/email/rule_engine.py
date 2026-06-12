@@ -24,16 +24,18 @@ from orion_mcp_v3.api.email.parsing_config import EmailParsingConfig, apply_pars
 from orion_mcp_v3.api.email.parsing_rules import (
     LineRule,
     LineRuleMatch,
+    MarkdownHeadingRouter,
     ParsingRulesConfig,
     SectionOpenRule,
     SectionRuleMatch,
+    default_heading_router,
+    match_heading_route,
     match_line_rules,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
-_HEADING_RX = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 
 
@@ -44,6 +46,8 @@ class RuleEngine:
         self._rules_config = rules_config or ParsingRulesConfig.default()
         self._compiled_by_id = self._rules_config.compile_by_id()
         self._compiled_line_rules = self._rules_config.compile_line_rules()
+        self._heading_router = self._rules_config.heading_router or default_heading_router()
+        self._heading_rx = self._heading_router.compile()
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
         compiled = self._compiled_by_id.get(rule_id)
@@ -126,6 +130,10 @@ class RuleEngine:
             nonlocal collection_mode
             collection_mode = None
 
+        def set_collection_mode(mode: str) -> None:
+            nonlocal collection_mode
+            collection_mode = mode
+
         def apply_section_match(match: SectionRuleMatch, *, raw_line: str) -> None:
             nonlocal current, collection_mode
             rule = match.rule
@@ -159,19 +167,16 @@ class RuleEngine:
                 apply_section_match(direct_match, raw_line=raw)
                 continue
 
-            heading_match = _HEADING_RX.match(raw)
-            if heading_match:
-                flush()
+            heading_match = self._heading_rx.match(raw) if self._heading_rx is not None else None
+            if heading_match is not None:
                 title = heading_match.group("title").strip()
-                normalized_title = title.casefold()
-                if "alerta" in normalized_title or "concilia" in normalized_title:
-                    collection_mode = "alerts"
-                    continue
-                if "conclus" in normalized_title or "acion" in normalized_title:
-                    collection_mode = "actions"
-                    continue
-                collection_mode = None
-                current = SectionDraft(title=title, kind=section_kind(title))
+                current = _apply_markdown_heading(
+                    title,
+                    router=self._heading_router,
+                    flush=flush,
+                    clear_collection_mode=clear_collection_mode,
+                    set_collection_mode=set_collection_mode,
+                )
                 continue
 
             section_match = self._match_middle_section_rules(raw)
@@ -367,3 +372,26 @@ def _apply_append_omitted(
     if current is not None:
         current.notes.append(raw_line)
     return current
+
+
+def _apply_markdown_heading(
+    title: str,
+    *,
+    router: MarkdownHeadingRouter,
+    flush: Callable[[], None],
+    clear_collection_mode: Callable[[], None],
+    set_collection_mode: Callable[[str], None],
+) -> SectionDraft | None:
+    flush()
+    route = match_heading_route(title, router.routes)
+    if route is None:
+        clear_collection_mode()
+        return SectionDraft(title=title, kind=section_kind(title))
+    if route.effect == "collect_alerts":
+        set_collection_mode("alerts")
+        return None
+    if route.effect == "collect_actions":
+        set_collection_mode("actions")
+        return None
+    clear_collection_mode()
+    return SectionDraft(title=title, kind=section_kind(title))

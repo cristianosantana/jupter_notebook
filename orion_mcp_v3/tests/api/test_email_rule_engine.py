@@ -7,15 +7,19 @@ import pytest
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email.parsing import build_report_from_text
 from orion_mcp_v3.api.email.parsing_rules import (
+    HeadingRoute,
     LineRule,
+    MarkdownHeadingRouter,
     ParsingRulesConfig,
     SectionOpenRule,
+    default_heading_router,
     default_line_rules,
     default_section_rules,
 )
 from orion_mcp_v3.api.email.rule_engine import RuleEngine, build_report_from_rules
 
 FIXTURE = Path("tests/fixtures/email/fechamento_gerencial_marco.txt")
+JANUARY_FIXTURE = Path("tests/fixtures/email/fechamento_gerencial_janeiro_narrator.txt")
 
 _RANKING_EVIDENCE_BODY = (
     "Resposta direta: maior total liquido por tipo de pagamento: "
@@ -304,6 +308,87 @@ def test_line_rule_omitted_disabled_skips_omitted_lines() -> None:
     report = RuleEngine(config).parse_report(subject="Ranking", body=body, from_name="Orion")
     ranking = next(section for section in report.sections if section.title == "Resumo estatístico complementar")
     assert not any("... (+ 3 categorias)" in note for note in ranking.notes)
+
+
+def test_heading_router_opens_section_for_generic_heading() -> None:
+    body = (
+        "Detalhe por seção do fechamento gerencial:\n\n"
+        "## Comissão por tipo de O.S.\n"
+        "concessionaria | venda normal | total comissão\n"
+        "Concessionária A | R$ 120.000,00 | R$ 200.000,00"
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert rules.sections[0].title == "Comissão por tipo de O.S."
+
+
+def test_heading_router_collects_alerts_after_alert_heading() -> None:
+    body = (
+        "## Alertas e conciliações\n"
+        "1. Registros com valor zero: 2 na quebra por tipo de pagamento.\n"
+        "2. Parcelamento 10X responde por 59,56% do parcelamento."
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.alerts) == 2
+    assert not rules.sections
+    assert "Registros com valor zero" in rules.alerts[0]
+
+
+def test_heading_router_collects_actions_after_action_heading() -> None:
+    body = (
+        "## Conclusão acionável\n"
+        "1. Validar registros com valor zero.\n"
+        "2. Revisar política de parcelamento e custo financeiro."
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.actions) == 2
+    assert not rules.sections
+    assert rules.actions[0] == "Validar registros com valor zero."
+
+
+def test_heading_router_matches_january_narrator_fixture() -> None:
+    body = JANUARY_FIXTURE.read_text(encoding="utf-8")
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.sections) == 8
+    assert len(rules.alerts) == 2
+    assert len(rules.actions) == 2
+
+
+def test_heading_router_disabled_alerts_route_opens_section_instead() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=MarkdownHeadingRouter(
+            routes=(
+                HeadingRoute(
+                    id="alerts_heading",
+                    keywords=("alerta", "concilia"),
+                    effect="collect_alerts",
+                    enabled=False,
+                ),
+                *default_heading_router().routes[1:],
+            ),
+        ),
+    )
+    body = (
+        "## Alertas e conciliações\n"
+        "Parcelamento 10X responde por 59,56% do parcelamento."
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert len(report.sections) == 1
+    assert report.sections[0].title == "Alertas e conciliações"
+    assert not report.alerts
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

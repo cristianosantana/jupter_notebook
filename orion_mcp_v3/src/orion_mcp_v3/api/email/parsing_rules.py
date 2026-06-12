@@ -9,6 +9,7 @@ from typing import Literal
 SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_with_total"]
 LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note", "append_omitted"]
 LineRulePhase = Literal["promotion_early", "promotion_late", "omitted"]
+HeadingRouteEffect = Literal["open_section", "collect_alerts", "collect_actions"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +69,36 @@ class LineRuleMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class HeadingRoute:
+    """Rota de `## título` — primeira keyword casada define o efeito (PR5)."""
+
+    id: str
+    keywords: tuple[str, ...]
+    effect: HeadingRouteEffect
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class MarkdownHeadingRouter:
+    """Roteador de headings markdown — seção vs alerta vs ação."""
+
+    pattern: str = r"^##\s+(?P<title>.+?)\s*$"
+    routes: tuple[HeadingRoute, ...] = ()
+    enabled: bool = True
+
+    def compile(self) -> re.Pattern[str] | None:
+        if not self.enabled:
+            return None
+        return re.compile(self.pattern)
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
     """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
     sections: tuple[SectionOpenRule, ...]
     line_rules: tuple[LineRule, ...] = ()
+    heading_router: MarkdownHeadingRouter | None = None
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -104,7 +130,11 @@ class ParsingRulesConfig:
 
     @classmethod
     def default(cls) -> ParsingRulesConfig:
-        return cls(sections=default_section_rules(), line_rules=default_line_rules())
+        return cls(
+            sections=default_section_rules(),
+            line_rules=default_line_rules(),
+            heading_router=default_heading_router(),
+        )
 
 
 def default_section_rules() -> tuple[SectionOpenRule, ...]:
@@ -150,6 +180,24 @@ def default_section_rules() -> tuple[SectionOpenRule, ...]:
     )
 
 
+def default_heading_router() -> MarkdownHeadingRouter:
+    """Rotas padrão espelhando o roteamento `##` do parser legado."""
+    return MarkdownHeadingRouter(
+        routes=(
+            HeadingRoute(
+                id="alerts_heading",
+                keywords=("alerta", "concilia"),
+                effect="collect_alerts",
+            ),
+            HeadingRoute(
+                id="actions_heading",
+                keywords=("conclus", "acion"),
+                effect="collect_actions",
+            ),
+        ),
+    )
+
+
 def default_line_rules() -> tuple[LineRule, ...]:
     """Regras de linha padrão — PR1–PR4 Destaque, Dominante, Concentração, Omitted."""
     return (
@@ -189,6 +237,17 @@ def default_line_rules() -> tuple[LineRule, ...]:
             flush_if_missing_or_current_title_in=("Resposta direta",),
         ),
     )
+
+
+def match_heading_route(title: str, routes: tuple[HeadingRoute, ...]) -> HeadingRoute | None:
+    """Retorna a primeira rota cuja keyword aparece no título normalizado."""
+    normalized = title.casefold()
+    for route in routes:
+        if not route.enabled:
+            continue
+        if any(keyword in normalized for keyword in route.keywords):
+            return route
+    return None
 
 
 def match_line_rules(
