@@ -70,13 +70,13 @@ class CollectionRule:
 Cada passo: **config → handler genérico → teste paridade → remover `if` duplicado**.
 
 ```text
-PR1  highlight (Destaque:)
-PR2  dominante (Dominante: + auto_open Destaques)
-PR3  concentracao (Concentração: → nota)
-PR4  omitted_categories (... (+N))
-PR5  markdown_heading_router (## → seção vs alerta vs ação)
-PR6  alert_standalone (is_alert prefixes)
-PR7  action_standalone (is_action prefixes)
+PR1  highlight (Destaque:) -> Feito
+PR2  dominante (Dominante: + auto_open Destaques) -> Feito
+PR3  concentracao (Concentração: → nota) -> Feito
+PR4  omitted_categories (... (+N)) -> Feito
+PR5  markdown_heading_router (## → seção vs alerta vs ação) -> Feito
+PR6  alert_standalone (is_alert prefixes) -> Feito
+PR7  action_standalone (is_action prefixes) -> Feito
 PR8  collection_mode (continuação de linhas em alertas/ações)
 PR9  note_lines (Detalhe / Top N / Observação)
 PR10 metric + pipe (último — ou fica como fallback permanente)

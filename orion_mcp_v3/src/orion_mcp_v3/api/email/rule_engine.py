@@ -11,7 +11,6 @@ from orion_mcp_v3.api.email.parsing import (
     extract_period,
     first_meaningful_line,
     inline_detail_items,
-    is_action,
     looks_like_metric,
     looks_like_pipe_table_line,
     normalized_lines,
@@ -247,12 +246,6 @@ class RuleEngine:
                     alerts.append(raw)
                 else:
                     actions.append(raw)
-                continue
-
-            if is_action(raw):
-                flush()
-                collection_mode = "actions"
-                actions.append(raw)
                 continue
 
             if collection_mode == "alerts":

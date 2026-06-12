@@ -212,7 +212,7 @@ def default_heading_router() -> MarkdownHeadingRouter:
 
 
 def default_collection_prefix_rules() -> tuple[CollectionPrefixRule, ...]:
-    """Prefixos standalone padrão espelhando `is_alert()` do parser legado."""
+    """Prefixos standalone padrão espelhando `is_alert()` e `is_action()` do parser legado."""
     return (
         CollectionPrefixRule(
             id="alert_standalone",
@@ -221,6 +221,17 @@ def default_collection_prefix_rules() -> tuple[CollectionPrefixRule, ...]:
                 "registros com valor zero",
                 "discrepância",
                 "discrepancia",
+            ),
+        ),
+        CollectionPrefixRule(
+            id="action_standalone",
+            collection_mode="actions",
+            prefixes=(
+                "priorizar",
+                "negociar",
+                "corrigir",
+                "conciliar",
+                "revisar",
             ),
         ),
     )

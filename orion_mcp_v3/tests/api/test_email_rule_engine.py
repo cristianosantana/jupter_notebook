@@ -13,6 +13,7 @@ from orion_mcp_v3.api.email.parsing_rules import (
     MarkdownHeadingRouter,
     ParsingRulesConfig,
     SectionOpenRule,
+    default_collection_prefix_rules,
     default_heading_router,
     default_line_rules,
     default_section_rules,
@@ -448,6 +449,57 @@ def test_alert_standalone_disabled_skips_alert_prefix_lines() -> None:
     body = "Discrepância a verificar: somatório divergente em R$ 3.770,00."
     report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
     assert not report.alerts
+    assert not report.sections
+
+
+def test_action_standalone_priorizar_line_parity() -> None:
+    body = "Priorizar capacidade comercial e operacional para PPF REGENERATIVO - FULL."
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.actions) == 1
+    assert not rules.sections
+    assert rules.actions[0].startswith("Priorizar")
+
+
+def test_action_standalone_continues_collecting_detail_lines() -> None:
+    body = (
+        "Priorizar capacidade comercial e operacional para PPF REGENERATIVO - FULL.\n"
+        "Negociar condições/fees de adquirentes e revisar estrutura de parcelamento.\n"
+        "Corrigir e conciliar registros com valor zero antes do fechamento final contábil."
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.actions) == 3
+
+
+def test_action_standalone_disabled_skips_action_prefix_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=(
+            default_collection_prefix_rules()[0],
+            CollectionPrefixRule(
+                id="action_standalone",
+                collection_mode="actions",
+                prefixes=(
+                    "priorizar",
+                    "negociar",
+                    "corrigir",
+                    "conciliar",
+                    "revisar",
+                ),
+                enabled=False,
+            ),
+        ),
+    )
+    body = "Priorizar capacidade comercial e operacional para PPF REGENERATIVO - FULL."
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert not report.actions
     assert not report.sections
 
 
