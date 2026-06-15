@@ -1,7 +1,10 @@
+aiosmtplib
 asyncpg>=0.30.0
 asyncmy>=0.2.9
+PyYAML
 redis>=5.2.0
 
 [dev]
 pytest>=8.0
+pytest-asyncio>=0.24.0
 python-dotenv>=1.0.0
