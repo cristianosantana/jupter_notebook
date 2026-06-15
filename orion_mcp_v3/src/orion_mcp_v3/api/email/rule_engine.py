@@ -11,10 +11,7 @@ from orion_mcp_v3.api.email.parsing import (
     extract_period,
     first_meaningful_line,
     inline_detail_items,
-    looks_like_metric,
-    looks_like_pipe_table_line,
     normalized_lines,
-    parse_metric_item,
     section_kind,
     strip_numbered_prefix,
 )
@@ -23,20 +20,26 @@ from orion_mcp_v3.api.email.parsing_rules import (
     LineRule,
     LineRuleMatch,
     MarkdownHeadingRouter,
+    NoteLineRule,
     ParsingRulesConfig,
     SectionOpenRule,
     SectionRuleMatch,
     default_collection_prefix_rules,
+    default_collection_continuation_policy,
     default_heading_router,
+    default_note_line_rules,
+    default_section_item_rules,
     match_collection_prefix_rule,
     match_heading_route,
     match_line_rules,
+    match_note_line_rule,
+    try_apply_collection_continuation,
+    try_apply_section_item_rules,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
-_NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 
 
 class RuleEngine:
@@ -50,6 +53,17 @@ class RuleEngine:
         self._heading_rx = self._heading_router.compile()
         self._collection_prefix_rules = (
             self._rules_config.collection_prefix_rules or default_collection_prefix_rules()
+        )
+        self._collection_continuation = (
+            self._rules_config.collection_continuation or default_collection_continuation_policy()
+        )
+        note_line_rules = self._rules_config.note_line_rules or default_note_line_rules()
+        self._compiled_note_line_rules = ParsingRulesConfig(
+            sections=(),
+            note_line_rules=note_line_rules,
+        ).compile_note_line_rules()
+        self._section_item_rules = (
+            self._rules_config.section_item_rules or default_section_item_rules()
         )
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
@@ -228,14 +242,12 @@ class RuleEngine:
                 )
                 continue
 
-            note_match = _NOTE_RX.match(raw)
-            if note_match and current is not None:
-                inline_items = inline_detail_items(raw)
-                if inline_items:
-                    current.items.extend(inline_items)
-                    current.notes.append(raw.split(":", 1)[0].strip() + ":")
-                else:
-                    current.notes.append(raw)
+            note_match = match_note_line_rule(raw, self._compiled_note_line_rules)
+            if note_match is not None and (
+                not note_match.rule.requires_active_section or current is not None
+            ):
+                if current is not None:
+                    _apply_note_line(raw, current, note_match.rule)
                 continue
 
             prefix_rule = match_collection_prefix_rule(raw, self._collection_prefix_rules)
@@ -248,24 +260,21 @@ class RuleEngine:
                     actions.append(raw)
                 continue
 
-            if collection_mode == "alerts":
-                alerts.append(raw)
+            if try_apply_collection_continuation(
+                raw=raw,
+                policy=self._collection_continuation,
+                collection_mode=collection_mode,
+                current_section=current,
+                alerts=alerts,
+                actions=actions,
+            ):
                 continue
 
-            if collection_mode == "actions":
-                actions.append(raw)
-                continue
-
-            if current is None and alerts and not actions:
-                alerts.append(raw)
-                continue
-
-            if current is not None and looks_like_pipe_table_line(raw):
-                current.add_table_line(raw)
-                continue
-
-            if current is not None and looks_like_metric(raw):
-                current.items.append(parse_metric_item(raw))
+            if try_apply_section_item_rules(
+                raw=raw,
+                policy=self._section_item_rules,
+                current_section=current,
+            ):
                 continue
 
         flush()
@@ -373,6 +382,16 @@ def _apply_append_omitted(
     if current is not None:
         current.notes.append(raw_line)
     return current
+
+
+def _apply_note_line(raw: str, current: SectionDraft, rule: NoteLineRule) -> None:
+    if rule.split_inline_items:
+        inline_items = inline_detail_items(raw)
+        if inline_items:
+            current.items.extend(inline_items)
+            current.notes.append(raw.split(":", 1)[0].strip() + ":")
+            return
+    current.notes.append(raw)
 
 
 def _apply_markdown_heading(

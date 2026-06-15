@@ -4,10 +4,12 @@ A Fase 3 não é “jogar tudo em `sections`”. Hoje o motor já migrou **opene
 
 | Já declarativo | Ainda hardcoded no `rule_engine.py` |
 |----------------|-------------------------------------|
-| `direct_answer`, `complementary`, `highlights`, `ranking_header`, `section_total` | `headline`, `##` + roteamento alerta/ação |
-| | `Dominante:`, `Concentração:`, `Destaque:` |
-| | `is_alert()`, `is_action()`, `collection_mode` |
-| | `_NOTE_RX`, métricas, pipe tables, `... (+N)` |
+| `direct_answer`, `complementary`, `highlights`, `ranking_header`, `section_total` | `headline` |
+| `Dominante:`, `Concentração:`, `Destaque:` (line_rules) | |
+| `##` router, alert/action prefixes, collection_mode | |
+| `Detalhe` / `Top N` / `Observação` (note_line_rules) | |
+| pipe tables + métricas (section_item_rules) | |
+| `... (+N)` (omitted) | |
 
 Ou seja: **seção abre por regra**; **linha especial ainda é `if`**.
 
@@ -77,9 +79,9 @@ PR4  omitted_categories (... (+N)) -> Feito
 PR5  markdown_heading_router (## → seção vs alerta vs ação) -> Feito
 PR6  alert_standalone (is_alert prefixes) -> Feito
 PR7  action_standalone (is_action prefixes) -> Feito
-PR8  collection_mode (continuação de linhas em alertas/ações)
-PR9  note_lines (Detalhe / Top N / Observação)
-PR10 metric + pipe (último — ou fica como fallback permanente)
+PR8  collection_mode (continuação de linhas em alertas/ações) -> Feito
+PR9  note_lines (Detalhe / Top N / Observação) -> Feito
+PR10 metric + pipe (último — ou fica como fallback permanente) -> Feito
 ```
 
 ### Por que essa ordem?
