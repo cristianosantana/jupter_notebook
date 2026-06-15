@@ -27,10 +27,12 @@ from orion_mcp_v3.api.email.parsing_rules import (
     SectionOpenRule,
     SectionRuleMatch,
     default_collection_prefix_rules,
+    default_collection_continuation_policy,
     default_heading_router,
     match_collection_prefix_rule,
     match_heading_route,
     match_line_rules,
+    try_apply_collection_continuation,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
@@ -50,6 +52,9 @@ class RuleEngine:
         self._heading_rx = self._heading_router.compile()
         self._collection_prefix_rules = (
             self._rules_config.collection_prefix_rules or default_collection_prefix_rules()
+        )
+        self._collection_continuation = (
+            self._rules_config.collection_continuation or default_collection_continuation_policy()
         )
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
@@ -248,16 +253,14 @@ class RuleEngine:
                     actions.append(raw)
                 continue
 
-            if collection_mode == "alerts":
-                alerts.append(raw)
-                continue
-
-            if collection_mode == "actions":
-                actions.append(raw)
-                continue
-
-            if current is None and alerts and not actions:
-                alerts.append(raw)
+            if try_apply_collection_continuation(
+                raw=raw,
+                policy=self._collection_continuation,
+                collection_mode=collection_mode,
+                current_section=current,
+                alerts=alerts,
+                actions=actions,
+            ):
                 continue
 
             if current is not None and looks_like_pipe_table_line(raw):

@@ -77,7 +77,7 @@ PR4  omitted_categories (... (+N)) -> Feito
 PR5  markdown_heading_router (## → seção vs alerta vs ação) -> Feito
 PR6  alert_standalone (is_alert prefixes) -> Feito
 PR7  action_standalone (is_action prefixes) -> Feito
-PR8  collection_mode (continuação de linhas em alertas/ações)
+PR8  collection_mode (continuação de linhas em alertas/ações) -> Feito
 PR9  note_lines (Detalhe / Top N / Observação)
 PR10 metric + pipe (último — ou fica como fallback permanente)
 ```

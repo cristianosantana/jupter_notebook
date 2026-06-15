@@ -7,16 +7,20 @@ import pytest
 from orion_mcp_v3.api.email.models import EmailReport, EmailSection
 from orion_mcp_v3.api.email.parsing import build_report_from_text
 from orion_mcp_v3.api.email.parsing_rules import (
+    CollectionContinuationPolicy,
+    CollectionContinuationRule,
     CollectionPrefixRule,
     HeadingRoute,
     LineRule,
     MarkdownHeadingRouter,
     ParsingRulesConfig,
     SectionOpenRule,
+    default_collection_continuation_policy,
     default_collection_prefix_rules,
     default_heading_router,
     default_line_rules,
     default_section_rules,
+    try_apply_collection_continuation,
 )
 from orion_mcp_v3.api.email.rule_engine import RuleEngine, build_report_from_rules
 
@@ -501,6 +505,75 @@ def test_action_standalone_disabled_skips_action_prefix_lines() -> None:
     report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
     assert not report.actions
     assert not report.sections
+
+
+def test_collection_continuation_appends_while_alerts_mode_active() -> None:
+    policy = default_collection_continuation_policy()
+    alerts: list[str] = ["Registros com valor zero identificados:"]
+    actions: list[str] = []
+    assert try_apply_collection_continuation(
+        raw="Faturamento por tipo de pagamento: 2 registro(s) com valor zero.",
+        policy=policy,
+        collection_mode="alerts",
+        current_section=None,
+        alerts=alerts,
+        actions=actions,
+    )
+    assert len(alerts) == 2
+
+
+def test_collection_fallback_appends_when_mode_cleared_and_no_section() -> None:
+    policy = default_collection_continuation_policy()
+    alerts: list[str] = ["Registros com valor zero identificados:"]
+    actions: list[str] = []
+    assert try_apply_collection_continuation(
+        raw="Faturamento por tipo de pagamento: 2 registro(s) com valor zero.",
+        policy=policy,
+        collection_mode=None,
+        current_section=None,
+        alerts=alerts,
+        actions=actions,
+    )
+    assert len(alerts) == 2
+
+
+def test_collection_continuation_disabled_skips_detail_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=default_collection_prefix_rules(),
+        collection_continuation=CollectionContinuationPolicy(enabled=False),
+    )
+    body = (
+        "Registros com valor zero identificados:\n"
+        "Faturamento por tipo de pagamento: 2 registro(s) com valor zero."
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert len(report.alerts) == 1
+    assert report.alerts[0] == "Registros com valor zero identificados:"
+
+
+def test_collection_continuation_disabled_actions_mode() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=default_collection_prefix_rules(),
+        collection_continuation=CollectionContinuationPolicy(
+            continuation_rules=(
+                CollectionContinuationRule(collection_mode="alerts"),
+                CollectionContinuationRule(collection_mode="actions", enabled=False),
+            ),
+            fallback_rules=default_collection_continuation_policy().fallback_rules,
+        ),
+    )
+    body = (
+        "Priorizar capacidade comercial e operacional para PPF REGENERATIVO - FULL.\n"
+        "Detalhe operacional sem prefixo de ação."
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert len(report.actions) == 1
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

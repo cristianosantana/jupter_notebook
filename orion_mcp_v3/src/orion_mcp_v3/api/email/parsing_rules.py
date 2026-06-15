@@ -104,6 +104,32 @@ class CollectionPrefixRule:
 
 
 @dataclass(frozen=True, slots=True)
+class CollectionContinuationRule:
+    """Append de linhas enquanto `collection_mode` coincide (PR8)."""
+
+    collection_mode: CollectionMode
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionFallbackRule:
+    """Fallback sem seção ativa — alertas já populados e ações vazias (PR8)."""
+
+    id: str
+    target: CollectionMode = "alerts"
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionContinuationPolicy:
+    """Política de continuação e fallback do modo alertas/ações (PR8)."""
+
+    continuation_rules: tuple[CollectionContinuationRule, ...] = ()
+    fallback_rules: tuple[CollectionFallbackRule, ...] = ()
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
     """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
@@ -111,6 +137,7 @@ class ParsingRulesConfig:
     line_rules: tuple[LineRule, ...] = ()
     heading_router: MarkdownHeadingRouter | None = None
     collection_prefix_rules: tuple[CollectionPrefixRule, ...] = ()
+    collection_continuation: CollectionContinuationPolicy | None = None
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -147,6 +174,7 @@ class ParsingRulesConfig:
             line_rules=default_line_rules(),
             heading_router=default_heading_router(),
             collection_prefix_rules=default_collection_prefix_rules(),
+            collection_continuation=default_collection_continuation_policy(),
         )
 
 
@@ -207,6 +235,19 @@ def default_heading_router() -> MarkdownHeadingRouter:
                 keywords=("conclus", "acion"),
                 effect="collect_actions",
             ),
+        ),
+    )
+
+
+def default_collection_continuation_policy() -> CollectionContinuationPolicy:
+    """Continuação e fallback padrão espelhando `collection_mode` do parser legado."""
+    return CollectionContinuationPolicy(
+        continuation_rules=(
+            CollectionContinuationRule(collection_mode="alerts"),
+            CollectionContinuationRule(collection_mode="actions"),
+        ),
+        fallback_rules=(
+            CollectionFallbackRule(id="alerts_without_section", target="alerts"),
         ),
     )
 
@@ -276,6 +317,39 @@ def default_line_rules() -> tuple[LineRule, ...]:
             flush_if_missing_or_current_title_in=("Resposta direta",),
         ),
     )
+
+
+def try_apply_collection_continuation(
+    *,
+    raw: str,
+    policy: CollectionContinuationPolicy,
+    collection_mode: str | None,
+    current_section: object | None,
+    alerts: list[str],
+    actions: list[str],
+) -> bool:
+    """Append em alertas/ações se continuação ou fallback aplicar. Retorna True se tratou a linha."""
+    if not policy.enabled:
+        return False
+
+    if collection_mode is not None:
+        for rule in policy.continuation_rules:
+            if not rule.enabled:
+                continue
+            if collection_mode == rule.collection_mode:
+                if rule.collection_mode == "alerts":
+                    alerts.append(raw)
+                else:
+                    actions.append(raw)
+                return True
+
+    for rule in policy.fallback_rules:
+        if not rule.enabled:
+            continue
+        if rule.target == "alerts" and current_section is None and alerts and not actions:
+            alerts.append(raw)
+            return True
+    return False
 
 
 def match_collection_prefix_rule(
