@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 SectionRuleBehavior = Literal["open", "open_with_detail", "append_note", "open_with_total"]
 LineRuleEffect = Literal["set_highlight", "open_highlights", "append_note", "append_omitted"]
 LineRulePhase = Literal["promotion_early", "promotion_late", "omitted"]
 HeadingRouteEffect = Literal["open_section", "collect_alerts", "collect_actions"]
 CollectionMode = Literal["alerts", "actions"]
+SectionItemEffect = Literal["append_pipe_row", "append_metric"]
+
+if TYPE_CHECKING:
+    from orion_mcp_v3.api.email.parsing import SectionDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +157,24 @@ class NoteLineMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class SectionItemRule:
+    """Regra de item em seção ativa — pipe table ou métrica (PR10)."""
+
+    id: str
+    effect: SectionItemEffect
+    requires_active_section: bool = True
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class SectionItemRulesPolicy:
+    """Política de append de métricas e linhas pipe em seção ativa (PR10)."""
+
+    item_rules: tuple[SectionItemRule, ...] = ()
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
     """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
@@ -162,6 +184,7 @@ class ParsingRulesConfig:
     collection_prefix_rules: tuple[CollectionPrefixRule, ...] = ()
     collection_continuation: CollectionContinuationPolicy | None = None
     note_line_rules: tuple[NoteLineRule, ...] = ()
+    section_item_rules: SectionItemRulesPolicy | None = None
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -207,6 +230,7 @@ class ParsingRulesConfig:
             collection_prefix_rules=default_collection_prefix_rules(),
             collection_continuation=default_collection_continuation_policy(),
             note_line_rules=default_note_line_rules(),
+            section_item_rules=default_section_item_rules(),
         )
 
 
@@ -320,6 +344,16 @@ def default_note_line_rules() -> tuple[NoteLineRule, ...]:
     )
 
 
+def default_section_item_rules() -> SectionItemRulesPolicy:
+    """Regras padrão espelhando pipe tables e métricas do parser legado."""
+    return SectionItemRulesPolicy(
+        item_rules=(
+            SectionItemRule(id="pipe_table_row", effect="append_pipe_row"),
+            SectionItemRule(id="metric_line", effect="append_metric"),
+        ),
+    )
+
+
 def default_line_rules() -> tuple[LineRule, ...]:
     """Regras de linha padrão — PR1–PR4 Destaque, Dominante, Concentração, Omitted."""
     return (
@@ -373,6 +407,38 @@ def match_note_line_rule(
         groups = {key: (value or "").strip() for key, value in match.groupdict().items() if value is not None}
         return NoteLineMatch(rule=compiled.rule, groups=groups)
     return None
+
+
+def try_apply_section_item_rules(
+    *,
+    raw: str,
+    policy: SectionItemRulesPolicy,
+    current_section: SectionDraft | None,
+) -> bool:
+    """Append pipe row ou métrica se regra e detector casarem. Retorna True se tratou a linha."""
+    from orion_mcp_v3.api.email.parsing import (
+        looks_like_metric,
+        looks_like_pipe_table_line,
+        parse_metric_item,
+    )
+
+    if not policy.enabled or current_section is None:
+        return False
+
+    for rule in policy.item_rules:
+        if not rule.enabled:
+            continue
+        if rule.requires_active_section and current_section is None:
+            continue
+        if rule.effect == "append_pipe_row":
+            if looks_like_pipe_table_line(raw):
+                current_section.add_table_line(raw)
+                return True
+        elif rule.effect == "append_metric":
+            if looks_like_metric(raw):
+                current_section.items.append(parse_metric_item(raw))
+                return True
+    return False
 
 
 def try_apply_collection_continuation(

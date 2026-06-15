@@ -11,10 +11,7 @@ from orion_mcp_v3.api.email.parsing import (
     extract_period,
     first_meaningful_line,
     inline_detail_items,
-    looks_like_metric,
-    looks_like_pipe_table_line,
     normalized_lines,
-    parse_metric_item,
     section_kind,
     strip_numbered_prefix,
 )
@@ -31,11 +28,13 @@ from orion_mcp_v3.api.email.parsing_rules import (
     default_collection_continuation_policy,
     default_heading_router,
     default_note_line_rules,
+    default_section_item_rules,
     match_collection_prefix_rule,
     match_heading_route,
     match_line_rules,
     match_note_line_rule,
     try_apply_collection_continuation,
+    try_apply_section_item_rules,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
@@ -63,6 +62,9 @@ class RuleEngine:
             sections=(),
             note_line_rules=note_line_rules,
         ).compile_note_line_rules()
+        self._section_item_rules = (
+            self._rules_config.section_item_rules or default_section_item_rules()
+        )
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
         compiled = self._compiled_by_id.get(rule_id)
@@ -268,12 +270,11 @@ class RuleEngine:
             ):
                 continue
 
-            if current is not None and looks_like_pipe_table_line(raw):
-                current.add_table_line(raw)
-                continue
-
-            if current is not None and looks_like_metric(raw):
-                current.items.append(parse_metric_item(raw))
+            if try_apply_section_item_rules(
+                raw=raw,
+                policy=self._section_item_rules,
+                current_section=current,
+            ):
                 continue
 
         flush()

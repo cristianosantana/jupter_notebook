@@ -15,12 +15,15 @@ from orion_mcp_v3.api.email.parsing_rules import (
     MarkdownHeadingRouter,
     NoteLineRule,
     ParsingRulesConfig,
+    SectionItemRule,
+    SectionItemRulesPolicy,
     SectionOpenRule,
     default_collection_continuation_policy,
     default_collection_prefix_rules,
     default_heading_router,
     default_line_rules,
     default_note_line_rules,
+    default_section_item_rules,
     default_section_rules,
     try_apply_collection_continuation,
 )
@@ -641,6 +644,75 @@ def test_note_line_disabled_skips_notes() -> None:
     )
     report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
     assert not report.sections[0].notes
+
+
+def test_section_item_metric_line_parity() -> None:
+    body = (
+        "Faturamento por forma de pagamento — Total: R$ 2.713.158,18\n"
+        "Destaque: Cartão de Crédito — R$ 1.352.045,28 (49,83%)\n"
+        "Cartão de Crédito: R$ 1.352.045,28 (49,83%)"
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="CarSoul", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.sections[0].items) == 1
+    assert rules.sections[0].items[0].label == "Cartão de Crédito"
+
+
+def test_section_item_direct_answer_list_parity() -> None:
+    body = (
+        "Resposta direta: total pagamentos por tipo de pagamento:\n"
+        "1. Cartão de Crédito: R$ 1.286.059,42\n"
+        "2. Concessionária: R$ 913.134,71\n"
+        "3. PIX: R$ 401.301,70"
+    )
+    legacy = build_report_from_text(subject="Formas", body=body, from_name="CarSoul", report_type="ranking")
+    rules = build_report_from_rules(subject="Formas", body=body, from_name="CarSoul", report_type="ranking")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    assert len(rules.sections[0].items) == 3
+
+
+def test_section_item_disabled_skips_metric_lines() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=default_collection_prefix_rules(),
+        collection_continuation=default_collection_continuation_policy(),
+        note_line_rules=default_note_line_rules(),
+        section_item_rules=SectionItemRulesPolicy(enabled=False),
+    )
+    body = (
+        "Faturamento por forma de pagamento — Total: R$ 2.713.158,18\n"
+        "Cartão de Crédito: R$ 1.352.045,28 (49,83%)"
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert not report.sections[0].items
+
+
+def test_section_item_disabled_metrics_only_keeps_pipe_rows() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        section_item_rules=SectionItemRulesPolicy(
+            item_rules=(
+                SectionItemRule(id="pipe_table_row", effect="append_pipe_row"),
+                SectionItemRule(id="metric_line", effect="append_metric", enabled=False),
+            ),
+        ),
+    )
+    body = (
+        "## Comissão por tipo de O.S.\n"
+        "concessionaria | venda normal | financiamento | total comissão\n"
+        "Concessionária A | R$ 120.000,00 | R$ 80.000,00 | R$ 200.000,00"
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert report.sections[0].tables
+    assert len(report.sections[0].tables[0].rows) == 1
+    assert not report.sections[0].items
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:
