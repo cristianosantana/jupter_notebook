@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from orion_mcp_v3.api.main import create_app
 from orion_mcp_v3.api.models import ChatRequest, ChatResponse, HealthResponse
 from orion_mcp_v3.api.email.sender import EmailSendResult
-from orion_mcp_v3.api.routes.chat import _structured_email_evidence_from
+from orion_mcp_v3.api.email.structured_evidence import structured_email_evidence_from
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.provenance import CoverageInfo
 from orion_mcp_v3.protocols.llm import (
@@ -388,8 +388,27 @@ def test_structured_email_evidence_uses_evidence_summary() -> None:
         coverage=CoverageInfo(),
     )
 
-    assert _structured_email_evidence_from(evidence) == "## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00"
-    assert _structured_email_evidence_from(None) is None
+    assert structured_email_evidence_from(evidence) == "## Faturamento por tipo de pagamento\n1. PIX: R$ 10,00"
+    assert structured_email_evidence_from(None) is None
+
+
+def test_structured_email_evidence_prefers_full_summary_over_scoped_summary() -> None:
+    scoped = "Resposta direta: maior total liquido por tipo de pagamento: Cartão de Crédito (R$ 1.755.398,76)."
+    full = (
+        "Resposta direta: total liquido por tipo de pagamento:\n"
+        "1. Cartão de Crédito: R$ 1.755.398,76\n"
+        "2. PIX: R$ 382.387,40"
+    )
+    evidence = EvidenceBlock(
+        summary=scoped,
+        insights={},
+        metrics={},
+        confidence=0.9,
+        coverage=CoverageInfo(),
+        supporting_data={"direct_answer": {"summary": scoped, "full_summary": full}},
+    )
+
+    assert structured_email_evidence_from(evidence) == full
 
 
 def test_chat_email_failure_does_not_fail_chat_response() -> None:

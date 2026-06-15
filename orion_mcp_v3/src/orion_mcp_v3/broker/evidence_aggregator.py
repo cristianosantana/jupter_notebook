@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from orion_mcp_v3.broker.answer_projector import (
+    build_full_list_summary,
     build_projected_answer,
     build_projected_answer_set,
     filter_rows_for_entity_filters,
@@ -261,6 +262,10 @@ def _with_projected_answer(
         return block
 
     projected_dict = projected.as_dict()
+    if templates is not None:
+        full_summary = build_full_list_summary(projected, templates=templates)
+        if full_summary and full_summary.strip() != projected.summary.strip():
+            projected_dict["full_summary"] = full_summary
     suppress_complementary = _should_suppress_complementary(projected_dict)
     complementary_summary = (
         "Resumo estatístico complementar (não substitui a resposta direta):\n"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
+from dataclasses import replace
 from collections.abc import Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
@@ -503,6 +504,24 @@ def _sort_value(value: Any) -> tuple[int, float | str]:
     if n is not None:
         return (0, n)
     return (1, _norm(str(value)))
+
+
+def build_full_list_summary(
+    projected: ProjectedAnswer,
+    *,
+    templates: "QueryTemplateRegistry",
+) -> str | None:
+    """Reprojeta todas as linhas como lista completa (escopo ``all``) para e-mail."""
+    capability = _capability_for_projected(projected, templates)
+    if capability is None:
+        return None
+    full_plan = replace(
+        projected.plan,
+        operation="list",
+        result_scope={"mode": "all", "limit": None},
+    )
+    full = project_answer(projected.rows, plan=full_plan, capability=capability)
+    return full.summary if full is not None else None
 
 
 def build_projected_answer(
