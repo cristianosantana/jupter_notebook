@@ -237,7 +237,7 @@ def _with_projected_answer(
                     row_count=contract.row_count,
                     full_dataset_available=contract.full_dataset_available,
                     source_priority=EvidencePriority.DIRECT_ANSWER,
-                    operational_confidence=_direct_answer_set_confidence(contract),
+                    operational_confidence=_direct_answer_confidence(contract),
                     safe_for_record_level_claims=contract.safe_for_record_level_claims,
                 )
                 metrics["evidence_contract"] = contract.as_dict()
@@ -283,7 +283,7 @@ def _with_projected_answer(
             row_count=contract.row_count,
             full_dataset_available=contract.full_dataset_available,
             source_priority=EvidencePriority.DIRECT_ANSWER,
-            operational_confidence=contract.operational_confidence,
+            operational_confidence=_direct_answer_confidence(contract),
             safe_for_record_level_claims=contract.safe_for_record_level_claims,
         )
         metrics["evidence_contract"] = contract.as_dict()
@@ -318,6 +318,19 @@ def _collection_slug(results: Sequence[AnalyticsResult]) -> str | None:
     return first if all(slug == first for slug in slugs) else None
 
 
+def _direct_answer_confidence(contract: EvidenceContract) -> OperationalConfidence:
+    """Dataset completo em resposta direta → cobertura plena para o narrador."""
+    current = contract.operational_confidence
+    if not contract.full_dataset_available:
+        return current
+    return OperationalConfidence(
+        data_coverage=1.0,
+        aggregation_reliability=current.aggregation_reliability,
+        pipeline_integrity=current.pipeline_integrity,
+        narrative_confidence=max(current.narrative_confidence, 0.8),
+    )
+
+
 def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
     plan = projected.get("plan")
     if not isinstance(plan, Mapping):
@@ -329,18 +342,6 @@ def _should_suppress_complementary(projected: Mapping[str, Any]) -> bool:
     if mode == "all" and operation == "list":
         return True
     return measure in {"ticket_medio_item", "ticket_medio_os"} and operation == "list"
-
-
-def _direct_answer_set_confidence(contract: EvidenceContract) -> OperationalConfidence:
-    current = contract.operational_confidence
-    if not contract.full_dataset_available:
-        return current
-    return OperationalConfidence(
-        data_coverage=1.0,
-        aggregation_reliability=current.aggregation_reliability,
-        pipeline_integrity=current.pipeline_integrity,
-        narrative_confidence=max(current.narrative_confidence, 0.8),
-    )
 
 
 def _merge_evidence_contracts(

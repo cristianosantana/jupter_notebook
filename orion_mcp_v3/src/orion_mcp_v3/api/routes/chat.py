@@ -333,6 +333,8 @@ def create_chat_router(
                 "subject_present": bool(req.email_subject),
                 "sender_present": email_sender is not None,
                 "body_chars": len(body or ""),
+                "body_stripped_chars": len((body or "").strip()),
+                "body_min_chars": get_settings().email_min_body_chars,
                 "structured_evidence_chars": len(structured_evidence or ""),
             },
         )
@@ -349,6 +351,34 @@ def create_chat_router(
             )
             result = EmailSendResult(status="skipped", to=req.email_to, message="envio de e-mail não configurado")
             _trace("post", result.as_dict())
+            return result
+        min_body_chars = get_settings().email_min_body_chars
+        body_stripped_chars = len((body or "").strip())
+        if min_body_chars > 0 and body_stripped_chars < min_body_chars:
+            _LOG.warning(
+                "email_delivery skipped conversation_id=%s to=%s reason=body_too_short body_chars=%d min=%d",
+                conversation_id,
+                req.email_to,
+                body_stripped_chars,
+                min_body_chars,
+            )
+            result = EmailSendResult(
+                status="skipped",
+                to=req.email_to,
+                message=(
+                    f"corpo do e-mail muito curto ({body_stripped_chars} caracteres; "
+                    f"mínimo {min_body_chars})"
+                ),
+            )
+            _trace(
+                "post",
+                {
+                    **result.as_dict(),
+                    "reason": "body_too_short",
+                    "body_min_chars": min_body_chars,
+                    "body_stripped_chars": body_stripped_chars,
+                },
+            )
             return result
         try:
             _LOG.info(

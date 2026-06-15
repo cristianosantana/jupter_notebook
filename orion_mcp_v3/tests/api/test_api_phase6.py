@@ -26,6 +26,14 @@ from orion_mcp_v3.runtime import Session, SessionManager
 from orion_mcp_v3.runtime.context_state import CognitivePhase
 
 
+_EMAIL_BODY_OK = (
+    "Resposta analítica com conteúdo suficiente para envio por e-mail ao destinatário."
+)
+_NARRATION_OK = (
+    "Narrativa analítica com conteúdo suficiente para envio por e-mail ao destinatário."
+)
+
+
 # ── 6.2 Session Manager ─────────────────────────────────────────────
 
 
@@ -109,7 +117,7 @@ class IntentThenNarrationProvider:
         self.chat_calls = 0
 
     async def generate(self, prompt: str, **kwargs):  # type: ignore[no-untyped-def]
-        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+        return LLMResponse(text=_NARRATION_OK, meta=LLMResponseMeta(model="fake"))
 
     async def chat(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
         self.chat_calls += 1
@@ -143,10 +151,10 @@ class IntentThenNarrationProvider:
                 ),
                 meta=LLMResponseMeta(model="fake"),
             )
-        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+        return LLMResponse(text=_NARRATION_OK, meta=LLMResponseMeta(model="fake"))
 
     async def stream(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
-        yield LLMStreamChunk(delta="narrativa ok", finish_reason="stop")
+        yield LLMStreamChunk(delta=_NARRATION_OK, finish_reason="stop")
 
 
 class CollectionThenNarrationProvider:
@@ -154,7 +162,7 @@ class CollectionThenNarrationProvider:
         self.chat_calls = 0
 
     async def generate(self, prompt: str, **kwargs):  # type: ignore[no-untyped-def]
-        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+        return LLMResponse(text=_NARRATION_OK, meta=LLMResponseMeta(model="fake"))
 
     async def chat(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
         self.chat_calls += 1
@@ -175,10 +183,10 @@ class CollectionThenNarrationProvider:
                 ),
                 meta=LLMResponseMeta(model="fake"),
             )
-        return LLMResponse(text="narrativa ok", meta=LLMResponseMeta(model="fake"))
+        return LLMResponse(text=_NARRATION_OK, meta=LLMResponseMeta(model="fake"))
 
     async def stream(self, messages: Sequence[ChatMessage], **kwargs):  # type: ignore[no-untyped-def]
-        yield LLMStreamChunk(delta="narrativa ok", finish_reason="stop")
+        yield LLMStreamChunk(delta=_NARRATION_OK, finish_reason="stop")
 
 
 def test_health_endpoint() -> None:
@@ -359,7 +367,10 @@ def test_chat_without_email_to_does_not_send_email() -> None:
 
 def test_chat_with_email_to_sends_response_email() -> None:
     sender = FakeEmailSender()
-    app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
+    app = create_app(
+        llm_provider=NullLLMProvider(fixed_response=_EMAIL_BODY_OK),
+        email_sender=sender,
+    )
     client = TestClient(app)
 
     r = client.post(
@@ -375,8 +386,28 @@ def test_chat_with_email_to_sends_response_email() -> None:
     assert len(sender.calls) == 1
     assert sender.calls[0].to == "destino@local.test"
     assert sender.calls[0].subject == "Minha resposta"
-    assert sender.calls[0].body == "resposta fixa"
+    assert sender.calls[0].body == _EMAIL_BODY_OK
     assert r.json()["meta"]["email_delivery"]["status"] == "sent"
+
+
+def test_chat_email_skips_when_body_too_short() -> None:
+    sender = FakeEmailSender()
+    app = create_app(
+        llm_provider=NullLLMProvider(fixed_response="muito curto"),
+        email_sender=sender,
+    )
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/v1/chat",
+        json={"message": "olá", "email_to": "destino@local.test"},
+    )
+
+    assert r.status_code == 200
+    assert sender.calls == []
+    delivery = r.json()["meta"]["email_delivery"]
+    assert delivery["status"] == "skipped"
+    assert "curto" in delivery["message"].lower()
 
 
 def test_structured_email_evidence_uses_evidence_summary() -> None:
@@ -413,7 +444,10 @@ def test_structured_email_evidence_prefers_full_summary_over_scoped_summary() ->
 
 def test_chat_email_failure_does_not_fail_chat_response() -> None:
     sender = FakeEmailSender(EmailSendResult(status="failed", to="destino@local.test", message="falha smtp"))
-    app = create_app(llm_provider=NullLLMProvider(fixed_response="resposta fixa"), email_sender=sender)
+    app = create_app(
+        llm_provider=NullLLMProvider(fixed_response=_EMAIL_BODY_OK),
+        email_sender=sender,
+    )
     client = TestClient(app)
 
     r = client.post(
@@ -422,7 +456,7 @@ def test_chat_email_failure_does_not_fail_chat_response() -> None:
     )
 
     assert r.status_code == 200
-    assert r.json()["reply"] == "resposta fixa"
+    assert r.json()["reply"] == _EMAIL_BODY_OK
     assert r.json()["meta"]["email_delivery"]["status"] == "failed"
 
 
