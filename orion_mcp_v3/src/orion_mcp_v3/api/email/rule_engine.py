@@ -23,22 +23,24 @@ from orion_mcp_v3.api.email.parsing_rules import (
     LineRule,
     LineRuleMatch,
     MarkdownHeadingRouter,
+    NoteLineRule,
     ParsingRulesConfig,
     SectionOpenRule,
     SectionRuleMatch,
     default_collection_prefix_rules,
     default_collection_continuation_policy,
     default_heading_router,
+    default_note_line_rules,
     match_collection_prefix_rule,
     match_heading_route,
     match_line_rules,
+    match_note_line_rule,
     try_apply_collection_continuation,
 )
 
 _MIDDLE_SECTION_RULE_IDS = frozenset({"direct_answer", "section_total"})
 
 _HEADLINE_RX = re.compile(r"^direct_answer_set\.headline:\s*(?P<headline>.+)$", re.I)
-_NOTE_RX = re.compile(r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$", re.I)
 
 
 class RuleEngine:
@@ -56,6 +58,11 @@ class RuleEngine:
         self._collection_continuation = (
             self._rules_config.collection_continuation or default_collection_continuation_policy()
         )
+        note_line_rules = self._rules_config.note_line_rules or default_note_line_rules()
+        self._compiled_note_line_rules = ParsingRulesConfig(
+            sections=(),
+            note_line_rules=note_line_rules,
+        ).compile_note_line_rules()
 
     def _match_rule(self, rule_id: str, raw: str) -> SectionRuleMatch | None:
         compiled = self._compiled_by_id.get(rule_id)
@@ -233,14 +240,12 @@ class RuleEngine:
                 )
                 continue
 
-            note_match = _NOTE_RX.match(raw)
-            if note_match and current is not None:
-                inline_items = inline_detail_items(raw)
-                if inline_items:
-                    current.items.extend(inline_items)
-                    current.notes.append(raw.split(":", 1)[0].strip() + ":")
-                else:
-                    current.notes.append(raw)
+            note_match = match_note_line_rule(raw, self._compiled_note_line_rules)
+            if note_match is not None and (
+                not note_match.rule.requires_active_section or current is not None
+            ):
+                if current is not None:
+                    _apply_note_line(raw, current, note_match.rule)
                 continue
 
             prefix_rule = match_collection_prefix_rule(raw, self._collection_prefix_rules)
@@ -376,6 +381,16 @@ def _apply_append_omitted(
     if current is not None:
         current.notes.append(raw_line)
     return current
+
+
+def _apply_note_line(raw: str, current: SectionDraft, rule: NoteLineRule) -> None:
+    if rule.split_inline_items:
+        inline_items = inline_detail_items(raw)
+        if inline_items:
+            current.items.extend(inline_items)
+            current.notes.append(raw.split(":", 1)[0].strip() + ":")
+            return
+    current.notes.append(raw)
 
 
 def _apply_markdown_heading(

@@ -13,12 +13,14 @@ from orion_mcp_v3.api.email.parsing_rules import (
     HeadingRoute,
     LineRule,
     MarkdownHeadingRouter,
+    NoteLineRule,
     ParsingRulesConfig,
     SectionOpenRule,
     default_collection_continuation_policy,
     default_collection_prefix_rules,
     default_heading_router,
     default_line_rules,
+    default_note_line_rules,
     default_section_rules,
     try_apply_collection_continuation,
 )
@@ -574,6 +576,71 @@ def test_collection_continuation_disabled_actions_mode() -> None:
     )
     report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
     assert len(report.actions) == 1
+
+
+def test_note_line_top_5_appends_note_in_active_section() -> None:
+    body = (
+        "Faturamento e comissão por concessionária — Total: R$ 355.437,45\n"
+        "Destaque: PORSCHE — R$ 41.195,20 (11,59%)\n"
+        "Top 5 (template fechamento_faturamento_comissao_concessionaria_periodo):\n"
+        "PORSCHE: R$ 41.195,20 (11,59%)"
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    section = rules.sections[0]
+    assert any("Top 5" in note for note in section.notes)
+
+
+def test_note_line_inline_detail_items_parity() -> None:
+    body = (
+        "Parcelamento de cartão — Total: R$ 1.348.275,28\n"
+        "Destaque: 10X — R$ 847.408,80 (62,85%)\n"
+        "Detalhe (todos os registros): 10X: R$ 847.408,80 (62,85%); 6X: R$ 146.854,48 (10,89%);"
+    )
+    legacy = build_report_from_text(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+    rules = build_report_from_rules(subject="Fechamento", body=body, from_name="Orion", report_type="fechamento_gerencial")
+
+    assert _report_core_snapshot(legacy) == _report_core_snapshot(rules)
+    section = rules.sections[0]
+    assert len(section.items) >= 2
+    assert any(note.startswith("Detalhe") for note in section.notes)
+
+
+def test_note_line_requires_active_section() -> None:
+    body = "Top 5 (template fechamento_producao_servico):\nPPF: R$ 442.570,00 (17,26%)"
+    report = RuleEngine(ParsingRulesConfig.default()).parse_report(
+        subject="Fechamento",
+        body=body,
+        from_name="Orion",
+    )
+    assert not report.sections
+    assert not report.alerts
+
+
+def test_note_line_disabled_skips_notes() -> None:
+    config = ParsingRulesConfig(
+        sections=default_section_rules(),
+        line_rules=default_line_rules(),
+        heading_router=default_heading_router(),
+        collection_prefix_rules=default_collection_prefix_rules(),
+        collection_continuation=default_collection_continuation_policy(),
+        note_line_rules=(
+            NoteLineRule(
+                id="detail_top_observation",
+                pattern=r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$",
+                enabled=False,
+            ),
+        ),
+    )
+    body = (
+        "Faturamento e comissão por concessionária — Total: R$ 355.437,45\n"
+        "Top 5 (template fechamento_faturamento_comissao_concessionaria_periodo):\n"
+        "PORSCHE: R$ 41.195,20 (11,59%)"
+    )
+    report = RuleEngine(config).parse_report(subject="Fechamento", body=body, from_name="Orion")
+    assert not report.sections[0].notes
 
 
 def test_rule_engine_respects_custom_section_rule() -> None:

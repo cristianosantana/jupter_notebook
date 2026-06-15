@@ -130,6 +130,29 @@ class CollectionContinuationPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class NoteLineRule:
+    """Linha de nota em seção ativa — Detalhe / Top N / Observação (PR9)."""
+
+    id: str
+    pattern: str
+    requires_active_section: bool = True
+    split_inline_items: bool = True
+    enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledNoteLineRule:
+    rule: NoteLineRule
+    pattern: re.Pattern[str]
+
+
+@dataclass(frozen=True, slots=True)
+class NoteLineMatch:
+    rule: NoteLineRule
+    groups: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class ParsingRulesConfig:
     """Configuração do motor de regras — ordem de `sections` e `line_rules` define prioridade."""
 
@@ -138,6 +161,7 @@ class ParsingRulesConfig:
     heading_router: MarkdownHeadingRouter | None = None
     collection_prefix_rules: tuple[CollectionPrefixRule, ...] = ()
     collection_continuation: CollectionContinuationPolicy | None = None
+    note_line_rules: tuple[NoteLineRule, ...] = ()
     skip_line_prefixes: tuple[str, ...] = (
         "template:",
         "linhas disponíveis:",
@@ -161,6 +185,13 @@ class ParsingRulesConfig:
             if rule.enabled
         )
 
+    def compile_note_line_rules(self) -> tuple[CompiledNoteLineRule, ...]:
+        return tuple(
+            CompiledNoteLineRule(rule=rule, pattern=re.compile(rule.pattern, re.I))
+            for rule in self.note_line_rules
+            if rule.enabled
+        )
+
     def rule_by_id(self, rule_id: str) -> SectionOpenRule | None:
         for rule in self.sections:
             if rule.id == rule_id and rule.enabled:
@@ -175,6 +206,7 @@ class ParsingRulesConfig:
             heading_router=default_heading_router(),
             collection_prefix_rules=default_collection_prefix_rules(),
             collection_continuation=default_collection_continuation_policy(),
+            note_line_rules=default_note_line_rules(),
         )
 
 
@@ -278,6 +310,16 @@ def default_collection_prefix_rules() -> tuple[CollectionPrefixRule, ...]:
     )
 
 
+def default_note_line_rules() -> tuple[NoteLineRule, ...]:
+    """Regras padrão espelhando `_NOTE_RX` do parser legado."""
+    return (
+        NoteLineRule(
+            id="detail_top_observation",
+            pattern=r"^(Detalhe|Top\s+\d+|Observação)\b(?P<note>.*)$",
+        ),
+    )
+
+
 def default_line_rules() -> tuple[LineRule, ...]:
     """Regras de linha padrão — PR1–PR4 Destaque, Dominante, Concentração, Omitted."""
     return (
@@ -317,6 +359,20 @@ def default_line_rules() -> tuple[LineRule, ...]:
             flush_if_missing_or_current_title_in=("Resposta direta",),
         ),
     )
+
+
+def match_note_line_rule(
+    raw: str,
+    compiled_rules: tuple[CompiledNoteLineRule, ...],
+) -> NoteLineMatch | None:
+    """Retorna a primeira regra de nota que corresponde à linha."""
+    for compiled in compiled_rules:
+        match = compiled.pattern.match(raw)
+        if match is None:
+            continue
+        groups = {key: (value or "").strip() for key, value in match.groupdict().items() if value is not None}
+        return NoteLineMatch(rule=compiled.rule, groups=groups)
+    return None
 
 
 def try_apply_collection_continuation(
