@@ -73,6 +73,12 @@ def _parse_row_date(value: Any) -> date | None:
         s = value.strip()
         if not s:
             return None
+        if len(s) == 7 and s[4] == "-":
+            try:
+                y, m = int(s[0:4]), int(s[5:7])
+                return date(y, m, 1)
+            except ValueError:
+                return None
         try:
             return date.fromisoformat(s[:10])
         except ValueError:

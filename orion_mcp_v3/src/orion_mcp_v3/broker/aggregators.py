@@ -36,6 +36,14 @@ def _parse_time(value: Any) -> datetime | None:
         return datetime.combine(value, datetime.min.time())
     if isinstance(value, str):
         s = value.strip()
+        if not s:
+            return None
+        if len(s) == 7 and s[4] == "-":
+            try:
+                y, m = int(s[0:4]), int(s[5:7])
+                return datetime(y, m, 1)
+            except ValueError:
+                return None
         if len(s) >= 10 and s[4] == "-" and s[7] == "-":
             try:
                 y, m, d = int(s[0:4]), int(s[5:7]), int(s[8:10])

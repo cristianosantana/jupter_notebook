@@ -86,6 +86,11 @@ class OrionSettings(BaseSettings):
         False,
         description="Usar motor de regras (build_report_from_rules) em vez do parser legado para evidência estruturada.",
     )
+    email_min_body_chars: int = Field(
+        50,
+        ge=0,
+        description="Mínimo de caracteres no corpo narrativo para enviar e-mail; 0 desabilita o guard.",
+    )
 
     # ── Runtime cognitivo ────────────────────────────────────────────
     max_tokens: int = Field(4096, ge=64, le=128000, description="Orçamento default do prompt.")

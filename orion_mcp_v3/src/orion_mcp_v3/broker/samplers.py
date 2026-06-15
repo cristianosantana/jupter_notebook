@@ -9,31 +9,13 @@ from typing import Any
 
 from dataclasses import dataclass
 
-from orion_mcp_v3.broker.aggregators import top_n
+from orion_mcp_v3.broker.aggregators import _parse_time, top_n
 from orion_mcp_v3.contracts.cognitive_artifact import (
     CognitiveArtifact,
     artifact_provenance_anchor,
     heuristic_confidence_from_volume,
 )
 from orion_mcp_v3.runtime.provenance import CoverageInfo
-
-
-def _parse_time(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time())
-    if isinstance(value, str):
-        s = value.strip()
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            try:
-                y, m, d = int(s[0:4]), int(s[5:7]), int(s[8:10])
-                return datetime(y, m, d)
-            except ValueError:
-                return None
-    return None
 
 
 def recent_sampler(
