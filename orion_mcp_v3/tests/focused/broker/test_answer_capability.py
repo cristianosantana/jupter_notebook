@@ -823,3 +823,60 @@ def test_crossing_revenue_question_without_dates_is_comparative() -> None:
     assert plan.needs_comparison is True
     assert plan.hints["signals"]["comparative"] is True
     assert plan.time_scope is None
+
+
+def test_evidence_aggregator_stores_full_summary_when_result_scope_is_top_n() -> None:
+    rows = [
+        {
+            "caixa_tipo_id": 1,
+            "caixa_tipo": "Cartão de Crédito",
+            "periodo": "2025-09",
+            "total_pagamentos": "1755398.76",
+            "total_estornos": "0.00",
+            "total_liquido": "1755398.76",
+        },
+        {
+            "caixa_tipo_id": 2,
+            "caixa_tipo": "PIX",
+            "periodo": "2025-09",
+            "total_pagamentos": "382387.40",
+            "total_estornos": "0.00",
+            "total_liquido": "382387.40",
+        },
+        {
+            "caixa_tipo_id": 3,
+            "caixa_tipo": "Dinheiro",
+            "periodo": "2025-09",
+            "total_pagamentos": "79382.50",
+            "total_estornos": "0.00",
+            "total_liquido": "79382.50",
+        },
+    ]
+
+    evidence = EvidenceAggregator().merge(
+        [
+            _result(
+                "fechamento_faturamento_tipo_pagamento",
+                rows,
+                hints={
+                    "selected_metric": "total_liquido",
+                    "selected_dimension": "caixa_tipo",
+                    "selected_operation": "ranking_desc",
+                    "result_scope": {"mode": "top_n", "limit": 1},
+                    "sort": {"field": "total_liquido", "direction": "desc"},
+                },
+            )
+        ],
+        templates=ANALYTICS_TEMPLATES,
+        query_text="Qual forma de pagamento domina o faturamento em setembro de 2025?",
+    )
+
+    direct = evidence.supporting_data["direct_answer"]
+    assert "Cartão de Crédito" in direct["summary"]
+    assert "PIX" not in direct["summary"]
+    assert "full_summary" in direct
+    assert "Cartão de Crédito" in direct["full_summary"]
+    assert "PIX" in direct["full_summary"]
+    assert "Dinheiro" in direct["full_summary"]
+    assert "1. Cartão de Crédito" in direct["full_summary"]
+    assert "2. PIX" in direct["full_summary"]

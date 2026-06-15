@@ -31,6 +31,7 @@ from orion_mcp_v3.api.models import (
     UsageInfo,
 )
 from orion_mcp_v3.api.email import EmailSendRequest, EmailSendResult
+from orion_mcp_v3.api.email.structured_evidence import structured_email_evidence_from
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
@@ -179,13 +180,6 @@ def _direct_answer_literal_preservation_enabled(evidence: EvidenceBlock | None) 
         (isinstance(scope, Mapping) and scope.get("mode") == "all")
         or plan.get("operation") == "list"
     )
-
-
-def _structured_email_evidence_from(evidence: EvidenceBlock | None) -> str | None:
-    if evidence is None:
-        return None
-    summary = (evidence.summary or "").strip()
-    return summary or None
 
 
 def _should_interpret_with_llm(
@@ -848,7 +842,7 @@ def create_chat_router(
                 cognitive_plan,
                 req,
                 trace_pipe=trace_pipe,
-                structured_evidence=_structured_email_evidence_from(evidence),
+                structured_evidence=structured_email_evidence_from(evidence),
             )
 
         if trace_pipe:
@@ -863,13 +857,6 @@ def create_chat_router(
             )
 
         narration = await narr.narrate(orch_result)
-        email_delivery = await _send_response_email(
-            req,
-            narration.narration,
-            conversation_id=session.conversation_id,
-            structured_evidence=_structured_email_evidence_from(evidence),
-            trace_enabled=trace_pipe,
-        )
 
         if trace_pipe:
             log_pipeline_event(
@@ -882,6 +869,15 @@ def create_chat_router(
                     "coverage_note_chars": len(narration.coverage_note or ""),
                 },
             )
+
+        email_delivery = await _send_response_email(
+            req,
+            narration.narration,
+            conversation_id=session.conversation_id,
+            structured_evidence=structured_email_evidence_from(evidence),
+            trace_enabled=trace_pipe,
+        )
+
         elapsed = (time.monotonic() - t0) * 1000.0
 
         await sm.record_assistant_message(session, narration.narration)
