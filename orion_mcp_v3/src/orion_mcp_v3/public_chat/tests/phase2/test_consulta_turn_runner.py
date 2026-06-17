@@ -44,7 +44,7 @@ async def test_audit_chain_miss_path() -> None:
         "query_original": "faturamento maio?",
         "created_at": "2026-06-16T00:00:00+00:00",
     }
-    conn.fetchrow.side_effect = [insert_row, {"thread_id": thread_id}, insert_row]
+    conn.fetchrow.side_effect = [insert_row, {"thread_id": thread_id}, insert_row, None]
     conn.fetchval.return_value = response_id
     conn.execute.return_value = "INSERT 0 1"
 
@@ -110,7 +110,7 @@ async def test_runner_miss_end_to_end() -> None:
         "query_original": "oi",
         "created_at": "2026-06-16T00:00:00+00:00",
     }
-    conn.fetchrow.side_effect = [insert_row, {"thread_id": thread_id}, insert_row]
+    conn.fetchrow.side_effect = [insert_row, {"thread_id": thread_id}, insert_row, None]
     conn.fetchval.return_value = response_id
     conn.execute.return_value = "INSERT 0 1"
 

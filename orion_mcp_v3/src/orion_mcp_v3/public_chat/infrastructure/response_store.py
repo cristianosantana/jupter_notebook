@@ -44,7 +44,8 @@ WHERE "id" = $1
 """
 
 _FIND_RESOLUTION = """
-SELECT "id", "topic", "semantic_hash", "answer_payload", "knowledge_fingerprint", "expires_at"
+SELECT "id", "topic", "semantic_hash", "answer_payload", "knowledge_fingerprint",
+       "presentation_snapshot", "expires_at"
 FROM "public"."public_chat_responses"
 WHERE "topic" = $1
   AND "semantic_hash" = $2
@@ -57,13 +58,15 @@ INSERT INTO "public"."public_chat_responses" (
     "semantic_hash",
     "answer_payload",
     "knowledge_fingerprint",
+    "presentation_snapshot",
     "expires_at"
 )
-VALUES ($1, $2, $3::jsonb, $4, $5)
+VALUES ($1, $2, $3::jsonb, $4, $5, $6)
 ON CONFLICT ("topic", "semantic_hash")
 DO UPDATE SET
     "answer_payload" = EXCLUDED."answer_payload",
     "knowledge_fingerprint" = EXCLUDED."knowledge_fingerprint",
+    "presentation_snapshot" = EXCLUDED."presentation_snapshot",
     "expires_at" = EXCLUDED."expires_at"
 RETURNING "id"
 """
@@ -91,6 +94,7 @@ class CachedResolution:
     semantic_hash: str
     answer_payload: AnswerPayload
     knowledge_fingerprint: str
+    presentation_snapshot: str | None
     expires_at: datetime
 
 
@@ -195,6 +199,7 @@ class ResponseStore:
         answer_payload: AnswerPayload | dict,
         knowledge_fingerprint: str,
         cache_ttl_days: int = 90,
+        presentation_snapshot: str | None = None,
     ) -> UUID:
         payload = (
             answer_payload.as_mapping()
@@ -209,6 +214,7 @@ class ResponseStore:
                 semantic_hash,
                 json.dumps(payload, ensure_ascii=False),
                 knowledge_fingerprint,
+                presentation_snapshot,
                 expires_at,
             )
         if response_id is None:
@@ -270,5 +276,6 @@ def _row_to_resolution(row: asyncpg.Record) -> CachedResolution:
         semantic_hash=row["semantic_hash"],
         answer_payload=AnswerPayload.from_mapping(payload_data),
         knowledge_fingerprint=row["knowledge_fingerprint"],
+        presentation_snapshot=row["presentation_snapshot"],
         expires_at=row["expires_at"],
     )

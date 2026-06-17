@@ -16,6 +16,8 @@ public_chat/
   docs/                     ← documentação do módulo
   domain/                   ← contrato, tópico, hash, regras puras
   application/              ← orquestração de turno
+  api/                      ← POST /api/v1/public/ask (SSE)
+  integration/              ← mount_public_chat (cola Orion)
   infrastructure/
     postgres/               ← pool, migrações, apply
     intent_interpreter.py
@@ -42,10 +44,14 @@ public_chat/
 Copie `.env.example` para `.env` na pasta `public_chat/` ou use variáveis no `.env` do projeto:
 
 ```bash
+PUBLIC_CHAT_ENABLED=false
 PUBLIC_CHAT_POSTGRES_URL=postgresql://postgres:secret@127.0.0.1:5432/dev
+PUBLIC_CHAT_LLM_API_KEY=sk-...
 PUBLIC_CHAT_CONTEXT_DEPTH=3
 PUBLIC_CHAT_INTENT_MIN_CONFIDENCE=0.5
 ```
+
+Com `PUBLIC_CHAT_ENABLED=true` e credenciais válidas, o endpoint fica disponível em `POST /api/v1/public/ask` (SSE).
 
 ## Migrações
 
@@ -59,7 +65,9 @@ Ver [`infrastructure/postgres/migrations/README.md`](infrastructure/postgres/mig
 ## Testes
 
 ```bash
-pytest src/orion_mcp_v3/public_chat/tests/phase1/ -v
+pytest src/orion_mcp_v3/public_chat/tests/phase1/ \
+       src/orion_mcp_v3/public_chat/tests/phase2/ \
+       src/orion_mcp_v3/public_chat/tests/phase3/ -v
 ```
 
 ## Fases de implementação
@@ -68,6 +76,6 @@ pytest src/orion_mcp_v3/public_chat/tests/phase1/ -v
 |---|---|---|
 | 1 | Concluída | Schema, domain, intent LLM, perguntas encadeadas |
 | 2 | Concluída | Retrieval `memory_*`, narrador, runner cache-miss |
-| 3 | Pendente | Cache hit, API `POST /ask`, wiring |
+| 3 | Concluída | Cache hit, API `POST /ask`, wiring via `integration/` |
 
 Documentação detalhada: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

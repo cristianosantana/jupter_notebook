@@ -21,8 +21,17 @@ def _env_float(name: str, default: float) -> float:
     return float(raw)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class PublicChatSettings:
+    enabled: bool = False
+    use_presentation_snapshot: bool = False
     postgres_url: str = ""
     postgres_pool_min: int = 1
     postgres_pool_max: int = 10
@@ -56,6 +65,15 @@ class PublicChatSettings:
     def effective_embedding_api_key(self) -> str:
         return (self.embedding_api_key or self.llm_api_key).strip()
 
+    @property
+    def runtime_ready(self) -> bool:
+        return (
+            self.enabled
+            and self.postgres_enabled
+            and self.llm_enabled
+            and self.embedding_enabled
+        )
+
     @classmethod
     def from_env(cls, *, env_file: Path | None = None) -> PublicChatSettings:
         if env_file is not None and env_file.is_file():
@@ -67,6 +85,8 @@ class PublicChatSettings:
         ).strip()
         llm_base = os.environ.get("PUBLIC_CHAT_LLM_BASE_URL")
         return cls(
+            enabled=_env_bool("PUBLIC_CHAT_ENABLED", False),
+            use_presentation_snapshot=_env_bool("PUBLIC_CHAT_USE_PRESENTATION_SNAPSHOT", False),
             postgres_url=url,
             postgres_pool_min=_env_int("PUBLIC_CHAT_POSTGRES_POOL_MIN", 1),
             postgres_pool_max=_env_int("PUBLIC_CHAT_POSTGRES_POOL_MAX", 10),

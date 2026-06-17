@@ -60,6 +60,7 @@ async def test_find_resolution_returns_cached_payload() -> None:
             "essence_themes": [],
         },
         "knowledge_fingerprint": "fp",
+        "presentation_snapshot": None,
         "expires_at": datetime(2099, 1, 1, tzinfo=timezone.utc),
     }
     store = ResponseStore(_pool_with_conn(conn))
