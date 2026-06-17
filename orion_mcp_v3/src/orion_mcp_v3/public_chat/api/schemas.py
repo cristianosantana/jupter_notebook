@@ -12,11 +12,8 @@ class AskRequest(BaseModel):
     parent_question_id: UUID | None = None
 
 
-class AskDeltaEvent(BaseModel):
-    delta: str
-
-
-class AskFinishEvent(BaseModel):
+class AskResponse(BaseModel):
+    message: str
     finish_reason: str = "stop"
     question_id: str
     thread_id: str
