@@ -6,6 +6,16 @@ import hashlib
 import json
 from typing import Any, Mapping, Sequence
 
+from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado
+
+
+def build_knowledge_fingerprint_from_knowledge(knowledge: ConhecimentoRecuperado) -> str:
+    return build_knowledge_fingerprint(
+        validated_answers=[hit.validated_answer for hit in knowledge.hits],
+        key_metrics=[dict(hit.key_metrics) for hit in knowledge.hits],
+        essence_themes=[item.theme for item in knowledge.essence],
+    )
+
 
 def build_knowledge_fingerprint(
     *,

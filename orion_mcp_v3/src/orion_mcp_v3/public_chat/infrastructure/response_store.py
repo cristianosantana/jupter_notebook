@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -11,6 +12,7 @@ import asyncpg
 
 from orion_mcp_v3.public_chat.domain.errors import InvalidParentQuestionError
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
+from orion_mcp_v3.public_chat.domain.knowledge import AnswerPayload
 from orion_mcp_v3.public_chat.domain.models import AncestorTurn, PublicQuestion
 
 _INSERT_QUESTION = """
@@ -40,6 +42,56 @@ SELECT "id", "thread_id", "parent_question_id", "topic", "intent_contract",
 FROM "public"."public_chat_questions"
 WHERE "id" = $1
 """
+
+_FIND_RESOLUTION = """
+SELECT "id", "topic", "semantic_hash", "answer_payload", "knowledge_fingerprint", "expires_at"
+FROM "public"."public_chat_responses"
+WHERE "topic" = $1
+  AND "semantic_hash" = $2
+  AND "expires_at" > now()
+"""
+
+_UPSERT_RESOLUTION = """
+INSERT INTO "public"."public_chat_responses" (
+    "topic",
+    "semantic_hash",
+    "answer_payload",
+    "knowledge_fingerprint",
+    "expires_at"
+)
+VALUES ($1, $2, $3::jsonb, $4, $5)
+ON CONFLICT ("topic", "semantic_hash")
+DO UPDATE SET
+    "answer_payload" = EXCLUDED."answer_payload",
+    "knowledge_fingerprint" = EXCLUDED."knowledge_fingerprint",
+    "expires_at" = EXCLUDED."expires_at"
+RETURNING "id"
+"""
+
+_LINK_QUESTION_RESPONSE = """
+INSERT INTO "public"."public_chat_question_responses" (
+    "question_id",
+    "response_id",
+    "is_repeat",
+    "presentation_delivered"
+)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT ("question_id", "response_id")
+DO UPDATE SET
+    "is_repeat" = EXCLUDED."is_repeat",
+    "presentation_delivered" = EXCLUDED."presentation_delivered",
+    "linked_at" = now()
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class CachedResolution:
+    id: UUID
+    topic: str
+    semantic_hash: str
+    answer_payload: AnswerPayload
+    knowledge_fingerprint: str
+    expires_at: datetime
 
 
 class ResponseStore:
@@ -128,6 +180,58 @@ class ResponseStore:
         async with self._pool.acquire() as conn:
             return await conn.fetchrow(_SELECT_QUESTION, question_id)
 
+    async def find_resolution(self, topic: str, semantic_hash: str) -> CachedResolution | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(_FIND_RESOLUTION, topic, semantic_hash)
+        if row is None:
+            return None
+        return _row_to_resolution(row)
+
+    async def upsert_resolution(
+        self,
+        *,
+        topic: str,
+        semantic_hash: str,
+        answer_payload: AnswerPayload | dict,
+        knowledge_fingerprint: str,
+        cache_ttl_days: int = 90,
+    ) -> UUID:
+        payload = (
+            answer_payload.as_mapping()
+            if isinstance(answer_payload, AnswerPayload)
+            else answer_payload
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, cache_ttl_days))
+        async with self._pool.acquire() as conn:
+            response_id = await conn.fetchval(
+                _UPSERT_RESOLUTION,
+                topic,
+                semantic_hash,
+                json.dumps(payload, ensure_ascii=False),
+                knowledge_fingerprint,
+                expires_at,
+            )
+        if response_id is None:
+            raise RuntimeError("failed to upsert public_chat resolution")
+        return response_id
+
+    async def link_question_response(
+        self,
+        *,
+        question_id: UUID,
+        response_id: UUID,
+        is_repeat: bool,
+        presentation_delivered: str,
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                _LINK_QUESTION_RESPONSE,
+                question_id,
+                response_id,
+                is_repeat,
+                presentation_delivered,
+            )
+
 
 def _contract_from_json(value: Any) -> IntentContract:
     if isinstance(value, str):
@@ -149,4 +253,22 @@ def _row_to_question(row: asyncpg.Record) -> PublicQuestion:
         semantic_hash=row["semantic_hash"],
         query_original=row["query_original"],
         created_at=row["created_at"],
+    )
+
+
+def _row_to_resolution(row: asyncpg.Record) -> CachedResolution:
+    payload_raw = row["answer_payload"]
+    if isinstance(payload_raw, str):
+        payload_data = json.loads(payload_raw)
+    elif isinstance(payload_raw, dict):
+        payload_data = payload_raw
+    else:
+        payload_data = {}
+    return CachedResolution(
+        id=row["id"],
+        topic=row["topic"],
+        semantic_hash=row["semantic_hash"],
+        answer_payload=AnswerPayload.from_mapping(payload_data),
+        knowledge_fingerprint=row["knowledge_fingerprint"],
+        expires_at=row["expires_at"],
     )

@@ -67,7 +67,7 @@ pytest src/orion_mcp_v3/public_chat/tests/phase1/ -v
 | Fase | Estado | Entrega |
 |---|---|---|
 | 1 | Concluída | Schema, domain, intent LLM, perguntas encadeadas |
-| 2 | Pendente | Retrieval `memory_*`, narrador, runner cache-miss |
+| 2 | Concluída | Retrieval `memory_*`, narrador, runner cache-miss |
 | 3 | Pendente | Cache hit, API `POST /ask`, wiring |
 
 Documentação detalhada: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

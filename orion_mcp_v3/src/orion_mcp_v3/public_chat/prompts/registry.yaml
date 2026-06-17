@@ -1,2 +1,3 @@
 prompts:
   - public_chat_intent.yaml
+  - public_chat_narrator.yaml

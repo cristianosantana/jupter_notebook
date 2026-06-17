@@ -1,22 +1,22 @@
 ---
-name: "Chat Público Fase 2"
-overview: "Leitura remissiva (memory_*), narrador, ConsultaTurnRunner caminho cache-miss — retrieve, narrar, gravar answer_payload. Sem cache hit nem API."
+name: Chat Público Fase 2
+overview: Leitura remissiva (memory_*), narrador, ConsultaTurnRunner caminho cache-miss — retrieve, narrar, gravar answer_payload. Sem cache hit nem API.
 todos:
   - id: f2-remissive-reader
     content: PublicRemissiveReader (SQL próprio) + RemissiveRetriever retrieve/reload_from_payload
-    status: pending
+    status: completed
   - id: f2-narrator
     content: prompt public_chat_narrator.yaml + infrastructure/narrator.py
-    status: pending
+    status: completed
   - id: f2-response-store-cache
     content: ResponseStore — find/upsert resolution, link pivot, knowledge_fingerprint
-    status: pending
+    status: completed
   - id: f2-runner-miss
     content: ConsultaTurnRunner v1 — só cache miss (intent → miss → retrieve → narrate → persist)
-    status: pending
+    status: completed
   - id: f2-tests
     content: Testes phase2 + auditoria + guardrail sem embedding em public_chat_*
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -8,10 +8,13 @@ FORBIDDEN_IMPORTS = (
     "RemissiveMemoryStore",
     "orion_mcp_v3.api.routes.chat",
     "orion_mcp_v3.memory.retrieval_pipeline",
+    "orion_mcp_v3.memory.remissive",
     "orion_mcp_v3.prompts",
     "orion_mcp_v3.connection_hub",
     "orion_mcp_v3.infra.postgres",
     "orion_mcp_v3.config.settings",
+    "orion_mcp_v3.providers",
+    "CognitiveNarrator",
 )
 
 PUBLIC_CHAT_ROOT = Path(__file__).resolve().parents[2]
