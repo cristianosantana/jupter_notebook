@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from uuid import UUID
@@ -14,6 +15,16 @@ from orion_mcp_v3.public_chat.domain.knowledge_fingerprint import (
 )
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
+from orion_mcp_v3.public_chat.infrastructure.pipeline_snapshots import (
+    log_cache_resolution,
+    log_cache_stored,
+    log_qa_turn_summary,
+    snapshot_intent,
+)
+from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import (
+    log_public_chat_event,
+    preview_message,
+)
 from orion_mcp_v3.public_chat.infrastructure.remissive_retriever import RemissiveRetriever
 from orion_mcp_v3.public_chat.infrastructure.response_store import CachedResolution, ResponseStore
 
@@ -60,6 +71,16 @@ class ConsultaTurnRunner:
         *,
         parent_question_id: UUID | None = None,
     ) -> AsyncIterator[TurnStreamChunk]:
+        t0 = time.monotonic()
+        log_public_chat_event(
+            etapa="runner.turn",
+            fase="pre",
+            dados={
+                **preview_message(message),
+                "parent_question_id": str(parent_question_id) if parent_question_id else None,
+            },
+        )
+
         ancestors = await load_context_window(
             self._store,
             parent_question_id,
@@ -77,7 +98,29 @@ class ConsultaTurnRunner:
             parent_question_id=parent_question_id,
         )
 
+        log_public_chat_event(
+            etapa="runner.intent_persisted",
+            fase="post",
+            dados={
+                "question_id": str(question.id),
+                "thread_id": str(question.thread_id),
+                "topic": topic,
+                "semantic_hash": semantic_hash,
+                "intent": contract.intent,
+                "confidence": contract.confidence,
+                "ancestor_count": len(ancestors),
+                "contract": snapshot_intent(contract),
+                **preview_message(message),
+            },
+        )
+
         cached = await self._store.find_resolution(topic, semantic_hash)
+        log_cache_resolution(
+            cache_hit=cached is not None,
+            topic=topic,
+            semantic_hash=semantic_hash,
+            cached=cached,
+        )
         if cached is not None:
             async for chunk in self._run_cache_hit(
                 message=message,
@@ -87,8 +130,19 @@ class ConsultaTurnRunner:
                 topic=topic,
                 semantic_hash=semantic_hash,
                 cached=cached,
+                intent=contract.intent,
+                confidence=contract.confidence,
             ):
                 yield chunk
+            log_public_chat_event(
+                etapa="runner.turn",
+                fase="post",
+                dados={
+                    "path": "cache_hit",
+                    "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
+                    "question_id": str(question.id),
+                },
+            )
             return
 
         async for chunk in self._run_cache_miss(
@@ -98,8 +152,19 @@ class ConsultaTurnRunner:
             parent_question_id=question.parent_question_id,
             topic=topic,
             semantic_hash=semantic_hash,
+            intent=contract.intent,
+            confidence=contract.confidence,
         ):
             yield chunk
+        log_public_chat_event(
+            etapa="runner.turn",
+            fase="post",
+            dados={
+                "path": "cache_miss",
+                "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
+                "question_id": str(question.id),
+            },
+        )
 
     async def run_turn_miss_only(
         self,
@@ -108,6 +173,11 @@ class ConsultaTurnRunner:
         parent_question_id: UUID | None = None,
     ) -> AsyncIterator[str]:
         """v1 — ignora cache hit (compatibilidade phase2)."""
+        log_public_chat_event(
+            etapa="runner.turn_miss_only",
+            fase="pre",
+            dados=preview_message(message),
+        )
         ancestors = await load_context_window(
             self._store,
             parent_question_id,
@@ -132,6 +202,8 @@ class ConsultaTurnRunner:
             parent_question_id=question.parent_question_id,
             topic=topic,
             semantic_hash=semantic_hash,
+            intent=contract.intent,
+            confidence=contract.confidence,
         ):
             if chunk.delta:
                 yield chunk.delta
@@ -163,7 +235,16 @@ class ConsultaTurnRunner:
         topic: str,
         semantic_hash: str,
         cached: CachedResolution,
+        intent: str,
+        confidence: float,
     ) -> AsyncIterator[TurnStreamChunk]:
+        t0 = time.monotonic()
+        log_public_chat_event(
+            etapa="runner.cache_hit",
+            fase="pre",
+            dados={"response_id": str(cached.id), "topic": topic},
+        )
+
         knowledge = await self._retriever.reload_from_payload(cached.answer_payload)
         new_fingerprint = build_knowledge_fingerprint_from_knowledge(knowledge)
         fingerprint_stale = new_fingerprint != cached.knowledge_fingerprint
@@ -171,6 +252,14 @@ class ConsultaTurnRunner:
         snapshot: str | None = cached.presentation_snapshot
 
         if fingerprint_stale:
+            log_public_chat_event(
+                etapa="runner.fingerprint_stale",
+                fase="post",
+                dados={
+                    "old_fingerprint": cached.knowledge_fingerprint,
+                    "new_fingerprint": new_fingerprint,
+                },
+            )
             answer_payload = build_answer_payload(knowledge)
             response_id = await self._store.upsert_resolution(
                 topic=topic,
@@ -180,7 +269,6 @@ class ConsultaTurnRunner:
                 cache_ttl_days=self._settings.cache_ttl_days,
                 presentation_snapshot=None,
             )
-            snapshot = None
 
         use_snapshot = (
             not fingerprint_stale
@@ -189,6 +277,11 @@ class ConsultaTurnRunner:
         )
 
         if use_snapshot:
+            log_public_chat_event(
+                etapa="runner.presentation_snapshot",
+                fase="post",
+                dados={"used": True, "snapshot_chars": len(snapshot or "")},
+            )
             presentation = snapshot or ""
             if presentation:
                 yield TurnStreamChunk(delta=presentation)
@@ -214,6 +307,37 @@ class ConsultaTurnRunner:
             is_repeat=True,
             presentation_delivered=presentation,
         )
+        log_public_chat_event(
+            etapa="runner.cache_hit",
+            fase="post",
+            dados={
+                "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
+                "fingerprint_stale": fingerprint_stale,
+                "used_snapshot": use_snapshot,
+                "presentation_chars": len(presentation),
+                "is_repeat": True,
+            },
+        )
+        answer_payload = build_answer_payload(knowledge)
+        log_qa_turn_summary(
+            pergunta=message,
+            resposta=presentation,
+            question_id=str(question_id),
+            thread_id=str(thread_id),
+            response_id=str(response_id),
+            cached=True,
+            cache_path="cache_hit",
+            topic=topic,
+            semantic_hash=semantic_hash,
+            intent=intent,
+            confidence=confidence,
+            is_repeat=True,
+            knowledge=knowledge,
+            answer_payload=answer_payload,
+            cache_resolution=cached,
+            fingerprint_stale=fingerprint_stale,
+            used_presentation_snapshot=use_snapshot,
+        )
         yield TurnStreamChunk(
             result=TurnResult(
                 question_id=question_id,
@@ -236,7 +360,16 @@ class ConsultaTurnRunner:
         parent_question_id: UUID | None,
         topic: str,
         semantic_hash: str,
+        intent: str,
+        confidence: float,
     ) -> AsyncIterator[TurnStreamChunk]:
+        t0 = time.monotonic()
+        log_public_chat_event(
+            etapa="runner.cache_miss",
+            fase="pre",
+            dados={"topic": topic, "semantic_hash": semantic_hash},
+        )
+
         knowledge = await self._retriever.retrieve(message)
         presentation_parts: list[str] = []
         async for delta in self._narrator.stream(message, knowledge):
@@ -260,6 +393,43 @@ class ConsultaTurnRunner:
             response_id=response_id,
             is_repeat=False,
             presentation_delivered=presentation,
+        )
+        log_cache_stored(
+            response_id=str(response_id),
+            topic=topic,
+            semantic_hash=semantic_hash,
+            answer_payload=answer_payload,
+            knowledge_fingerprint=knowledge_fingerprint,
+            is_repeat=False,
+            presentation_chars=len(presentation),
+            stored_snapshot=snapshot is not None,
+        )
+        log_public_chat_event(
+            etapa="runner.cache_miss",
+            fase="post",
+            dados={
+                "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
+                "response_id": str(response_id),
+                "knowledge_fingerprint": knowledge_fingerprint,
+                "presentation_chars": len(presentation),
+                "is_repeat": False,
+            },
+        )
+        log_qa_turn_summary(
+            pergunta=message,
+            resposta=presentation,
+            question_id=str(question_id),
+            thread_id=str(thread_id),
+            response_id=str(response_id),
+            cached=False,
+            cache_path="cache_miss",
+            topic=topic,
+            semantic_hash=semantic_hash,
+            intent=intent,
+            confidence=confidence,
+            is_repeat=False,
+            knowledge=knowledge,
+            answer_payload=answer_payload,
         )
         yield TurnStreamChunk(
             result=TurnResult(

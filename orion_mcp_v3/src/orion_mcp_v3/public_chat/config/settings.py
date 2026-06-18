@@ -48,6 +48,12 @@ class PublicChatSettings:
     ivfflat_probes: int = 10
     retrieval_limit: int = 5
     cache_ttl_days: int = 90
+    pipeline_trace: bool = True
+    pipeline_log_dir: str = "logs/public_chat"
+
+    @property
+    def pipeline_file_logging_enabled(self) -> bool:
+        return self.pipeline_trace and bool(self.pipeline_log_dir.strip())
 
     @property
     def postgres_enabled(self) -> bool:
@@ -105,6 +111,10 @@ class PublicChatSettings:
             ivfflat_probes=_env_int("PUBLIC_CHAT_IVFFLAT_PROBES", 10),
             retrieval_limit=_env_int("PUBLIC_CHAT_RETRIEVAL_LIMIT", 5),
             cache_ttl_days=_env_int("PUBLIC_CHAT_CACHE_TTL_DAYS", 90),
+            pipeline_trace=_env_bool("PUBLIC_CHAT_PIPELINE_TRACE", True),
+            pipeline_log_dir=(
+                os.environ.get("PUBLIC_CHAT_PIPELINE_LOG_DIR") or "logs/public_chat"
+            ).strip(),
         )
 
 

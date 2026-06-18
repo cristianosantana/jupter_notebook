@@ -80,6 +80,52 @@ pytest src/orion_mcp_v3/public_chat/tests/phase1/ \
 
 Documentação detalhada: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Logging do pipeline (ficheiro JSONL)
+
+Eventos estruturados gravados em **ficheiro** (não no terminal). Logger: `orion.public_chat.pipeline` com `propagate=False`.
+
+| Variável | Default |
+|---|---|
+| `PUBLIC_CHAT_PIPELINE_TRACE` | `true` |
+| `PUBLIC_CHAT_PIPELINE_LOG_DIR` | `logs/public_chat` |
+
+Ficheiro gerado por sessão uvicorn:
+
+```
+logs/public_chat/public_chat_pipeline_20260616T130209Z.jsonl
+```
+
+| Etapa | Onde |
+|---|---|
+| `api.ask` | Entrada/saída HTTP |
+| `runner.turn` | Orquestração do turno |
+| `context_window.load` | Cadeia ancestral |
+| `intent.interpret` | LLM de intenção |
+| `reader.search_origin_ids` | Busca vetorial |
+| `retriever.retrieve` / `reload_from_payload` | Retrieval |
+| `narrator.stream` | Narrativa |
+| `runner.cache_hit` / `cache_miss` | Ramo de cache |
+
+Cada pedido recebe um `trace_id` (UUID) correlacionado em todos os eventos do turno.
+
+Eventos-chave para auditoria **pergunta → resposta**:
+
+| Etapa | Conteúdo |
+|---|---|
+| `qa.turn_summary` | Pergunta, resposta, cache, memory_* consolidados |
+| `memory.accessed` | Hits de `memory_curta` / `memory_essence` com métricas e previews |
+| `cache.resolution` | Resultado do lookup `(topic, semantic_hash)` |
+| `cache.stored` | Payload gravado em `public_chat_responses` |
+| `reader.search_origin_ids` | Matches vetoriais (`memory_embeddings`) com scores |
+
+Exemplo de linha no JSONL:
+
+```json
+{"canal":"public_chat_pipeline","etapa":"api.ask","fase":"post","trace_id":"...","dados":{"latency_ms":842.1,"cached":false}}
+```
+
+Desactivar gravação: `PUBLIC_CHAT_PIPELINE_TRACE=false`
+
 
 ## Como servir o orion_mcp_v3.public_chat com uvicorn?
 

@@ -15,3 +15,16 @@ except ImportError:
 if load_dotenv is not None:
     load_dotenv(_MODULE_ROOT / ".env")
     load_dotenv(_PROJECT_ROOT / ".env")
+
+import pytest
+
+from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import shutdown_public_chat_file_logging
+
+
+@pytest.fixture(autouse=True)
+def _isolate_public_chat_pipeline_logs(monkeypatch) -> None:
+    """Evita gravar JSONL no repo durante a suite de testes."""
+    monkeypatch.setenv("PUBLIC_CHAT_PIPELINE_TRACE", "false")
+    shutdown_public_chat_file_logging()
+    yield
+    shutdown_public_chat_file_logging()
