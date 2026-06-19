@@ -6,12 +6,16 @@ import asyncpg
 
 from orion_mcp_v3.protocols.llm import LLMProvider, NullLLMProvider
 from orion_mcp_v3.public_chat.application.consulta_turn_runner import ConsultaTurnRunner
+from orion_mcp_v3.public_chat.application.workspace_pipeline import build_fact_planner
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings, load_settings
+from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
+from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import AnalyticalNarrator
 from orion_mcp_v3.public_chat.infrastructure.database import build_response_store
 from orion_mcp_v3.public_chat.infrastructure.embedding import OpenAIPublicEmbeddingService
 from orion_mcp_v3.public_chat.infrastructure.context_selector import PublicContextSelector
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.llm import OpenAIPublicLLMProvider
+from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
 from orion_mcp_v3.public_chat.infrastructure.remissive_reader import PublicRemissiveReader
 from orion_mcp_v3.public_chat.infrastructure.remissive_retriever import RemissiveRetriever
@@ -63,6 +67,15 @@ def build_public_chat_runner(
     )
     narrator = PublicNarrator(provider, max_tokens=cfg.narrator_max_tokens)
     context_selector = PublicContextSelector(provider, max_tokens=cfg.selector_max_tokens)
+
+    fact_planner: FactPlanner | None = None
+    memory_resolver: MemoryResolver | None = None
+    analytical_narrator: AnalyticalNarrator | None = None
+    if cfg.use_workspace:
+        fact_planner = build_fact_planner(provider, max_tokens=cfg.intent_max_tokens)
+        memory_resolver = MemoryResolver(reader)
+        analytical_narrator = AnalyticalNarrator(provider, max_tokens=cfg.narrator_max_tokens)
+
     return ConsultaTurnRunner(
         settings=cfg,
         store=store,
@@ -70,6 +83,9 @@ def build_public_chat_runner(
         retriever=retriever,
         narrator=narrator,
         context_selector=context_selector,
+        fact_planner=fact_planner,
+        memory_resolver=memory_resolver,
+        analytical_narrator=analytical_narrator,
     )
 
 

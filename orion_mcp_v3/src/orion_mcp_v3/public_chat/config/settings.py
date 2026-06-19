@@ -32,6 +32,7 @@ def _env_bool(name: str, default: bool) -> bool:
 class PublicChatSettings:
     enabled: bool = False
     use_presentation_snapshot: bool = False
+    use_workspace: bool = False
     postgres_url: str = ""
     postgres_pool_min: int = 1
     postgres_pool_max: int = 10
@@ -94,6 +95,7 @@ class PublicChatSettings:
         return cls(
             enabled=_env_bool("PUBLIC_CHAT_ENABLED", False),
             use_presentation_snapshot=_env_bool("PUBLIC_CHAT_USE_PRESENTATION_SNAPSHOT", False),
+            use_workspace=_env_bool("PUBLIC_CHAT_USE_WORKSPACE", False),
             postgres_url=url,
             postgres_pool_min=_env_int("PUBLIC_CHAT_POSTGRES_POOL_MIN", 1),
             postgres_pool_max=_env_int("PUBLIC_CHAT_POSTGRES_POOL_MAX", 10),

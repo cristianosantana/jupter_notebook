@@ -9,14 +9,18 @@ from uuid import UUID
 
 from orion_mcp_v3.public_chat.application.context_pipeline import prepare_selected_context
 from orion_mcp_v3.public_chat.application.context_window import load_context_window
+from orion_mcp_v3.public_chat.application.workspace_pipeline import build_remissive_workspace
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
+from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
-from orion_mcp_v3.public_chat.domain.knowledge import build_answer_payload
+from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, build_answer_payload
 from orion_mcp_v3.public_chat.domain.knowledge_fingerprint import (
     build_knowledge_fingerprint_from_knowledge,
 )
+from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import AnalyticalNarrator
 from orion_mcp_v3.public_chat.infrastructure.context_selector import PublicContextSelector
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
+from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
 from orion_mcp_v3.public_chat.infrastructure.pipeline_snapshots import (
     log_cache_resolution,
@@ -62,6 +66,9 @@ class ConsultaTurnRunner:
         retriever: RemissiveRetriever,
         narrator: PublicNarrator,
         context_selector: PublicContextSelector,
+        fact_planner: FactPlanner | None = None,
+        memory_resolver: MemoryResolver | None = None,
+        analytical_narrator: AnalyticalNarrator | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -69,6 +76,9 @@ class ConsultaTurnRunner:
         self._retriever = retriever
         self._narrator = narrator
         self._context_selector = context_selector
+        self._fact_planner = fact_planner
+        self._memory_resolver = memory_resolver
+        self._analytical_narrator = analytical_narrator
 
     async def run_turn(
         self,
@@ -288,13 +298,11 @@ class ConsultaTurnRunner:
                 yield TurnStreamChunk(delta=presentation)
         else:
             presentation_parts: list[str] = []
-            selected = await prepare_selected_context(
+            async for delta in self._stream_presentation(
                 message,
                 contract=contract,
                 knowledge=knowledge,
-                selector=self._context_selector,
-            )
-            async for delta in self._narrator.stream(message, contract=contract, selected=selected):
+            ):
                 presentation_parts.append(delta)
                 yield TurnStreamChunk(delta=delta)
             presentation = "".join(presentation_parts)
@@ -377,14 +385,12 @@ class ConsultaTurnRunner:
         )
 
         knowledge = await self._retriever.retrieve(message)
-        selected = await prepare_selected_context(
+        presentation_parts: list[str] = []
+        async for delta in self._stream_presentation(
             message,
             contract=contract,
             knowledge=knowledge,
-            selector=self._context_selector,
-        )
-        presentation_parts: list[str] = []
-        async for delta in self._narrator.stream(message, contract=contract, selected=selected):
+        ):
             presentation_parts.append(delta)
             yield TurnStreamChunk(delta=delta)
         presentation = "".join(presentation_parts)
@@ -455,3 +461,46 @@ class ConsultaTurnRunner:
                 cached=False,
             )
         )
+
+    def _use_workspace(self) -> bool:
+        return (
+            self._settings.use_workspace
+            and self._fact_planner is not None
+            and self._memory_resolver is not None
+            and self._analytical_narrator is not None
+        )
+
+    async def _stream_presentation(
+        self,
+        message: str,
+        *,
+        contract: IntentContract,
+        knowledge: ConhecimentoRecuperado,
+    ) -> AsyncIterator[str]:
+        if self._use_workspace():
+            assert self._fact_planner is not None
+            assert self._memory_resolver is not None
+            assert self._analytical_narrator is not None
+            workspace = await build_remissive_workspace(
+                message,
+                contract=contract,
+                knowledge=knowledge,
+                planner=self._fact_planner,
+                resolver=self._memory_resolver,
+            )
+            async for delta in self._analytical_narrator.stream(
+                message,
+                contract=contract,
+                workspace=workspace,
+            ):
+                yield delta
+            return
+
+        selected = await prepare_selected_context(
+            message,
+            contract=contract,
+            knowledge=knowledge,
+            selector=self._context_selector,
+        )
+        async for delta in self._narrator.stream(message, contract=contract, selected=selected):
+            yield delta

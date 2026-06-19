@@ -39,6 +39,14 @@ FROM "public"."memory_essence"
 WHERE "theme" = ANY($1::text[])
 """
 
+_LOAD_CURTA_BY_CATEGORY_PATTERN = """
+SELECT "id", "category", "context_key", "validated_answer", "key_metrics"
+FROM "public"."memory_curta"
+WHERE LOWER("category") LIKE $1
+ORDER BY "id" DESC
+LIMIT $2
+"""
+
 
 class PublicRemissiveReader:
     """SQL read-only sobre memory_* — sem filtro user_id na busca vetorial."""
@@ -187,6 +195,51 @@ class PublicRemissiveReader:
             },
         )
         return items
+
+    async def load_hits_by_theme_patterns(
+        self,
+        patterns: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[KnowledgeHit]:
+        t0 = time.monotonic()
+        normalized = [pattern.strip().lower() for pattern in patterns if pattern.strip()]
+        log_public_chat_event(
+            etapa="reader.load_by_theme",
+            fase="pre",
+            dados={"pattern_count": len(normalized), "limit": limit},
+        )
+        if not normalized:
+            return []
+
+        hits_by_id: dict[int, KnowledgeHit] = {}
+        async with self._pool.acquire() as conn:
+            for pattern in normalized:
+                like = f"%{pattern}%"
+                rows = await conn.fetch(_LOAD_CURTA_BY_CATEGORY_PATTERN, like, limit)
+                for row in rows:
+                    origin_id = int(row["id"])
+                    if origin_id in hits_by_id:
+                        continue
+                    hits_by_id[origin_id] = KnowledgeHit(
+                        origin_id=origin_id,
+                        context_key=str(row["context_key"]),
+                        category=str(row["category"]),
+                        validated_answer=str(row["validated_answer"]),
+                        key_metrics=_json_mapping(row["key_metrics"]),
+                        score=None,
+                    )
+        hits = list(hits_by_id.values())
+        log_public_chat_event(
+            etapa="reader.load_by_theme",
+            fase="post",
+            dados={
+                "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
+                "hit_count": len(hits),
+                "patterns": normalized,
+            },
+        )
+        return hits
 
 
 def _json_mapping(value: Any) -> dict[str, Any]:

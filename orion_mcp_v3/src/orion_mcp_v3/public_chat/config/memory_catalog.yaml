@@ -1,0 +1,22 @@
+version: v1
+
+themes:
+  fechamento_gerencial:
+    category_patterns:
+      - fechamento_gerencial
+      - fechamento_gerencial_mensal
+    fact_keys:
+      - faturamento_total_periodo
+      - ranking_forma_pagamento
+      - ranking_forma_pagamento_desc
+
+  vendas_departamento:
+    category_patterns:
+      - vendas_departamento
+      - vendas_por_departamento
+    fact_keys:
+      - faturamento_departamento_oficina
+
+join_defaults:
+  join_keys:
+    - period
