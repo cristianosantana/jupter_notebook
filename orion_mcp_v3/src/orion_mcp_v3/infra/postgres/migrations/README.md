@@ -26,6 +26,19 @@ Ordem de aplicação (prefixo numérico):
 | `011_memory_compression_log_wide_keys.sql` | Aumenta campos de auditoria do `memory_compression_log` para payloads reais do destilador. |
 | `012_memory_essence_wide_keys.sql` | Aumenta campos curtos de `memory_essence` para temas/confianças reais do destilador. |
 | `013_memory_curta_last_seen.sql` | Adiciona `last_seen_at` para rotação de conhecimento remissivo não renovado. |
+| `014_alter_column_context_key.sql` | Amplia `memory_curta.context_key` para chaves longas do destilador. |
+
+### Chat Público — migrações isoladas
+
+As tabelas `public_chat_*` **não** estão nesta pasta. Migrações e script de apply vivem em:
+
+`src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/`
+
+```bash
+python -m orion_mcp_v3.public_chat.scripts.apply_migrations
+```
+
+Documentação: [`public_chat/README.md`](../../public_chat/README.md)
 
 ### Migrações 008/009 — embeddings por turno
 

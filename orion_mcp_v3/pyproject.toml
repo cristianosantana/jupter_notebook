@@ -20,12 +20,14 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "orion_mcp_v3.prompts" = ["*.yaml"]
+"orion_mcp_v3.public_chat.prompts" = ["*.yaml"]
+"orion_mcp_v3.public_chat.infrastructure.postgres.migrations" = ["*.sql", "*.md"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24.0", "python-dotenv>=1.0.0"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "src/orion_mcp_v3/public_chat/tests"]
 pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

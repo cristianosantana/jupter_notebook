@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -39,6 +40,8 @@ from orion_mcp_v3.providers.openai_provider import OpenAIProvider
 
 
 logger = logging.getLogger(__name__)
+
+_DISTILLATION_MAX_TOKENS = 16_384
 
 
 class ConversationReader(Protocol):
@@ -343,6 +346,100 @@ def parse_distillation_payload(text: str) -> SupervisedMemoryBatch:
     )
 
 
+def _message_content(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    return ""
+
+
+_PERIOD_RANGE_RX = re.compile(
+    r"(\d{4}-\d{2})-\d{2}\s+a\s+\d{4}-\d{2}-\d{2}",
+    re.IGNORECASE,
+)
+_CONTEXT_RANGE_RX = re.compile(r"(\d{4}-\d{2})-\d{2}-to-\d{4}-\d{2}-\d{2}")
+_CONTEXT_YEAR_MONTH_RX = re.compile(r":(\d{4}-\d{2})(?:$|:)")
+
+
+def _year_month_from_context_key(context_key: str) -> str | None:
+    range_match = _CONTEXT_RANGE_RX.search(context_key)
+    if range_match:
+        return range_match.group(1)
+    slug_match = _CONTEXT_YEAR_MONTH_RX.search(context_key)
+    if slug_match:
+        return slug_match.group(1)
+    return None
+
+
+def _year_month_from_text(text: str) -> str | None:
+    range_match = _PERIOD_RANGE_RX.search(text)
+    if range_match:
+        return range_match.group(1)
+    date_match = re.search(r"(\d{4}-\d{2})-\d{2}", text)
+    if date_match:
+        return date_match.group(1)
+    return None
+
+
+def _assistant_messages_from_window(window: RemissiveConversationWindow) -> tuple[str, ...]:
+    """Mensagens assistant individuais; indexed_turns primeiro (texto integral do turno)."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for source in (window.indexed_turns, window.messages):
+        for message in source:
+            if str(message.get("role", "")).strip().lower() != "assistant":
+                continue
+            text = _message_content(message)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            parts.append(text)
+    return tuple(parts)
+
+
+def _best_assistant_evidence(
+    item: RemissiveKnowledgeItem,
+    windows: Sequence[RemissiveConversationWindow],
+) -> str | None:
+    target_month = _year_month_from_context_key(item.context_key)
+    if not target_month:
+        return None
+
+    candidates: list[str] = []
+    for window in windows:
+        for text in _assistant_messages_from_window(window):
+            if _year_month_from_text(text) == target_month:
+                candidates.append(text)
+
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
+def enrich_knowledge_from_windows(
+    batch: SupervisedMemoryBatch,
+    windows: Sequence[RemissiveConversationWindow],
+) -> SupervisedMemoryBatch:
+    if not batch.knowledge or not windows:
+        return batch
+
+    enriched: list[RemissiveKnowledgeItem] = []
+    for item in batch.knowledge:
+        evidence = _best_assistant_evidence(item, windows)
+        if evidence and len(evidence) >= 50:
+            if evidence != item.validated_answer:
+                logger.info(
+                    "validated_answer substituído por evidência da conversa: context_key=%s chars=%s→%s",
+                    item.context_key,
+                    len(item.validated_answer),
+                    len(evidence),
+                )
+            enriched.append(replace(item, validated_answer=evidence))
+            continue
+        enriched.append(item)
+    return replace(batch, knowledge=tuple(enriched))
+
+
 def _build_prompt(windows: Sequence[RemissiveConversationWindow]) -> str:
     payload = [
         {
@@ -358,11 +455,16 @@ def _build_prompt(windows: Sequence[RemissiveConversationWindow]) -> str:
         "Responda somente JSON estrito com chaves: knowledge, essence, compression_log.\n"
         "knowledge[]: user_id, category, theme, periodo opcional, validated_answer, "
         "recent_questions, key_metrics, index_questions, confidence opcional.\n"
+        "validated_answer: texto factual integral das respostas do assistente sobre o tema/periodo. "
+        "Copie tabelas, valores, listas e paragrafos relevantes. "
+        "PROIBIDO resumir, sintetizar ou produzir resumo executivo.\n"
+        "O sistema pode substituir validated_answer pelo texto integral da conversa quando disponivel.\n"
         "NUNCA gere context_key, UUID ou hash; o sistema calcula isso.\n"
         "essence[]: user_id, theme, observation, key_finding, recommendation, "
         "stable_metrics, confidence.\n"
         "compression_log: user_id, from_state, to_state, messages_compressed, "
-        "compression_ratio, what_was_kept, what_was_dropped.\n"
+        "compression_ratio, what_was_kept (evidencias factuais preservadas), "
+        "what_was_dropped (perguntas duplicadas, ruido conversacional).\n"
         f"Janelas:\n{json.dumps(payload, ensure_ascii=False, default=str)}"
     )
 
@@ -387,9 +489,16 @@ class DistillSupervisedMemoryCommand:
             return DistillationResult(windows_read=0, knowledge_written=0, origin_ids=[])
 
         prompt = _build_prompt(windows)
-        response = await self._llm.generate(prompt, temperature=0, max_tokens=4096)
+        response = await self._llm.generate(
+            prompt,
+            temperature=0,
+            max_tokens=_DISTILLATION_MAX_TOKENS,
+        )
         try:
-            batch = parse_distillation_payload(response.text)
+            batch = enrich_knowledge_from_windows(
+                parse_distillation_payload(response.text),
+                windows,
+            )
         except ValueError as exc:
             log_path = _write_failed_model_response_log(
                 response.text,

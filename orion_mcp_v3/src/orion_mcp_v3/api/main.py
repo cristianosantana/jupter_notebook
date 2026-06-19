@@ -247,6 +247,10 @@ def create_app(
     )
     app.include_router(chat_router)
 
+    from orion_mcp_v3.public_chat.integration.fastapi import mount_public_chat
+
+    mount_public_chat(app, shared_state=state, llm_provider=provider)
+
     @app.get("/health", response_model=HealthResponse, tags=["infra"])
     async def health() -> HealthResponse:
         return HealthResponse()
