@@ -43,7 +43,7 @@ Em ambos os casos, a LLM pode ajudar a interpretar perguntas novas, mas a interp
 mindmap
   root((Chat Analítico))
     Entrada HTTP
-      POST /api/v1/chat
+      "POST /api/v1/chat"
       ChatRequest
         message
         conversation_id
