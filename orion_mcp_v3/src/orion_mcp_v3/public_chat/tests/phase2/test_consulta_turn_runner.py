@@ -13,6 +13,7 @@ from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicInt
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
 from orion_mcp_v3.public_chat.infrastructure.remissive_retriever import RemissiveRetriever
 from orion_mcp_v3.public_chat.infrastructure.response_store import ResponseStore
+from orion_mcp_v3.public_chat.tests.phase4.helpers import PassthroughContextSelector
 
 
 def _pool_with_conn(conn: AsyncMock) -> MagicMock:
@@ -80,6 +81,7 @@ async def test_audit_chain_miss_path() -> None:
         intent_interpreter=PublicIntentInterpreter(llm),
         retriever=retriever,
         narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
     )
 
     result, presentation = await runner.run_turn_with_metadata("faturamento maio?")
@@ -132,6 +134,7 @@ async def test_runner_miss_end_to_end() -> None:
         intent_interpreter=PublicIntentInterpreter(llm),
         retriever=retriever,
         narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
     )
 
     deltas: list[str] = []

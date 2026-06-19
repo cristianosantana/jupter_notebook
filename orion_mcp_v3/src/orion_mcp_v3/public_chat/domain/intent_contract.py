@@ -14,6 +14,14 @@ class PublicIntentType(str, Enum):
     GERAL = "geral"
 
 
+class PublicOperationType(str, Enum):
+    RANKING_ASC = "ranking_asc"
+    RANKING_DESC = "ranking_desc"
+    LIST = "list"
+    SUMMARY = "summary"
+    COMPARISON = "comparison"
+
+
 @dataclass(frozen=True, slots=True)
 class EntityFilter:
     dimension: str
@@ -44,6 +52,9 @@ class IntentContract:
     domain: str | None = None
     entity_filters: tuple[EntityFilter, ...] = ()
     confidence: float = 0.0
+    operation: str | None = None
+    dimension: str | None = None
+    sort_direction: str | None = None
 
     @classmethod
     def geral(cls, *, confidence: float = 0.0) -> IntentContract:
@@ -60,6 +71,9 @@ class IntentContract:
             "domain": self.domain,
             "entity_filters": [item.as_mapping() for item in self.entity_filters],
             "confidence": self.confidence,
+            "operation": self.operation,
+            "dimension": self.dimension,
+            "sort_direction": self.sort_direction,
         }
 
     @classmethod
@@ -79,6 +93,9 @@ class IntentContract:
         period = _optional_str(data.get("period"))
         domain = _optional_str(data.get("domain"))
         intent = _optional_str(data.get("intent")) or PublicIntentType.GERAL.value
+        operation = _optional_str(data.get("operation"))
+        dimension = _optional_str(data.get("dimension"))
+        sort_direction = _optional_str(data.get("sort_direction"))
         return cls(
             intent=intent,
             metric=metric,
@@ -86,6 +103,9 @@ class IntentContract:
             domain=domain,
             entity_filters=tuple(filters),
             confidence=max(0.0, min(1.0, confidence)),
+            operation=operation,
+            dimension=dimension,
+            sort_direction=sort_direction,
         )
 
 

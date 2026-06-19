@@ -9,6 +9,7 @@ from typing import Sequence
 from orion_mcp_v3.public_chat.prompts import get_public_chat_prompt_registry
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
+from orion_mcp_v3.public_chat.domain.intent_heuristics import extract_heuristic_signals
 from orion_mcp_v3.public_chat.domain.intent_parser import parse_json_object, parse_public_intent_payload
 from orion_mcp_v3.public_chat.domain.models import AncestorTurn
 from orion_mcp_v3.public_chat.domain.semantic_hash import build_semantic_hash
@@ -79,7 +80,11 @@ class PublicIntentInterpreter:
             return contract, topic, semantic_hash
 
         payload = parse_json_object(response.text)
-        contract = parse_public_intent_payload(payload, min_confidence=self._min_confidence)
+        contract = parse_public_intent_payload(
+            payload,
+            min_confidence=self._min_confidence,
+            message=message,
+        )
         topic = resolve_topic(contract)
         semantic_hash = build_semantic_hash(contract)
         log_public_chat_event(
@@ -102,11 +107,15 @@ def _build_prompt(message: str, *, ancestors: Sequence[AncestorTurn]) -> str:
     payload = {
         "user_message": message,
         "ancestor_chain": [turn.as_prompt_dict() for turn in ancestors],
+        "heuristic_signals": extract_heuristic_signals(message),
         "required_json_shape": {
             "intent": "string",
             "metric": "string|null",
             "period": "YYYY-MM|null",
             "domain": "string|null",
+            "operation": "ranking_asc|ranking_desc|list|summary|comparison|null",
+            "dimension": "string|null",
+            "sort_direction": "asc|desc|null",
             "entity_filters": [
                 {"dimension": "string", "value": "string", "match": "contains|exact"}
             ],

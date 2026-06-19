@@ -42,6 +42,7 @@ class PublicChatSettings:
     llm_base_url: str | None = None
     llm_model: str = "gpt-4o-mini"
     narrator_max_tokens: int = 1024
+    selector_max_tokens: int = 256
     embedding_api_key: str = ""
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
@@ -103,6 +104,7 @@ class PublicChatSettings:
             llm_base_url=llm_base.strip() if llm_base else None,
             llm_model=(os.environ.get("PUBLIC_CHAT_LLM_MODEL") or "gpt-4o-mini").strip(),
             narrator_max_tokens=_env_int("PUBLIC_CHAT_NARRATOR_MAX_TOKENS", 1024),
+            selector_max_tokens=_env_int("PUBLIC_CHAT_SELECTOR_MAX_TOKENS", 256),
             embedding_api_key=(os.environ.get("PUBLIC_CHAT_EMBEDDING_API_KEY") or "").strip(),
             embedding_model=(
                 os.environ.get("PUBLIC_CHAT_EMBEDDING_MODEL") or "text-embedding-3-small"

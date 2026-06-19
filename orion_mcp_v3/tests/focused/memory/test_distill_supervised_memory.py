@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from orion_mcp_v3.memory.remissive_models import RemissiveConversationWindow
+from orion_mcp_v3.memory.remissive_models import RemissiveConversationWindow, RemissiveKnowledgeItem, SupervisedMemoryBatch, build_context_key
 from orion_mcp_v3.protocols.llm import LLMResponse
 
 
@@ -115,7 +115,8 @@ async def test_command_distills_window_with_fake_llm_and_persists_batch() -> Non
     assert result == module.DistillationResult(windows_read=1, knowledge_written=1, origin_ids=[301])
     assert reader.calls == [(start, end, 25)]
     assert "sess-1" in llm.prompts[0]
-    assert "knowledge[]: user_id, category, theme, periodo opcional" in llm.prompts[0]
+    assert "PROIBIDO resumir" in llm.prompts[0]
+    assert "evidencias factuais preservadas" in llm.prompts[0]
     assert "NUNCA gere context_key" in llm.prompts[0]
     assert "category, context_key" not in llm.prompts[0]
     assert len(store.batches) == 1
@@ -466,3 +467,240 @@ async def test_command_logs_raw_model_response_when_parse_fails(tmp_path) -> Non
         "messages_count": 1,
         "indexed_turns_count": 1,
     }
+
+
+def test_enrich_knowledge_from_windows_replaces_summary_with_assistant_evidence() -> None:
+    module = _load_script_module()
+    evidence = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31: "
+        "R$ 2.713.158,18\n"
+        "Formas de pagamento — Total: R$ 2.713.158,18.\n"
+        "Cartão de Crédito R$ 1.352.045,28\n"
+        "Depósito Bancário R$ 3.690,00\n"
+        "Cheque R$ 0,00\n"
+        "Permuta R$ 0,00\n"
+        "Relatório de março de 2026 com detalhes completos do fechamento gerencial mensal."
+    )
+    windows = [
+        RemissiveConversationWindow(
+            session_id="sess-marco",
+            user_id="sistema_background",
+            messages=[
+                {"role": "user", "content": "Fechamento março 2026"},
+                {"role": "assistant", "content": evidence},
+            ],
+            indexed_turns=[],
+        )
+    ]
+    item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial_mensal",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial_mensal",
+            "marco_2026",
+            "2026-03",
+        ),
+        validated_answer="Resumo curto de março com Cartão dominante e Parcelamento 10X.",
+        index_questions=("Qual foi o fechamento de março?",),
+    )
+    batch = SupervisedMemoryBatch(knowledge=(item,))
+
+    enriched = module.enrich_knowledge_from_windows(batch, windows)
+
+    assert enriched.knowledge[0].validated_answer == evidence
+
+
+@pytest.mark.asyncio
+async def test_command_prefers_assistant_evidence_over_llm_summary() -> None:
+    module = _load_script_module()
+    start = datetime(2026, 6, 9, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 6, 10, 0, 0, tzinfo=timezone.utc)
+    evidence = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31: "
+        "R$ 2.713.158,18\n"
+        "Formas de pagamento em março de 2026.\n"
+        "Depósito Bancário R$ 3.690,00\n"
+        "Cheque R$ 0,00\n"
+        "Permuta R$ 0,00\n"
+        "Texto factual longo o suficiente para passar na validação mínima da memória remissiva."
+    )
+
+    class EvidenceReader(FakeReader):
+        async def read_window(self, start, end, *, limit=500):
+            self.calls.append((start, end, limit))
+            return [
+                RemissiveConversationWindow(
+                    session_id="sess-marco",
+                    user_id="sistema_background",
+                    messages=[
+                        {"role": "user", "content": "Fechamento março 2026"},
+                        {"role": "assistant", "content": evidence},
+                    ],
+                    indexed_turns=[],
+                )
+            ]
+
+    store = FakeStore()
+    llm = FakeLLM(
+        {
+            "knowledge": [
+                {
+                    "user_id": "sistema_background",
+                    "category": "fechamento_gerencial_mensal",
+                    "theme": "marco_2026",
+                    "periodo": "2026-03",
+                    "validated_answer": (
+                        "Resumo executivo de março com Parcelamento 10X em destaque e "
+                        "recomendação de limpeza para registros zero."
+                    ),
+                    "index_questions": ["Qual a forma de pagamento pior em março de 2026?"],
+                }
+            ],
+            "essence": [],
+            "compression_log": {
+                "user_id": "sistema_background",
+                "from_state": "conversation_state",
+                "to_state": "memory_v2",
+                "messages_compressed": 1,
+            },
+        }
+    )
+
+    result = await module.DistillSupervisedMemoryCommand(EvidenceReader(), store, llm).run(start, end)
+
+    assert result.knowledge_written == 1
+    assert store.batches[0].knowledge[0].validated_answer == evidence
+
+
+def test_enrich_matches_only_same_year_month() -> None:
+    module = _load_script_module()
+    march_evidence = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31: "
+        "R$ 2.713.158,18\n"
+        "Depósito Bancário R$ 3.690,00\n"
+        "Texto factual de março longo o suficiente para passar na validação mínima da memória."
+    )
+    may_evidence = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-05-01 a 2026-05-31: "
+        "R$ 2.691.655,56\n"
+        "Parcelamento 10X R$ 847.408,80\n"
+        "Texto factual de maio longo o suficiente para passar na validação mínima da memória."
+    )
+    windows = [
+        RemissiveConversationWindow(
+            session_id="sess-marco",
+            user_id="sistema_background",
+            messages=[{"role": "assistant", "content": march_evidence}],
+            indexed_turns=[],
+        ),
+        RemissiveConversationWindow(
+            session_id="sess-maio",
+            user_id="sistema_background",
+            messages=[{"role": "assistant", "content": may_evidence}],
+            indexed_turns=[],
+        ),
+    ]
+    march_item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial_mensal",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial_mensal",
+            "marco_2026",
+            "2026-03",
+        ),
+        validated_answer="Resumo errado de março.",
+        index_questions=("Qual foi o fechamento de março?",),
+    )
+    jan_item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial_mensal",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial_mensal",
+            "janeiro_2026",
+            "2026-01",
+        ),
+        validated_answer="Resumo errado de janeiro.",
+        index_questions=("Qual foi o fechamento de janeiro?",),
+    )
+    batch = SupervisedMemoryBatch(knowledge=(march_item, jan_item))
+
+    enriched = module.enrich_knowledge_from_windows(batch, windows)
+
+    assert enriched.knowledge[0].validated_answer == march_evidence
+    assert enriched.knowledge[1].validated_answer == "Resumo errado de janeiro."
+
+
+def test_enrich_does_not_fallback_single_window_for_other_months() -> None:
+    module = _load_script_module()
+    may_evidence = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-05-01 a 2026-05-31: "
+        "R$ 2.691.655,56\n"
+        "Texto factual de maio longo o suficiente para passar na validação mínima da memória."
+    )
+    windows = [
+        RemissiveConversationWindow(
+            session_id="sess-maio",
+            user_id="sistema_background",
+            messages=[{"role": "assistant", "content": may_evidence}],
+            indexed_turns=[],
+        )
+    ]
+    march_item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial_mensal",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial_mensal",
+            "marco_2026",
+            "2026-03",
+        ),
+        validated_answer="Resumo errado de março.",
+        index_questions=("Qual foi o fechamento de março?",),
+    )
+    batch = SupervisedMemoryBatch(knowledge=(march_item,))
+
+    enriched = module.enrich_knowledge_from_windows(batch, windows)
+
+    assert enriched.knowledge[0].validated_answer == "Resumo errado de março."
+
+
+def test_enrich_prefers_indexed_turns_over_messages() -> None:
+    module = _load_script_module()
+    short_message = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31: "
+        "R$ 100,00"
+    )
+    full_indexed = (
+        "direct_answer_set.headline: Faturamento líquido no período 2026-03-01 a 2026-03-31: "
+        "R$ 2.713.158,18\n"
+        "Depósito Bancário R$ 3.690,00\n"
+        "Texto factual completo longo o suficiente para passar na validação mínima da memória."
+    )
+    windows = [
+        RemissiveConversationWindow(
+            session_id="sess-marco",
+            user_id="sistema_background",
+            messages=[{"role": "assistant", "content": short_message}],
+            indexed_turns=[{"role": "assistant", "content": full_indexed}],
+        )
+    ]
+    item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial_mensal",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial_mensal",
+            "marco_2026",
+            "2026-03",
+        ),
+        validated_answer="Resumo curto.",
+        index_questions=("Qual foi o fechamento de março?",),
+    )
+    batch = SupervisedMemoryBatch(knowledge=(item,))
+
+    enriched = module.enrich_knowledge_from_windows(batch, windows)
+
+    assert enriched.knowledge[0].validated_answer == full_indexed

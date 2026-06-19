@@ -9,6 +9,7 @@ from orion_mcp_v3.public_chat.application.consulta_turn_runner import ConsultaTu
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings, load_settings
 from orion_mcp_v3.public_chat.infrastructure.database import build_response_store
 from orion_mcp_v3.public_chat.infrastructure.embedding import OpenAIPublicEmbeddingService
+from orion_mcp_v3.public_chat.infrastructure.context_selector import PublicContextSelector
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.llm import OpenAIPublicLLMProvider
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
@@ -61,12 +62,14 @@ def build_public_chat_runner(
         min_confidence=cfg.intent_min_confidence,
     )
     narrator = PublicNarrator(provider, max_tokens=cfg.narrator_max_tokens)
+    context_selector = PublicContextSelector(provider, max_tokens=cfg.selector_max_tokens)
     return ConsultaTurnRunner(
         settings=cfg,
         store=store,
         intent_interpreter=intent,
         retriever=retriever,
         narrator=narrator,
+        context_selector=context_selector,
     )
 
 

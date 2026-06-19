@@ -7,12 +7,15 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from uuid import UUID
 
+from orion_mcp_v3.public_chat.application.context_pipeline import prepare_selected_context
 from orion_mcp_v3.public_chat.application.context_window import load_context_window
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
+from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
 from orion_mcp_v3.public_chat.domain.knowledge import build_answer_payload
 from orion_mcp_v3.public_chat.domain.knowledge_fingerprint import (
     build_knowledge_fingerprint_from_knowledge,
 )
+from orion_mcp_v3.public_chat.infrastructure.context_selector import PublicContextSelector
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
 from orion_mcp_v3.public_chat.infrastructure.pipeline_snapshots import (
@@ -58,12 +61,14 @@ class ConsultaTurnRunner:
         intent_interpreter: PublicIntentInterpreter,
         retriever: RemissiveRetriever,
         narrator: PublicNarrator,
+        context_selector: PublicContextSelector,
     ) -> None:
         self._settings = settings
         self._store = store
         self._intent = intent_interpreter
         self._retriever = retriever
         self._narrator = narrator
+        self._context_selector = context_selector
 
     async def run_turn(
         self,
@@ -130,8 +135,7 @@ class ConsultaTurnRunner:
                 topic=topic,
                 semantic_hash=semantic_hash,
                 cached=cached,
-                intent=contract.intent,
-                confidence=contract.confidence,
+                contract=contract,
             ):
                 yield chunk
             log_public_chat_event(
@@ -152,8 +156,7 @@ class ConsultaTurnRunner:
             parent_question_id=question.parent_question_id,
             topic=topic,
             semantic_hash=semantic_hash,
-            intent=contract.intent,
-            confidence=contract.confidence,
+            contract=contract,
         ):
             yield chunk
         log_public_chat_event(
@@ -202,8 +205,7 @@ class ConsultaTurnRunner:
             parent_question_id=question.parent_question_id,
             topic=topic,
             semantic_hash=semantic_hash,
-            intent=contract.intent,
-            confidence=contract.confidence,
+            contract=contract,
         ):
             if chunk.delta:
                 yield chunk.delta
@@ -235,8 +237,7 @@ class ConsultaTurnRunner:
         topic: str,
         semantic_hash: str,
         cached: CachedResolution,
-        intent: str,
-        confidence: float,
+        contract: IntentContract,
     ) -> AsyncIterator[TurnStreamChunk]:
         t0 = time.monotonic()
         log_public_chat_event(
@@ -287,7 +288,13 @@ class ConsultaTurnRunner:
                 yield TurnStreamChunk(delta=presentation)
         else:
             presentation_parts: list[str] = []
-            async for delta in self._narrator.stream(message, knowledge):
+            selected = await prepare_selected_context(
+                message,
+                contract=contract,
+                knowledge=knowledge,
+                selector=self._context_selector,
+            )
+            async for delta in self._narrator.stream(message, contract=contract, selected=selected):
                 presentation_parts.append(delta)
                 yield TurnStreamChunk(delta=delta)
             presentation = "".join(presentation_parts)
@@ -329,8 +336,8 @@ class ConsultaTurnRunner:
             cache_path="cache_hit",
             topic=topic,
             semantic_hash=semantic_hash,
-            intent=intent,
-            confidence=confidence,
+            intent=contract.intent,
+            confidence=contract.confidence,
             is_repeat=True,
             knowledge=knowledge,
             answer_payload=answer_payload,
@@ -360,8 +367,7 @@ class ConsultaTurnRunner:
         parent_question_id: UUID | None,
         topic: str,
         semantic_hash: str,
-        intent: str,
-        confidence: float,
+        contract: IntentContract,
     ) -> AsyncIterator[TurnStreamChunk]:
         t0 = time.monotonic()
         log_public_chat_event(
@@ -371,8 +377,14 @@ class ConsultaTurnRunner:
         )
 
         knowledge = await self._retriever.retrieve(message)
+        selected = await prepare_selected_context(
+            message,
+            contract=contract,
+            knowledge=knowledge,
+            selector=self._context_selector,
+        )
         presentation_parts: list[str] = []
-        async for delta in self._narrator.stream(message, knowledge):
+        async for delta in self._narrator.stream(message, contract=contract, selected=selected):
             presentation_parts.append(delta)
             yield TurnStreamChunk(delta=delta)
         presentation = "".join(presentation_parts)
@@ -425,8 +437,8 @@ class ConsultaTurnRunner:
             cache_path="cache_miss",
             topic=topic,
             semantic_hash=semantic_hash,
-            intent=intent,
-            confidence=confidence,
+            intent=contract.intent,
+            confidence=contract.confidence,
             is_repeat=False,
             knowledge=knowledge,
             answer_payload=answer_payload,

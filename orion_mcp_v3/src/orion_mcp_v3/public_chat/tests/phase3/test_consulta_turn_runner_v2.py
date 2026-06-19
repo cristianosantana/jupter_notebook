@@ -16,6 +16,7 @@ from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicInt
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
 from orion_mcp_v3.public_chat.infrastructure.remissive_retriever import RemissiveRetriever
 from orion_mcp_v3.public_chat.infrastructure.response_store import ResponseStore
+from orion_mcp_v3.public_chat.tests.phase4.helpers import PassthroughContextSelector
 
 
 def _pool_with_conn(conn: AsyncMock) -> MagicMock:
@@ -86,6 +87,7 @@ def _runner(store: ResponseStore, retriever: AsyncMock, llm: AsyncMock | None = 
         intent_interpreter=PublicIntentInterpreter(llm),
         retriever=retriever,
         narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
     )
 
 
@@ -158,6 +160,7 @@ async def test_cache_hit_regenerates_narrative() -> None:
         intent_interpreter=PublicIntentInterpreter(llm),
         retriever=retriever,
         narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
     )
 
     _, presentation = await runner.run_turn_with_metadata("faturamento maio?")

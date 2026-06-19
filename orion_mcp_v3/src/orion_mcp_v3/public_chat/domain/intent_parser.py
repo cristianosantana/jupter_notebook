@@ -30,6 +30,7 @@ def parse_public_intent_payload(
     payload: Mapping[str, Any] | None,
     *,
     min_confidence: float = 0.5,
+    message: str | None = None,
 ) -> IntentContract:
     """Valida JSON do LLM; fallback para contrato geral quando inválido ou fraco."""
     if payload is None:
@@ -47,10 +48,26 @@ def parse_public_intent_payload(
         domain=_normalize_token(contract.domain),
         entity_filters=contract.entity_filters,
         confidence=contract.confidence,
+        operation=_normalize_token(contract.operation),
+        dimension=_normalize_token(contract.dimension),
+        sort_direction=_normalize_token(contract.sort_direction),
     )
+    if message:
+        from orion_mcp_v3.public_chat.domain.intent_heuristics import apply_heuristic_enrichment
+
+        contract = apply_heuristic_enrichment(contract, message)
     if contract.confidence < min_confidence:
         return IntentContract.geral(confidence=contract.confidence)
-    if not any((contract.metric, contract.period, contract.domain, contract.entity_filters)):
+    if not any(
+        (
+            contract.metric,
+            contract.period,
+            contract.domain,
+            contract.entity_filters,
+            contract.operation,
+            contract.dimension,
+        )
+    ):
         if contract.intent == PublicIntentType.GERAL.value:
             return IntentContract.geral(confidence=contract.confidence)
     return contract
@@ -74,6 +91,8 @@ def normalize_contract_for_hash(contract: IntentContract) -> dict[str, Any]:
         "intent": contract.intent or PublicIntentType.GERAL.value,
         "metric": contract.metric or "",
         "period": contract.period or "",
+        "operation": contract.operation or "",
+        "dimension": contract.dimension or "",
     }
 
 

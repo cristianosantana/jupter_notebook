@@ -9,11 +9,18 @@ from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract, Publ
 
 
 def resolve_topic(contract: IntentContract) -> str:
-    """Deriva slug legível só de metric, period, domain e intent."""
+    """Deriva slug legível só de metric, period, domain, dimension e intent."""
     metric = _slug(contract.metric) if contract.metric else None
     period = (contract.period or "").strip() or None
     domain = _slug(contract.domain) if contract.domain else None
+    dimension = _slug(contract.dimension) if contract.dimension else None
 
+    if dimension and period:
+        return f"{dimension}:{period}"
+    if dimension and metric:
+        return f"{dimension}:{metric}"
+    if dimension:
+        return dimension
     if metric and period:
         return f"{metric}:{period}"
     if metric and domain:

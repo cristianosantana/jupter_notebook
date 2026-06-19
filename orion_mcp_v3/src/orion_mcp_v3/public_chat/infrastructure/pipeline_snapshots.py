@@ -33,6 +33,9 @@ def snapshot_intent(contract: IntentContract) -> dict[str, Any]:
         "period": contract.period,
         "domain": contract.domain,
         "confidence": contract.confidence,
+        "operation": contract.operation,
+        "dimension": contract.dimension,
+        "sort_direction": contract.sort_direction,
         "entity_filters": [item.as_mapping() for item in contract.entity_filters],
     }
 
