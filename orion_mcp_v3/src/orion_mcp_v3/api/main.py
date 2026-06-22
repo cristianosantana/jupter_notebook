@@ -142,7 +142,21 @@ def _build_lifespan(
             except Exception:
                 _LOG.exception("Failed to create PostgreSQL pool — conversation persistence in-memory only")
 
+        public_chat_startup = state.get("public_chat_startup")
+        if public_chat_startup is not None:
+            try:
+                await public_chat_startup()
+            except Exception:
+                _LOG.exception("Failed to run public chat startup hook")
+
         yield
+
+        public_chat_shutdown = state.get("public_chat_shutdown")
+        if public_chat_shutdown is not None:
+            try:
+                public_chat_shutdown()
+            except Exception:
+                _LOG.exception("Failed to run public chat shutdown hook")
 
         shutdown_pipeline_file_logging()
 
