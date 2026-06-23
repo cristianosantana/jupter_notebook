@@ -31,7 +31,10 @@ from orion_mcp_v3.api.models import (
     UsageInfo,
 )
 from orion_mcp_v3.api.email import EmailSendRequest, EmailSendResult
-from orion_mcp_v3.api.email.structured_evidence import structured_email_evidence_from
+from orion_mcp_v3.api.email.structured_evidence import (
+    analytical_direct_reply_from,
+    structured_email_evidence_from,
+)
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES
 from orion_mcp_v3.broker.executor import AnalyticsExecutor
 from orion_mcp_v3.broker.query_capability_catalog import build_query_capability_catalog
@@ -180,6 +183,35 @@ def _direct_answer_literal_preservation_enabled(evidence: EvidenceBlock | None) 
         (isinstance(scope, Mapping) and scope.get("mode") == "all")
         or plan.get("operation") == "list"
     )
+
+
+def _analytical_direct_reply(
+    cognitive_plan: CognitivePlan,
+    evidence: EvidenceBlock | None,
+) -> str | None:
+    if not cognitive_plan.needs_analytics:
+        return None
+    return analytical_direct_reply_from(evidence)
+
+
+def _coverage_note_from_evidence(evidence: EvidenceBlock | None) -> str:
+    if evidence is None:
+        return ""
+    labels = [str(label).strip() for label in evidence.coverage.labels if str(label).strip()]
+    if not labels:
+        return ""
+    return "Cobertura da evidência estruturada: " + "; ".join(labels)
+
+
+def _direct_analytical_safeguards(evidence: EvidenceBlock | None) -> tuple[str, ...]:
+    tags = ["direct_evidence_reply", "evidence_cited"]
+    if _coverage_note_from_evidence(evidence):
+        tags.append("coverage_note_injected")
+    else:
+        tags.append("no_coverage_data")
+    if _direct_answer_literal_preservation_enabled(evidence):
+        tags.append("direct_answer_literal_preservation")
+    return tuple(tags)
 
 
 def _should_interpret_with_llm(
@@ -815,6 +847,65 @@ def create_chat_router(
                 },
             )
 
+        direct_reply = _analytical_direct_reply(cognitive_plan, evidence)
+        structured_evidence = structured_email_evidence_from(evidence)
+
+        if direct_reply:
+            sm.update_phase(session, CognitivePhase.NARRATING)
+            coverage_note = _coverage_note_from_evidence(evidence)
+            safeguards = _direct_analytical_safeguards(evidence)
+
+            if trace_pipe:
+                log_pipeline_event(
+                    etapa="direct_evidence_reply",
+                    fase="post",
+                    conversation_id=cid,
+                    dados={
+                        "reply_chars": len(direct_reply),
+                        "structured_evidence_chars": len(structured_evidence or ""),
+                        "direct_answer_literal_preservation": _direct_answer_literal_preservation_enabled(
+                            evidence
+                        ),
+                    },
+                )
+
+            if req.stream:
+                return _sse_direct_analytical_response(
+                    direct_reply,
+                    session,
+                    sm,
+                    t0,
+                    cognitive_plan,
+                    req,
+                    trace_pipe=trace_pipe,
+                    structured_evidence=structured_evidence,
+                    coverage_note=coverage_note,
+                    safeguards=safeguards,
+                )
+
+            email_delivery = await _send_response_email(
+                req,
+                direct_reply,
+                conversation_id=session.conversation_id,
+                structured_evidence=structured_evidence,
+                trace_enabled=trace_pipe,
+            )
+            elapsed = (time.monotonic() - t0) * 1000.0
+            await sm.record_assistant_message(session, direct_reply)
+            sm.update_phase(session, CognitivePhase.IDLE)
+            meta = ChatResponseMeta(
+                conversation_id=session.conversation_id,
+                model="direct_evidence",
+                finish_reason="stop",
+                latency_ms=elapsed,
+                usage=UsageInfo(),
+                safeguards=list(safeguards),
+                cognitive_intent=cognitive_plan.intent_type.value,
+                coverage_note=coverage_note,
+                email_delivery=EmailDeliveryInfo(**email_delivery.as_dict()),
+            )
+            return ChatResponse(reply=direct_reply, meta=meta)
+
         sm.update_phase(session, CognitivePhase.FUSING)
 
         reasoning_result = AnalyticalReasoner().reason(
@@ -984,6 +1075,68 @@ def create_chat_router(
                     "conversation_id": session.conversation_id,
                     "latency_ms": round(elapsed, 2),
                     "cognitive_intent": cognitive_plan.intent_type.value,
+                    "email_delivery": email_delivery.as_dict(),
+                })
+                yield f"data: {done}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    def _sse_direct_analytical_response(
+        reply_text: str,
+        session,
+        sm,
+        t0,
+        cognitive_plan,
+        req: ChatRequest,
+        *,
+        trace_pipe: bool = False,
+        structured_evidence: str | None = None,
+        coverage_note: str = "",
+        safeguards: tuple[str, ...] = (),
+    ):
+        cid = session.conversation_id
+
+        async def event_generator():
+            email_delivery = EmailSendResult(status="not_requested")
+            try:
+                if trace_pipe:
+                    log_pipeline_event(
+                        etapa="direct_evidence_reply_stream",
+                        fase="pre",
+                        conversation_id=cid,
+                        dados={"reply_chars": len(reply_text)},
+                    )
+                payload = json.dumps({"delta": reply_text, "finish_reason": "stop"})
+                yield f"data: {payload}\n\n"
+            finally:
+                await sm.record_assistant_message(session, reply_text)
+                email_delivery = await _send_response_email(
+                    req,
+                    reply_text,
+                    conversation_id=session.conversation_id,
+                    structured_evidence=structured_evidence,
+                    trace_enabled=trace_pipe,
+                )
+                sm.update_phase(session, CognitivePhase.IDLE)
+                if trace_pipe:
+                    log_pipeline_event(
+                        etapa="direct_evidence_reply_stream",
+                        fase="post",
+                        conversation_id=cid,
+                        dados={"reply_chars": len(reply_text), "stream": True},
+                    )
+                elapsed = (time.monotonic() - t0) * 1000.0
+                done = json.dumps({
+                    "done": True,
+                    "conversation_id": session.conversation_id,
+                    "latency_ms": round(elapsed, 2),
+                    "cognitive_intent": cognitive_plan.intent_type.value,
+                    "coverage_note": coverage_note,
+                    "safeguards": list(safeguards),
                     "email_delivery": email_delivery.as_dict(),
                 })
                 yield f"data: {done}\n\n"

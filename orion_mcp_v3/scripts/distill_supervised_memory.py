@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import unicodedata
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -148,6 +149,13 @@ def _optional_text(data: dict[str, Any], key: str) -> str | None:
         return None
     if isinstance(value, str):
         return value.strip() or None
+    if isinstance(value, list):
+        lines = [str(item).strip() for item in value if str(item).strip()]
+        return "\n".join(lines) if lines else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
@@ -204,11 +212,48 @@ def _string_tuple_any(data: dict[str, Any], *keys: str) -> tuple[str, ...]:
     return ()
 
 
+def _metric_dict_key(label: str, index: int) -> str:
+    normalized = unicodedata.normalize("NFKD", label.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^\w]+", "_", ascii_text).strip("_")
+    return slug or f"item_{index}"
+
+
 def _mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
     value = data.get(key, {})
-    if not isinstance(value, dict):
-        raise ValueError(f"Campo deve ser objeto JSON: {key}")
-    return dict(value)
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, list):
+        result: dict[str, Any] = {}
+        for index, item in enumerate(value):
+            if isinstance(item, dict):
+                metric = item.get("metric") or item.get("name") or item.get("label")
+                if isinstance(metric, str) and metric.strip():
+                    entry_key = _metric_dict_key(metric, index)
+                    payload = {k: v for k, v in item.items() if k not in {"metric", "name", "label"}}
+                    if len(payload) == 1 and "value" in payload:
+                        result[entry_key] = payload["value"]
+                    elif payload:
+                        result[entry_key] = payload
+                    else:
+                        result[entry_key] = dict(item)
+                    continue
+                result[f"item_{index}"] = dict(item)
+                continue
+            if isinstance(item, str) and item.strip():
+                text = item.strip()
+                if ":" in text:
+                    label, _, rest = text.partition(":")
+                    entry_key = _metric_dict_key(label, index)
+                    result[entry_key] = rest.strip() or text
+                else:
+                    result[_metric_dict_key(text, index)] = text
+                continue
+            result[f"item_{index}"] = item
+        return result
+    raise ValueError(f"Campo deve ser objeto JSON: {key}")
 
 
 def _input_summary(windows: Sequence[RemissiveConversationWindow]) -> dict[str, Any]:
@@ -311,9 +356,9 @@ def parse_distillation_payload(text: str) -> SupervisedMemoryBatch:
         RemissiveEssenceItem(
             user_id=_required_str(item, "user_id"),
             theme=_required_str(item, "theme"),
-            observation=_optional_str(item, "observation"),
-            key_finding=_optional_str(item, "key_finding"),
-            recommendation=_optional_str(item, "recommendation"),
+            observation=_optional_text(item, "observation"),
+            key_finding=_optional_text(item, "key_finding"),
+            recommendation=_optional_text(item, "recommendation"),
             stable_metrics=_mapping(item, "stable_metrics"),
             confidence=_confidence(item),
         )
@@ -454,14 +499,19 @@ def _build_prompt(windows: Sequence[RemissiveConversationWindow]) -> str:
         "Destile conversas supervisionadas em memoria remissiva V2.\n"
         "Responda somente JSON estrito com chaves: knowledge, essence, compression_log.\n"
         "knowledge[]: user_id, category, theme, periodo opcional, validated_answer, "
-        "recent_questions, key_metrics, index_questions, confidence opcional.\n"
-        "validated_answer: texto factual integral das respostas do assistente sobre o tema/periodo. "
-        "Copie tabelas, valores, listas e paragrafos relevantes. "
+        "recent_questions, index_questions, confidence opcional.\n"
+        "key_metrics: objeto ou lista com todas as métricas relevantes, "
+        "incluindo a lista completa de cada categoria (ex: todas as concessionárias, todos os serviços), "
+        "sem limitar a top 3 ou top 10. Se houver muitas linhas, ainda assim inclua todas.\n"
+        "validated_answer: texto factual integral das respostas do assistente sobre o tema/periodo.\n"
+        "Copie tabelas, valores, listas e paragrafos relevantes.\n"
         "PROIBIDO resumir, sintetizar ou produzir resumo executivo.\n"
         "O sistema pode substituir validated_answer pelo texto integral da conversa quando disponivel.\n"
         "NUNCA gere context_key, UUID ou hash; o sistema calcula isso.\n"
         "essence[]: user_id, theme, observation, key_finding, recommendation, "
         "stable_metrics, confidence.\n"
+        "stable_metrics aceita objeto ou lista.\n"
+        "key_finding e recommendation devem ser string (ou lista de strings).\n"
         "compression_log: user_id, from_state, to_state, messages_compressed, "
         "compression_ratio, what_was_kept (evidencias factuais preservadas), "
         "what_was_dropped (perguntas duplicadas, ruido conversacional).\n"

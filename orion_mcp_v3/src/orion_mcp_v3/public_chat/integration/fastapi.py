@@ -73,7 +73,6 @@ def mount_public_chat(
         _LOG.info("Public chat runner initialized")
         return runner
 
-    @app.on_event("startup")
     async def _public_chat_startup() -> None:
         cfg: PublicChatSettings = shared_state.get("public_chat_settings") or load_settings()
         if not cfg.enabled:
@@ -83,9 +82,11 @@ def mount_public_chat(
         except Exception:
             _LOG.exception("Failed to initialize public chat runner on startup")
 
-    @app.on_event("shutdown")
-    async def _public_chat_shutdown() -> None:
+    def _public_chat_shutdown() -> None:
         shutdown_public_chat_file_logging()
+
+    shared_state["public_chat_startup"] = _public_chat_startup
+    shared_state["public_chat_shutdown"] = _public_chat_shutdown
 
     app.include_router(
         create_public_ask_router(_ensure_runner),

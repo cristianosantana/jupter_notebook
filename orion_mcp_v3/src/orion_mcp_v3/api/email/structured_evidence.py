@@ -9,6 +9,11 @@ from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 
 def structured_email_evidence_from(evidence: EvidenceBlock | None) -> str | None:
     """Prefere ``full_summary`` (ranking completo) quando a projeção foi escopada para chat."""
+    return analytical_direct_reply_from(evidence)
+
+
+def analytical_direct_reply_from(evidence: EvidenceBlock | None) -> str | None:
+    """Texto de resposta directa no caminho analítico (sem narrador LLM)."""
     if evidence is None:
         return None
     supporting = evidence.supporting_data or {}

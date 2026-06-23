@@ -1,0 +1,31 @@
+"""Gaps tipados com reason codes."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class GapReason(str, Enum):
+    NOT_IN_CATALOG = "not_in_catalog"
+    NO_MEMORY_FOUND = "no_memory_found"
+    MEMORY_EXISTS_BUT_NO_MATCH = "memory_exists_but_no_match"
+    PARTIAL_MATCH_ONLY = "partial_match_only"
+    EXTRACTION_FAILED = "extraction_failed"
+    LOW_CONFIDENCE = "low_confidence"
+
+
+@dataclass(frozen=True, slots=True)
+class FactGap:
+    fact_key: str
+    reason: GapReason
+    detail: str | None = None
+    origin_ids_attempted: tuple[int, ...] = ()
+
+    def as_mapping(self) -> dict[str, object]:
+        return {
+            "fact_key": self.fact_key,
+            "reason": self.reason.value,
+            "detail": self.detail,
+            "origin_ids_attempted": list(self.origin_ids_attempted),
+        }
