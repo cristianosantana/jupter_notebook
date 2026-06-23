@@ -9,12 +9,16 @@ from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 
-def _slugify(text: str) -> str:
-    """Normaliza texto para slug estável: lowercase, sem acentos, separado por _."""
+def slugify_memory_label(text: str) -> str:
+    """Normaliza rótulo de memória (categoria/tema) para slug estável."""
     normalized = unicodedata.normalize("NFKD", text)
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^\w\s-]", "", ascii_text.lower())
     return re.sub(r"[\s-]+", "_", slug).strip("_")
+
+
+def _slugify(text: str) -> str:
+    return slugify_memory_label(text)
 
 
 def _period_slug(periodo: str) -> str:

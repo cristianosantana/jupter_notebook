@@ -169,6 +169,97 @@ def test_parse_distillation_payload_normalizes_numeric_confidence() -> None:
     assert batch.essence[0].confidence == "high"
 
 
+def test_parse_distillation_payload_normalizes_list_key_metrics() -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "fechamento gerencial",
+                        "theme": "fechamento_maio_2026",
+                        "validated_answer": (
+                            "Fechamento validado de maio com detalhamento completo por seção "
+                            "e valores numéricos preservados integralmente."
+                        ),
+                        "key_metrics": [
+                            {
+                                "metric": "Cartão de Crédito (faturamento por tipo de pagamento)",
+                                "value": "R$ 1.271.748,02 (47,25%)",
+                            },
+                            {
+                                "metric": "Venda Normal (faturamento por tipo de venda)",
+                                "value": "R$ 1.694.760,90 (64,97%)",
+                            },
+                        ],
+                    }
+                ],
+                "essence": [
+                    {
+                        "user_id": "sistema_background",
+                        "theme": "fechamento_maio_2026",
+                        "stable_metrics": [
+                            "Cartão de Crédito: R$ 1.271.748,02 (47,25%)",
+                            "Venda Normal: R$ 1.694.760,90 (64,97%)",
+                        ],
+                    }
+                ],
+            }
+        )
+    )
+
+    assert batch.knowledge[0].key_metrics["cartao_de_credito_faturamento_por_tipo_de_pagamento"] == (
+        "R$ 1.271.748,02 (47,25%)"
+    )
+    assert batch.essence[0].stable_metrics["cartao_de_credito"] == "R$ 1.271.748,02 (47,25%)"
+
+
+def test_parse_distillation_payload_joins_list_fields_as_text() -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [],
+                "essence": [
+                    {
+                        "user_id": "sistema_background",
+                        "theme": "fechamento_maio_2026",
+                        "key_finding": [
+                            "Cartão de Crédito foi o principal meio de pagamento.",
+                            "Venda Normal representa a maior parcela do faturamento.",
+                        ],
+                        "recommendation": [
+                            "Monitorar parcelamento em 10X.",
+                            "Priorizar capacidade produtiva dos serviços top.",
+                        ],
+                    }
+                ],
+                "compression_log": {
+                    "user_id": "sistema_background",
+                    "from_state": "2 mensagens",
+                    "to_state": "1 knowledge + 1 essence",
+                    "what_was_kept": ["faturamento validado", "perguntas indice"],
+                    "what_was_dropped": ["ruido conversacional"],
+                },
+            }
+        )
+    )
+
+    assert batch.essence[0].key_finding == (
+        "Cartão de Crédito foi o principal meio de pagamento.\n"
+        "Venda Normal representa a maior parcela do faturamento."
+    )
+    assert batch.essence[0].recommendation == (
+        "Monitorar parcelamento em 10X.\nPriorizar capacidade produtiva dos serviços top."
+    )
+    assert batch.compression_log is not None
+    assert batch.compression_log.what_was_kept == "faturamento validado\nperguntas indice"
+    assert batch.compression_log.what_was_dropped == "ruido conversacional"
+
+
 def test_parse_distillation_payload_serializes_structured_compression_details() -> None:
     module = _load_script_module()
 
@@ -181,7 +272,6 @@ def test_parse_distillation_payload_serializes_structured_compression_details() 
                     "user_id": "sistema_background",
                     "from_state": "conversation_state",
                     "to_state": "memory_v2",
-                    "what_was_kept": ["faturamento validado", "perguntas indice"],
                     "what_was_dropped": {"duplicadas": 3},
                 },
             }
@@ -189,7 +279,6 @@ def test_parse_distillation_payload_serializes_structured_compression_details() 
     )
 
     assert batch.compression_log is not None
-    assert batch.compression_log.what_was_kept == '["faturamento validado", "perguntas indice"]'
     assert batch.compression_log.what_was_dropped == '{"duplicadas": 3}'
 
 

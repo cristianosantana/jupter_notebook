@@ -81,7 +81,11 @@ def _pick_hit_for_themes(
         return hits[0] if hits and not themes else None
     for hit in hits:
         for theme in themes:
-            if catalog.category_matches_theme(hit.category, theme):
+            if catalog.category_matches_theme(
+                hit.category,
+                theme,
+                context_key=hit.context_key,
+            ):
                 return hit
     return None
 

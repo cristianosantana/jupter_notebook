@@ -10,6 +10,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from orion_mcp_v3.memory.remissive_models import slugify_memory_label
+
 
 @dataclass(frozen=True, slots=True)
 class MemoryThemeEntry:
@@ -37,12 +39,34 @@ class MemoryCatalog:
                 return theme
         return None
 
-    def category_matches_theme(self, category: str, theme_slug: str) -> bool:
+    def category_matches_theme(
+        self,
+        category: str,
+        theme_slug: str,
+        *,
+        context_key: str | None = None,
+    ) -> bool:
         entry = self.theme_entry(theme_slug)
         if entry is None:
             return False
-        normalized = category.lower()
-        return any(pattern.lower() in normalized for pattern in entry.category_patterns)
+        theme_norm = slugify_memory_label(theme_slug)
+        if context_key:
+            key_category = _context_key_category_slug(context_key)
+            if key_category and key_category == theme_norm:
+                return True
+        category_slug = slugify_memory_label(category)
+        for pattern in entry.category_patterns:
+            pattern_slug = slugify_memory_label(pattern)
+            if category_slug == pattern_slug or pattern_slug in category_slug:
+                return True
+        return False
+
+
+def _context_key_category_slug(context_key: str) -> str | None:
+    parts = [part.strip() for part in context_key.split(":") if part.strip()]
+    if len(parts) < 2:
+        return None
+    return parts[1]
 
 
 def _parse_theme(slug: str, raw: Mapping[str, Any]) -> MemoryThemeEntry:
