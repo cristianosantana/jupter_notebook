@@ -39,30 +39,27 @@ class MemoryCatalog:
                 return theme
         return None
 
-    def category_matches_theme(
-        self,
-        category: str,
-        theme_slug: str,
-        *,
-        context_key: str | None = None,
-    ) -> bool:
+    def context_key_matches_theme(self, context_key: str, theme_slug: str) -> bool:
+        """Associa hit a tema via segmento canónico do ``context_key`` (não usa ``category``)."""
         entry = self.theme_entry(theme_slug)
         if entry is None:
             return False
+        key_theme = context_key_theme_slug(context_key)
+        if not key_theme:
+            return False
+        key_norm = slugify_memory_label(key_theme)
         theme_norm = slugify_memory_label(theme_slug)
-        if context_key:
-            key_category = _context_key_category_slug(context_key)
-            if key_category and key_category == theme_norm:
-                return True
-        category_slug = slugify_memory_label(category)
+        if key_norm == theme_norm:
+            return True
         for pattern in entry.category_patterns:
             pattern_slug = slugify_memory_label(pattern)
-            if category_slug == pattern_slug or pattern_slug in category_slug:
+            if key_norm == pattern_slug or pattern_slug in key_norm:
                 return True
         return False
 
 
-def _context_key_category_slug(context_key: str) -> str | None:
+def context_key_theme_slug(context_key: str) -> str | None:
+    """Segmento 2 do ``context_key`` — slug canónico da categoria/tema na memória."""
     parts = [part.strip() for part in context_key.split(":") if part.strip()]
     if len(parts) < 2:
         return None

@@ -1,4 +1,4 @@
-"""Testes de matching categoria ↔ tema no catálogo de memória."""
+"""Testes de matching tema via ``context_key`` canónico."""
 
 from __future__ import annotations
 
@@ -11,27 +11,31 @@ from orion_mcp_v3.public_chat.domain.fact_engine.semantics import (
     SourcePriority,
 )
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
-from orion_mcp_v3.public_chat.domain.memory_catalog import get_memory_catalog
+from orion_mcp_v3.public_chat.domain.memory_catalog import context_key_theme_slug, get_memory_catalog
 
 
-def test_category_matches_theme_accepts_human_readable_category_label() -> None:
-    catalog = get_memory_catalog()
+def test_context_key_theme_slug_reads_canonical_segment() -> None:
+    context_key = "sistema_background:fechamento_gerencial:fechamento_de_maio_de_2026:maio-2026"
 
-    assert catalog.category_matches_theme("fechamento gerencial", "fechamento_gerencial")
+    assert context_key_theme_slug(context_key) == "fechamento_gerencial"
 
 
-def test_category_matches_theme_uses_context_key_category_segment() -> None:
+def test_context_key_matches_theme_uses_context_key_not_category_label() -> None:
     catalog = get_memory_catalog()
     context_key = "sistema_background:fechamento_gerencial:fechamento_de_maio_de_2026:maio-2026"
 
-    assert catalog.category_matches_theme(
-        "categoria irrelevante",
-        "fechamento_gerencial",
-        context_key=context_key,
-    )
+    assert catalog.context_key_matches_theme(context_key, "fechamento_gerencial")
 
 
-def test_fallback_policy_resolves_hit_with_spaced_category_label() -> None:
+def test_context_key_matches_theme_ignores_misleading_category_metadata() -> None:
+    catalog = get_memory_catalog()
+    context_key = "sistema_background:fechamento_gerencial:fechamento_de_maio_de_2026:maio-2026"
+
+    assert catalog.context_key_matches_theme(context_key, "fechamento_gerencial")
+    assert not catalog.context_key_matches_theme(context_key, "vendas_departamento")
+
+
+def test_fallback_policy_resolves_hit_from_context_key_when_category_is_human_label() -> None:
     catalog = get_memory_catalog()
     hit = KnowledgeHit(
         origin_id=1,
@@ -68,3 +72,42 @@ def test_fallback_policy_resolves_hit_with_spaced_category_label() -> None:
     assert result.hit is not None
     assert result.hit.hit.origin_id == 1
     assert result.gap is None
+
+
+def test_fallback_policy_does_not_match_when_only_category_label_aligns() -> None:
+    catalog = get_memory_catalog()
+    hit = KnowledgeHit(
+        origin_id=2,
+        context_key="sistema_background:vendas_departamento:oficina:2026-05",
+        category="fechamento gerencial",
+        validated_answer="n/d",
+        key_metrics={},
+        score=0.9,
+    )
+    requirement = FactRequirement(
+        fact_key="ranking_forma_pagamento",
+        metric="faturamento",
+        dimension="forma_pagamento",
+        entity=None,
+        period="2026-05",
+        operation="summary",
+        semantics=FactSemantics(
+            fact_key="ranking_forma_pagamento",
+            aggregation_rule=AggregationRule.MIN,
+            comparator=Comparator.ASC,
+            source_priority=(SourcePriority.STRUCTURED,),
+            value_kind="currency",
+            allows_multiple_values=True,
+        ),
+    )
+
+    result = FallbackPolicy().resolve_from_hits(
+        requirement,
+        catalog_hits=[],
+        vector_hits=[hit],
+        catalog=catalog,
+    )
+
+    assert result.hit is None
+    assert result.gap is not None
+    assert result.gap.reason.value == "memory_exists_but_no_match"

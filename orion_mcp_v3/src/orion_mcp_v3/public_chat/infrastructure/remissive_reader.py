@@ -39,10 +39,10 @@ FROM "public"."memory_essence"
 WHERE "theme" = ANY($1::text[])
 """
 
-_LOAD_CURTA_BY_CATEGORY_PATTERN = """
+_LOAD_CURTA_BY_CONTEXT_KEY_THEME = """
 SELECT "id", "category", "context_key", "validated_answer", "key_metrics"
 FROM "public"."memory_curta"
-WHERE LOWER("category") LIKE $1
+WHERE LOWER("context_key") LIKE $1
 ORDER BY "id" DESC
 LIMIT $2
 """
@@ -215,8 +215,8 @@ class PublicRemissiveReader:
         hits_by_id: dict[int, KnowledgeHit] = {}
         async with self._pool.acquire() as conn:
             for pattern in normalized:
-                like = f"%{pattern}%"
-                rows = await conn.fetch(_LOAD_CURTA_BY_CATEGORY_PATTERN, like, limit)
+                like = f"%:{pattern}%"
+                rows = await conn.fetch(_LOAD_CURTA_BY_CONTEXT_KEY_THEME, like, limit)
                 for row in rows:
                     origin_id = int(row["id"])
                     if origin_id in hits_by_id:
