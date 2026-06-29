@@ -24,7 +24,7 @@ class ResolveResult:
 
 
 class FallbackPolicy:
-    """Ordem fixa: catálogo/SQL → vector merge → gap explícito."""
+    """Catálogo filtra elegibilidade; vector search define a ordem de preferência."""
 
     def resolve_from_hits(
         self,
@@ -39,17 +39,14 @@ class FallbackPolicy:
         if not themes and requirement.semantics.memory_themes:
             themes = requirement.semantics.memory_themes
 
-        catalog_match = _pick_hit_for_themes(catalog_hits, themes, catalog)
-        if catalog_match is not None:
-            return ResolveResult(
-                hit=ResolvedMemoryHit(hit=catalog_match, rule=ResolutionRule.CATALOG),
-            )
-
-        vector_match = _pick_hit_for_themes(vector_hits, themes, catalog)
-        if vector_match is not None:
-            return ResolveResult(
-                hit=ResolvedMemoryHit(hit=vector_match, rule=ResolutionRule.VECTOR_RETRIEVAL),
-            )
+        picked, rule = _pick_hit_for_themes(
+            vector_hits=vector_hits,
+            catalog_hits=catalog_hits,
+            themes=themes,
+            catalog=catalog,
+        )
+        if picked is not None and rule is not None:
+            return ResolveResult(hit=ResolvedMemoryHit(hit=picked, rule=rule))
 
         attempted = tuple(hit.origin_id for hit in catalog_hits + vector_hits)
         if attempted:
@@ -72,18 +69,59 @@ class FallbackPolicy:
         )
 
 
-def _pick_hit_for_themes(
+def _hit_matches_themes(
+    hit: KnowledgeHit,
+    themes: tuple[str, ...],
+    catalog: MemoryCatalog,
+) -> bool:
+    if not themes:
+        return True
+    return any(catalog.context_key_matches_theme(hit.context_key, theme) for theme in themes)
+
+
+def _filter_hits_for_themes(
     hits: list[KnowledgeHit],
     themes: tuple[str, ...],
     catalog: MemoryCatalog,
-) -> KnowledgeHit | None:
-    if not hits or not themes:
-        return hits[0] if hits and not themes else None
-    for hit in hits:
-        for theme in themes:
-            if catalog.context_key_matches_theme(hit.context_key, theme):
-                return hit
-    return None
+) -> list[KnowledgeHit]:
+    if not themes:
+        return list(hits)
+    return [hit for hit in hits if _hit_matches_themes(hit, themes, catalog)]
+
+
+def _pick_hit_for_themes(
+    *,
+    vector_hits: list[KnowledgeHit],
+    catalog_hits: list[KnowledgeHit],
+    themes: tuple[str, ...],
+    catalog: MemoryCatalog,
+) -> tuple[KnowledgeHit | None, ResolutionRule | None]:
+    """
+    Escolhe o hit mais adequado intersectando elegibilidade (catálogo) com
+    relevância semântica (ordem do vector search).
+
+    1. Percorre vector_hits na ordem do retriever; retorna o primeiro cujo
+       origin_id está no conjunto elegível do catálogo.
+    2. Sem catálogo: primeiro vector hit que casa com o tema.
+    3. Fallback: primeiro hit elegível do catálogo (ordem SQL).
+    """
+    eligible_catalog = _filter_hits_for_themes(catalog_hits, themes, catalog)
+    eligible_ids = {hit.origin_id for hit in eligible_catalog}
+
+    if eligible_ids:
+        for hit in vector_hits:
+            if hit.origin_id in eligible_ids:
+                return hit, ResolutionRule.VECTOR_RETRIEVAL
+
+    if not eligible_catalog:
+        for hit in vector_hits:
+            if _hit_matches_themes(hit, themes, catalog):
+                return hit, ResolutionRule.VECTOR_RETRIEVAL
+
+    if eligible_catalog:
+        return eligible_catalog[0], ResolutionRule.CATALOG
+
+    return None, None
 
 
 def build_trace_for_resolution(
