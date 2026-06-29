@@ -794,6 +794,66 @@ def test_parse_distillation_payload_enriches_key_metrics_with_meta() -> None:
     assert payload["rows"][0]["servico"] == "PPF FULL"
 
 
+def test_parse_distillation_payload_enriches_large_flat_key_metrics_with_head_tail_meta() -> None:
+    scripts = Path(__file__).resolve().parents[3] / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    from distillery.payload_parser import parse_distillation_payload
+
+    flat_metrics = {
+        f"SERVICO {index:02d}": f"R$ {(25 - index + 1) * 1_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        for index in range(1, 26)
+    }
+
+    batch = parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "fechamento gerencial",
+                        "theme": "producao_por_servico",
+                        "metric_kind": "producao",
+                        "dimension": "por_servico",
+                        "periodo": "2026-05",
+                        "validated_answer": (
+                            "Produção por serviço validada em maio com ranking completo preservado "
+                            "no lote supervisionado para auditoria e memória remissiva."
+                        ),
+                        "index_questions": [
+                            "Qual serviço mais produziu em maio?",
+                            "Qual serviço menos produziu em maio?",
+                            "Ranking de produção por serviço maio 2026",
+                            "Quanto cada serviço produziu em maio de 2026?",
+                        ],
+                        "key_metrics": flat_metrics,
+                        "confidence": "high",
+                    }
+                ],
+            }
+        )
+    )
+
+    assert len(batch.knowledge) == 1
+    payload = batch.knowledge[0].key_metrics["producao_por_servico"]
+    assert payload["_meta"]["truncated_head_tail"] is True
+    assert payload["_meta"]["total_original_rows"] == 25
+    assert len(payload["rows"]) == 20
+    assert "_omitidos_centro" not in batch.knowledge[0].key_metrics
+
+
+def test_mapping_preserves_all_entities_without_truncation() -> None:
+    scripts = Path(__file__).resolve().parents[3] / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    from distillery.field_parsers import mapping
+
+    flat = {f"SERVICO {index:02d}": f"R$ {index * 100:,.2f}" for index in range(1, 26)}
+    result = mapping({"key_metrics": flat}, "key_metrics")
+    assert len(result) == 25
+    assert "_omitidos_centro" not in result
+
+
 def test_enrich_prefers_indexed_turns_over_messages() -> None:
     module = _load_script_module()
     short_message = (

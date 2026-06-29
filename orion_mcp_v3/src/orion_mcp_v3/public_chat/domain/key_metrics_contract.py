@@ -12,6 +12,8 @@ METRIC_KINDS = frozenset({"revenue", "commission", "share", "count", "rate"})
 SCHEMA_RANKED_LIST = "ranked_list"
 SCHEMA_TABLE = "table"
 SCHEMA_SCALAR = "scalar"
+_HEAD_TAIL_LIMIT = 10
+_HEAD_TAIL_FULL_THRESHOLD = 20
 
 CANONICAL_INDEX_META: dict[str, dict[str, str]] = {
     "producao_por_produto": {
@@ -154,15 +156,14 @@ def _is_flat_entity_map(data: dict[str, Any]) -> bool:
     if not data:
         return False
 
-    if any(k.startswith("_") for k in data):
-        return False
-
     # Chave de índice canônica → não é mapa plano de entidades
     if any(k in CANONICAL_INDEX_META for k in data):
         return False
 
     entity_count = 0
     for key, value in data.items():
+        if key.startswith("_"):
+            continue
         if _is_placeholder_key(key):
             continue
         if value is None:
@@ -171,8 +172,11 @@ def _is_flat_entity_map(data: dict[str, Any]) -> bool:
             entity_count += 1
 
     eligible = sum(
-        1 for key, value in data.items()
-        if not _is_placeholder_key(key) and value is not None
+        1
+        for key, value in data.items()
+        if not key.startswith("_")
+        and not _is_placeholder_key(key)
+        and value is not None
     )
     if eligible == 0:
         return False
@@ -183,8 +187,36 @@ def _filter_flat_map(data: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in data.items()
-        if not _is_placeholder_key(key) and value is not None
+        if not key.startswith("_")
+        and not _is_placeholder_key(key)
+        and value is not None
     }
+
+
+def _metric_sort_key(value: Any) -> float:
+    try:
+        return float(
+            re.sub(r"[R$.,\s%]", "", str(value))
+            .replace(",", ".")
+            .strip()
+            or "0"
+        )
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _select_head_tail_entries(
+    entries: list[tuple[str, Any]],
+) -> tuple[list[tuple[str, Any]], int, bool]:
+    total_original = len(entries)
+    sorted_entries = sorted(entries, key=lambda item: _metric_sort_key(item[1]), reverse=True)
+    if total_original <= _HEAD_TAIL_FULL_THRESHOLD:
+        return sorted_entries, total_original, False
+    selected = (
+        sorted_entries[:_HEAD_TAIL_LIMIT]
+        + sorted_entries[-_HEAD_TAIL_LIMIT:]
+    )
+    return selected, total_original, True
 
 
 def _infer_entity_field(dimension: str) -> str:
@@ -283,20 +315,26 @@ def _wrap_flat_entity_map(
     entity_field = meta.get("entity_field", "entidade")
     value_field = meta.get("value_field", "valor")
 
+    entries = list(data.items())
+    selected_entries, total_original_rows, truncated = _select_head_tail_entries(entries)
+    meta["total_original_rows"] = total_original_rows
+    meta["truncated_head_tail"] = truncated
+
     if meta.get("schema") == SCHEMA_TABLE:
         sample = [
             f"{entity} | {value}" if isinstance(value, str) else f"{entity} | {value!s}"
-            for entity, value in data.items()
+            for entity, value in selected_entries
         ]
         logger.info(
-            "key_metrics embrulhado (table): index=%s, entities=%d",
+            "key_metrics embrulhado (table): index=%s, entities=%d, original=%d",
             index_key,
-            len(data),
+            len(selected_entries),
+            total_original_rows,
         )
         return {index_key: {"_meta": meta, "table_rows_sample": sample}}
 
     rows: list[dict[str, Any]] = []
-    for entity, value in data.items():
+    for entity, value in selected_entries:
         row: dict[str, Any] = {entity_field: entity, value_field: value}
         if isinstance(value, str) and "(" in value and ")" in value:
             match = re.search(r"\(([0-9,.]+)%\)", value)
@@ -304,24 +342,12 @@ def _wrap_flat_entity_map(
                 row["percentual"] = f"{match.group(1)}%"
         rows.append(row)
 
-    try:
-        rows.sort(
-            key=lambda r: float(
-                re.sub(r"[R$.,\s%]", "", str(r.get(value_field, "0")))
-                .replace(",", ".")
-                .strip()
-                or "0"
-            ),
-            reverse=True,
-        )
-    except (ValueError, TypeError):
-        pass
-
     logger.info(
-        "key_metrics embrulhado: index=%s, dimension=%s, entities=%d",
+        "key_metrics embrulhado: index=%s, dimension=%s, entities=%d, original=%d",
         index_key,
         dimension or meta.get("dimension"),
-        len(data),
+        len(selected_entries),
+        total_original_rows,
     )
     return {index_key: {"_meta": meta, "rows": rows}}
 
@@ -375,7 +401,6 @@ def enrich_key_metrics(
 
     for key, raw in key_metrics.items():
         if key.startswith("_"):
-            enriched[key] = raw
             continue
         
         canonical = canonical_meta_for_key(key)

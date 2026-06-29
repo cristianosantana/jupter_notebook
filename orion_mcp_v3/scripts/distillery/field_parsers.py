@@ -125,7 +125,7 @@ _SPURIOUS_KEY_RE = re.compile(r"^mais_\d+_", re.IGNORECASE)
 _SPURIOUS_KEY_LITERALS: frozenset[str] = frozenset({
     "observacao", "observação", "nota", "note", "aviso", "warning",
     "truncado", "truncated", "resumo", "summary", "total_linhas",
-    "row_count", "mais_linhas", "more_rows",
+    "row_count", "mais_linhas", "more_rows", "_omitidos_centro",
 })
  
 # Sinal textual de truncagem no valor da chave
@@ -134,10 +134,6 @@ _TRUNCATION_VALUE_RE = re.compile(
     r"Omitidas\s+\d+\s+linha|Exibindo os 10 piores",
     re.IGNORECASE,
 )
- 
-# Número de entradas a preservar na cabeça e na cauda quando há truncagem
-_HEAD_TAIL_SIZE = 10
- 
  
 def _is_spurious_key(key: str) -> bool:
     k = key.strip().lower()
@@ -175,38 +171,15 @@ def _parse_list_item(item: Any, index: int, result: dict[str, Any]) -> None:
     result[f"item_{index}"] = item
  
  
-def _head_tail(entries: list[tuple[str, Any]], *, size: int = _HEAD_TAIL_SIZE) -> dict[str, Any]:
-    """
-    Estratégia cabeça+cauda para listas truncadas pelo LLM.
- 
-    Preserva as primeiras e últimas `size` entradas, marcando a omissão
-    do meio com a chave "_omitidos_centro" quando aplicável.
- 
-    Isso garante que perguntas como "quem menos vendeu?" encontrem os
-    menores valores (na cauda), e "quem mais vendeu?" encontre os maiores
-    (na cabeça), mesmo em listas grandes.
-    """
-    if len(entries) <= size * 2:
-        return dict(entries)
-    head = entries[:size]
-    tail = entries[-size:]
-    omitted = len(entries) - size * 2
-    result: dict[str, Any] = {}
-    for k, v in head:
-        result[k] = v
-    result["_omitidos_centro"] = f"{omitted} entradas omitidas (dados intermediarios)"
-    for k, v in tail:
-        result[k] = v
-    return result
-
 def mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
     """
-    Extrai dict de métricas com normalização de formato e estratégia cabeça+cauda.
+    Extrai dict de métricas com higienização de formato.
  
     Aceita: dict direto ou lista de objetos/strings com label:valor.
  
     Remove chaves espúrias de metadado inseridas pelo LLM (mais_21_linhas,
-    observacao, etc.) e aplica cabeça+cauda quando o dict é grande.
+    observacao, chaves de truncagem textual, etc.). Truncagem estrutural
+    cabeça/cauda ocorre em ``enrich_key_metrics``.
     """
     value = data.get(key, {})
     if value is None:
@@ -221,8 +194,11 @@ def mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
     else:
         raise ValueError(f"Campo deve ser objeto JSON: {key}")
  
-    clean: list[tuple[str, Any]] = []
+    clean: dict[str, Any] = {}
     for k, v in raw.items():
+        if k.startswith("_"):
+            logger.debug("key_metrics: chave de controle removida: %r", k)
+            continue
         if _is_spurious_key(k):
             logger.debug("key_metrics: chave espuria removida: %r", k)
             continue
@@ -231,9 +207,9 @@ def mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
                 "key_metrics: valor de truncagem na chave %r removido — dados incompletos.", k,
             )
             continue
-        clean.append((k, v))
- 
-    return _head_tail(clean)
+        clean[k] = v
+
+    return clean
 
 
 # ---------------------------------------------------------------------------

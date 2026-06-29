@@ -72,10 +72,48 @@ def test_enrich_key_metrics_wraps_legacy_array_with_meta() -> None:
     assert len(payload["rows"]) == 1
 
 
-def test_enrich_key_metrics_wraps_root_flat_entity_map_for_comissao() -> None:
+def _flat_servico_map(count: int) -> dict[str, str]:
+    return {
+        f"SERVICO {index:02d}": f"R$ {(count - index + 1) * 1_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        for index in range(1, count + 1)
+    }
+
+
+def test_enrich_key_metrics_head_tail_for_large_flat_map() -> None:
+    enriched = enrich_key_metrics(
+        _flat_servico_map(25),
+        metric_kind="producao",
+        dimension="por_servico",
+        theme="producao_por_servico",
+    )
+    payload = enriched["producao_por_servico"]
+    assert payload["_meta"]["truncated_head_tail"] is True
+    assert payload["_meta"]["total_original_rows"] == 25
+    assert len(payload["rows"]) == 20
+    assert payload["rows"][0]["servico"] == "SERVICO 01"
+    assert payload["rows"][-1]["servico"] == "SERVICO 25"
+    assert "_omitidos_centro" not in enriched
+    assert "_omitidos_centro" not in payload
+
+
+def test_enrich_key_metrics_keeps_all_rows_for_small_flat_map() -> None:
+    enriched = enrich_key_metrics(
+        _flat_servico_map(8),
+        metric_kind="producao",
+        dimension="por_servico",
+        theme="producao_por_servico",
+    )
+    payload = enriched["producao_por_servico"]
+    assert payload["_meta"]["truncated_head_tail"] is False
+    assert payload["_meta"]["total_original_rows"] == 8
+    assert len(payload["rows"]) == 8
+
+
+def test_enrich_key_metrics_wraps_legacy_polluted_flat_map_with_meta() -> None:
     flat = {
         "GWM BAMAQ": "R$ 43.584,46 (11,55%)",
         "SAITAMA - HONDA": "R$ 36.755,90 (9,74%)",
+        "_omitidos_centro": "1 entradas omitidas (dados intermediarios)",
         "... Omitidas 11 linha(s) intermediárias. Exibindo os 10 piores resultados abaixo ...": None,
     }
     enriched = enrich_key_metrics(
@@ -90,8 +128,8 @@ def test_enrich_key_metrics_wraps_root_flat_entity_map_for_comissao() -> None:
     assert payload["_meta"]["metric_kind"] == "commission"
     rows = payload["rows"]
     assert rows[0]["concessionaria"] == "GWM BAMAQ"
-    assert rows[0]["valor_comissao"] == "R$ 43.584,46 (11,55%)"
     assert len(rows) == 2
+    assert "_omitidos_centro" not in enriched
 
 
 def test_enrich_key_metrics_wraps_root_flat_map_faturamento_por_forma_pagamento() -> None:
