@@ -76,7 +76,7 @@ def test_enrich_key_metrics_wraps_root_flat_entity_map_for_comissao() -> None:
     flat = {
         "GWM BAMAQ": "R$ 43.584,46 (11,55%)",
         "SAITAMA - HONDA": "R$ 36.755,90 (9,74%)",
-        "... mais 21 linha(s) disponíveis em answers[].rows.": None,
+        "... Omitidas 11 linha(s) intermediárias. Exibindo os 10 piores resultados abaixo ...": None,
     }
     enriched = enrich_key_metrics(
         flat,

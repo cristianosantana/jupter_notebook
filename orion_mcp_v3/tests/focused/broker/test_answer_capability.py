@@ -143,6 +143,60 @@ def test_fechamento_gerencial_projects_executive_contract_without_parallel_paylo
     assert projected.answers[0].rows[0]["caixa_tipo"] == "Cartão de Crédito"
 
 
+def _comissao_concessionaria_rows(count: int) -> list[dict]:  # type: ignore[type-arg]
+    """Linhas ordenadas por total_comissao decrescente (maior primeiro)."""
+    return [
+        {
+            "periodo": "2026-05",
+            "concessionaria": f"Concessionária {index:02d}",
+            "total_faturamento": f"{(count - index + 1) * 100:.2f}",
+            "total_comissao": f"{(count - index + 1) * 10:.2f}",
+        }
+        for index in range(1, count + 1)
+    ]
+
+
+def _section_detail_for_comissao_count(count: int) -> str:
+    projected = build_projected_answer_set(
+        "Faça o fechamento gerencial de maio de 2026",
+        [
+            _fechamento_result(
+                "fechamento_faturamento_comissao_concessionaria_periodo",
+                _comissao_concessionaria_rows(count),
+            ),
+        ],
+        templates=ANALYTICS_TEMPLATES,
+    )
+    assert projected is not None
+    assert projected.section_detail is not None
+    return projected.section_detail
+
+
+def test_fechamento_section_detail_lists_all_rows_when_at_most_20() -> None:
+    detail_8 = _section_detail_for_comissao_count(8)
+    assert "1. Concessionária 01:" in detail_8
+    assert "8. Concessionária 08:" in detail_8
+    assert "Omitidas" not in detail_8
+    assert "answers[].rows" not in detail_8
+
+    detail_20 = _section_detail_for_comissao_count(20)
+    assert "1. Concessionária 01:" in detail_20
+    assert "20. Concessionária 20:" in detail_20
+    assert "Omitidas" not in detail_20
+
+
+def test_fechamento_section_detail_shows_head_and_tail_when_more_than_20_rows() -> None:
+    detail = _section_detail_for_comissao_count(31)
+    assert "1. Concessionária 01:" in detail
+    assert "10. Concessionária 10:" in detail
+    assert "11. Concessionária 11:" not in detail
+    assert "Omitidas 11 linha(s) intermediárias" in detail
+    assert "Exibindo os 10 piores resultados abaixo" in detail
+    assert "22. Concessionária 22:" in detail
+    assert "31. Concessionária 31:" in detail
+    assert "answers[].rows" not in detail
+
+
 def test_fechamento_tipo_os_projects_commission_composition_table() -> None:
     projected = build_projected_answer_set(
         "Faça o fechamento gerencial de fevereiro de 2026",

@@ -160,6 +160,7 @@ class OrionSettings(BaseSettings):
             "Usado apenas se analytics_pipeline_trace=true. Caminho relativo = relativamente ao cwd."
         ),
     )
+    distillation_max_tokens: int = Field(16384, ge=64, le=65536, description="Orçamento máximo para a distilação de memória remissiva.")
 
     # ── Helpers ──────────────────────────────────────────────────────
 

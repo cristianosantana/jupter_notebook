@@ -38,7 +38,7 @@ SRC  = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from orion_mcp_v3.config.settings import get_settings_uncached
+from orion_mcp_v3.config.settings import get_settings, get_settings_uncached
 from orion_mcp_v3.memory.remissive_memory_store import RemissiveMemoryStore
 from orion_mcp_v3.memory.remissive_models import (
     RemissiveConversationWindow,
@@ -61,8 +61,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s -- %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-_DISTILLATION_MAX_TOKENS = 16_384
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +108,9 @@ class DistillSupervisedMemoryCommand:
         logger.info("Janelas lidas: %d", len(windows))
         prompt   = build_distillation_prompt(windows)
         response = await self._llm.generate(
-            prompt, temperature=0, max_tokens=_DISTILLATION_MAX_TOKENS
+            prompt, 
+            temperature=0, 
+            max_tokens=get_settings().distillation_max_tokens
         )
 
         try:

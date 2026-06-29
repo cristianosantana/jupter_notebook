@@ -656,6 +656,35 @@ _FECHAMENTO_LABELS = {
     "fechamento_taxas_cartao_credito": "Taxas de cartão de crédito",
 }
 _COMISSAO_TIPO_OS_SLUG = "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo"
+_HEAD_TAIL_LIMIT = 10
+_HEAD_TAIL_FULL_THRESHOLD = 20
+
+
+def _head_tail_omission_divider(omitted: int) -> str:
+    return (
+        f"... Omitidas {omitted} linha(s) intermediárias. "
+        "Exibindo os 10 piores resultados abaixo ..."
+    )
+
+
+def _append_head_tail_lines(
+    lines: list[str],
+    rows: Sequence[Any],
+    *,
+    render: Any,
+) -> None:
+    total_rows = len(rows)
+    if total_rows <= _HEAD_TAIL_FULL_THRESHOLD:
+        for index, row in enumerate(rows, start=1):
+            lines.append(render(index, row))
+        return
+    for index, row in enumerate(rows[:_HEAD_TAIL_LIMIT], start=1):
+        lines.append(render(index, row))
+    omitted = total_rows - (_HEAD_TAIL_LIMIT * 2)
+    lines.append(_head_tail_omission_divider(omitted))
+    start_index = total_rows - _HEAD_TAIL_LIMIT + 1
+    for index, row in enumerate(rows[-_HEAD_TAIL_LIMIT:], start=start_index):
+        lines.append(render(index, row))
 
 
 def _is_fechamento_gerencial_por_mes(
@@ -760,11 +789,26 @@ def _fechamento_section(
     }
 
 
+def _fechamento_ranked_line(
+    index: int,
+    row: Mapping[str, Any],
+    *,
+    measure: MeasureCapability,
+    dimension: DimensionCapability | None,
+    total: float,
+) -> str:
+    value_num = _to_float(row.get(measure.column))
+    value = _format_value(value_num, measure.kind) if value_num is not None else "n/d"
+    share = _format_value((value_num / total * 100.0), "percent") if total and value_num is not None else None
+    label_value = _row_label(row, dimension)
+    suffix = f" ({share})" if share else ""
+    return f"{index}. {label_value}: {value}{suffix}"
+
+
 def _fechamento_section_detail(
     answers: Sequence[ProjectedAnswer],
     *,
     templates: "QueryTemplateRegistry",
-    limit_per_section: int = 10,
 ) -> str:
     lines = ["Detalhe por seção do fechamento gerencial:"]
     for answer in answers:
@@ -776,28 +820,41 @@ def _fechamento_section_detail(
         if measure is None:
             continue
         if answer.plan.template_slug == _COMISSAO_TIPO_OS_SLUG:
-            lines.extend(_fechamento_comissao_tipo_os_table(answer, limit_per_section=limit_per_section))
+            lines.extend(_fechamento_comissao_tipo_os_table(answer))
             continue
         label = _FECHAMENTO_LABELS.get(answer.plan.template_slug, answer.plan.template_slug)
         lines.extend(["", f"## {label}", f"Template: {answer.plan.template_slug}", f"Linhas disponíveis: {len(answer.rows)}"])
-        values = [_to_float(row.get(measure.column)) for row in answer.rows]
-        total = sum(value for value in values if value is not None)
-        for index, row in enumerate(answer.rows[:limit_per_section], start=1):
-            value_num = _to_float(row.get(measure.column))
-            value = _format_value(value_num, measure.kind) if value_num is not None else "n/d"
-            share = _format_value((value_num / total * 100.0), "percent") if total and value_num is not None else None
-            label_value = _row_label(row, dimension)
-            suffix = f" ({share})" if share else ""
-            lines.append(f"{index}. {label_value}: {value}{suffix}")
-        omitted = max(0, len(answer.rows) - limit_per_section)
-        if omitted:
-            lines.append(f"... mais {omitted} linha(s) disponíveis em answers[].rows.")
         if not answer.rows:
             lines.append("Sem movimentação na evidência disponível.")
+            continue
+        values = [_to_float(row.get(measure.column)) for row in answer.rows]
+        total = sum(value for value in values if value is not None)
+
+        def render(index: int, row: Mapping[str, Any]) -> str:
+            return _fechamento_ranked_line(
+                index,
+                row,
+                measure=measure,
+                dimension=dimension,
+                total=total,
+            )
+
+        _append_head_tail_lines(lines, answer.rows, render=render)
     return "\n".join(lines)
 
 
-def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer, *, limit_per_section: int) -> list[str]:
+def _fechamento_comissao_tipo_os_row_line(row: Mapping[str, Any]) -> str:
+    return " | ".join(
+        (
+            str(row["concessionaria"]),
+            _format_value(row["comissao_venda_normal"], "money"),
+            _format_value(row["comissao_financiamento"], "money"),
+            _format_value(row["total_comissao"], "money"),
+        )
+    )
+
+
+def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer) -> list[str]:
     rows = _commission_type_rows(answer.rows)
     lines = [
         "",
@@ -806,22 +863,14 @@ def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer, *, limit_per_sec
         f"Linhas disponíveis: {len(rows)}",
         "concessionaria | venda normal | financiamento | total comissão",
     ]
-    for row in rows[:limit_per_section]:
-        lines.append(
-            " | ".join(
-                (
-                    str(row["concessionaria"]),
-                    _format_value(row["comissao_venda_normal"], "money"),
-                    _format_value(row["comissao_financiamento"], "money"),
-                    _format_value(row["total_comissao"], "money"),
-                )
-            )
-        )
-    omitted = max(0, len(rows) - limit_per_section)
-    if omitted:
-        lines.append(f"... mais {omitted} linha(s) disponíveis em answers[].rows.")
     if not rows:
         lines.append("Sem movimentação na evidência disponível.")
+        return lines
+
+    def render(_index: int, row: Mapping[str, Any]) -> str:
+        return _fechamento_comissao_tipo_os_row_line(row)
+
+    _append_head_tail_lines(lines, rows, render=render)
     return lines
 
 

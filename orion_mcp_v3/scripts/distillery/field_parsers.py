@@ -130,7 +130,9 @@ _SPURIOUS_KEY_LITERALS: frozenset[str] = frozenset({
  
 # Sinal textual de truncagem no valor da chave
 _TRUNCATION_VALUE_RE = re.compile(
-    r"mais\s+\d+\s+linha|answers\[\]\.rows|disponíveis em", re.IGNORECASE
+    r"mais\s+\d+\s+linha|answers\[\]\.rows|disponíveis em|"
+    r"Omitidas\s+\d+\s+linha|Exibindo os 10 piores",
+    re.IGNORECASE,
 )
  
 # Número de entradas a preservar na cabeça e na cauda quando há truncagem

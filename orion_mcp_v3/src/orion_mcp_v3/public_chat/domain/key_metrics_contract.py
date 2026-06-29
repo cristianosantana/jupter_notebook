@@ -123,7 +123,10 @@ METRIC_KIND_ALIASES: dict[str, tuple[str, ...]] = {
 
 # Padrão para detectar chaves que são nomes de entidades (nomes próprios, empresas, etc.)
 _ENTITY_KEY_PATTERN = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-\.\(\)|]+$")
-_PLACEHOLDER_KEY_RX = re.compile(r"mais\s+\d+\s+linha", re.IGNORECASE)
+_PLACEHOLDER_KEY_RX = re.compile(
+    r"mais\s+\d+\s+linha|Omitidas\s+\d+\s+linha|Exibindo os 10 piores",
+    re.IGNORECASE,
+)
 
 # theme (produtor) → chave de índice canônica quando difere do slug do theme
 THEME_TO_INDEX_KEY: dict[str, str] = {
