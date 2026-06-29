@@ -64,6 +64,8 @@ def _parse_semantics(fact_key: str, raw: Mapping[str, Any]) -> FactSemantics:
         derived_from=derived_from,
         memory_themes=memory_themes,
         key_metrics_keys=key_metrics_keys,
+        key_metrics_entity_field=str(raw.get("key_metrics_entity_field") or "tipo"),
+        key_metrics_value_field=str(raw.get("key_metrics_value_field") or "valor"),
     )
 
 

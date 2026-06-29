@@ -39,6 +39,8 @@ class FactSemantics:
     derived_from: tuple[str, ...] = ()
     memory_themes: tuple[str, ...] = ()
     key_metrics_keys: tuple[str, ...] = ()
+    key_metrics_entity_field: str = "tipo"
+    key_metrics_value_field: str = "valor"
 
     def as_mapping(self) -> dict[str, object]:
         return {
@@ -51,4 +53,6 @@ class FactSemantics:
             "derived_from": list(self.derived_from),
             "memory_themes": list(self.memory_themes),
             "key_metrics_keys": list(self.key_metrics_keys),
+            "key_metrics_entity_field": self.key_metrics_entity_field,
+            "key_metrics_value_field": self.key_metrics_value_field,
         }

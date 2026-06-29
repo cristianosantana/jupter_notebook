@@ -28,6 +28,33 @@ class StubLLM(LLMProvider):
 
 
 @pytest.mark.asyncio
+async def test_workspace_build_maio_servico_produto_ranking():
+    planner = FactPlanner(provider=None)
+    resolver = MemoryResolver(FakeReader())
+    contract = IntentContract(
+        intent="consulta_metrica",
+        metric="faturamento",
+        period="2026-05",
+        confidence=0.9,
+        operation=PublicOperationType.RANKING_DESC.value,
+        dimension="servico",
+    )
+    from orion_mcp_v3.public_chat.tests.phase4.fixtures import maio_hit
+
+    knowledge = ConhecimentoRecuperado(hits=(maio_hit(),))
+    workspace = await build_remissive_workspace(
+        "quais servicos e produtos venderam mais em maio de 2026?",
+        contract=contract,
+        knowledge=knowledge,
+        planner=planner,
+        resolver=resolver,
+    )
+    assert workspace.has_facts
+    assert len(workspace.facts) >= 2
+    assert all(fact.fact_key.startswith("dynamic:") for fact in workspace.facts)
+
+
+@pytest.mark.asyncio
 async def test_workspace_build_marco_ranking():
     planner = FactPlanner(provider=None)
     resolver = MemoryResolver(FakeReader())

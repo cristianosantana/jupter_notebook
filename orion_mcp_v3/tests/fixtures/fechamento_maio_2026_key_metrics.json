@@ -1,0 +1,247 @@
+{
+  "version": "v1",
+  "period": "2026-05",
+  "context_key": "sistema_background:fechamento_gerencial:fechamento_de_maio_de_2026:maio-2026",
+  "key_metrics": {
+    "producao_por_servico": {
+      "_meta": {
+        "dimension": "servico",
+        "entity_field": "servico",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "servico": "PPF REGENERATIVO - FULL",
+          "valor": "R$ 442.570,00",
+          "percentual": "17,26%"
+        },
+        {
+          "rank": "2",
+          "servico": "PPF REGENERATIVO - PARTIAL",
+          "valor": "R$ 380.120,50",
+          "percentual": "14,82%"
+        },
+        {
+          "rank": "3",
+          "servico": "Vitrificação Premium",
+          "valor": "R$ 295.430,00",
+          "percentual": "11,52%"
+        }
+      ]
+    },
+    "producao_por_produto": {
+      "_meta": {
+        "dimension": "produto",
+        "entity_field": "produto",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "produto": "Película Automotiva Premium",
+          "valor": "R$ 512.340,00",
+          "percentual": "19,02%"
+        },
+        {
+          "rank": "2",
+          "produto": "Kit PPF Frontal",
+          "valor": "R$ 401.220,00",
+          "percentual": "14,90%"
+        },
+        {
+          "rank": "3",
+          "produto": "Acessório Interno Luxo",
+          "valor": "R$ 188.450,00",
+          "percentual": "7,00%"
+        }
+      ]
+    },
+    "faturamento_por_tipo_de_pagamento": {
+      "_meta": {
+        "dimension": "forma_pagamento",
+        "entity_field": "tipo",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "tipo": "Cartão de Crédito",
+          "valor": "R$ 1.271.748,02",
+          "percentual": "47,25%"
+        },
+        {
+          "rank": "2",
+          "tipo": "Concessionária",
+          "valor": "R$ 913.134,71",
+          "percentual": "33,92%"
+        },
+        {
+          "rank": "3",
+          "tipo": "PIX",
+          "valor": "R$ 394.350,70",
+          "percentual": "14,65%"
+        },
+        {
+          "rank": "4",
+          "tipo": "Dinheiro",
+          "valor": "R$ 60.689,00",
+          "percentual": "2,25%"
+        },
+        {
+          "rank": "5",
+          "tipo": "Depósito Bancário",
+          "valor": "R$ 37.877,13",
+          "percentual": "1,41%"
+        },
+        {
+          "rank": "6",
+          "tipo": "Permuta",
+          "valor": "R$ 7.300,00",
+          "percentual": "0,27%"
+        },
+        {
+          "rank": "7",
+          "tipo": "Parcelamento",
+          "valor": "R$ 15.502,00",
+          "percentual": "0,58%"
+        },
+        {
+          "rank": "8",
+          "tipo": "Cheque",
+          "valor": "R$ 0,00",
+          "percentual": "0,00%"
+        }
+      ]
+    },
+    "faturamento_por_tipo_de_venda": {
+      "_meta": {
+        "dimension": "tipo_de_venda",
+        "entity_field": "tipo",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "tipo": "Venda Normal",
+          "valor": "R$ 1.694.760,90",
+          "percentual": "64,97%"
+        },
+        {
+          "rank": "2",
+          "tipo": "Venda Concessionária",
+          "valor": "R$ 913.134,71",
+          "percentual": "35,03%"
+        }
+      ]
+    },
+    "faturamento_tipo_venda_produtos": {
+      "_meta": {
+        "dimension": "tipo_venda_produtos",
+        "entity_field": "tipo",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "tipo": "Produto A",
+          "valor": "R$ 800.000,00",
+          "percentual": "40%"
+        },
+        {
+          "rank": "2",
+          "tipo": "Produto B",
+          "valor": "R$ 600.000,00",
+          "percentual": "30%"
+        }
+      ]
+    },
+    "faturamento_e_comissao_por_concessionaria": {
+      "_meta": {
+        "dimension": "concessionaria",
+        "entity_field": "concessionaria",
+        "value_field": "valor_comissao",
+        "metric_kind": "commission",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "concessionaria": "Concessionária Alpha",
+          "valor": "R$ 120.000,00",
+          "percentual": "30%"
+        },
+        {
+          "rank": "2",
+          "concessionaria": "Concessionária Beta",
+          "valor": "R$ 95.000,00",
+          "percentual": "24%"
+        }
+      ]
+    },
+    "taxas_cartao_credito": {
+      "_meta": {
+        "dimension": "estabelecimento",
+        "entity_field": "estabelecimento",
+        "value_field": "valor",
+        "metric_kind": "rate",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "estabelecimento": "Visa",
+          "valor": "R$ 2,50",
+          "percentual": "1,2%"
+        }
+      ]
+    },
+    "parcelamento_de_cartao": {
+      "_meta": {
+        "dimension": "parcelas",
+        "entity_field": "parcelas",
+        "value_field": "valor",
+        "metric_kind": "revenue",
+        "schema": "ranked_list"
+      },
+      "rows": [
+        {
+          "rank": "1",
+          "parcelas": "10X",
+          "valor": "R$ 847.408,80",
+          "percentual": "31,5%"
+        },
+        {
+          "rank": "2",
+          "parcelas": "6X",
+          "valor": "R$ 120.000,00",
+          "percentual": "4,5%"
+        }
+      ]
+    },
+    "comissao_por_tipo_de_os_por_concessionaria": {
+      "_meta": {
+        "dimension": "tipo_os",
+        "entity_field": "tipo_os",
+        "value_field": "valor_comissao",
+        "metric_kind": "commission",
+        "schema": "table",
+        "subdimension": "concessionaria"
+      },
+      "table_rows_sample": [
+        "OS Garantia - Concessionária Alpha: R$ 12.340,00",
+        "OS Cliente - Concessionária Beta: R$ 8.900,00"
+      ]
+    }
+  }
+}

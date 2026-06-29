@@ -23,6 +23,14 @@ from orion_mcp_v3.public_chat.domain.fact_engine.models import ExtractedFact, Fa
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import AggregationRule, SourcePriority
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace, ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import ResolvedMemoryHit
+from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
+    aggregate_row,
+    lookup_entity,
+    rows_from_array,
+    rows_from_key_metrics_entry,
+    scalar_from_key_metrics,
+    sum_row_values,
+)
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event
 
@@ -111,37 +119,118 @@ class FactExtractor:
         rule: ResolutionRule,
         semantics_version: str,
     ) -> ExtractedFact | None:
-        keys = requirement.semantics.key_metrics_keys or ("faturamento_liquido",)
+        semantics = requirement.semantics
+        keys = semantics.key_metrics_keys or ("faturamento_liquido",)
+
+        scalar = scalar_from_key_metrics(hit.key_metrics, keys)
+        if scalar is not None and semantics.aggregation_rule == AggregationRule.LOOKUP and not requirement.entity:
+            key, value = scalar
+            return self._build_key_metrics_fact(
+                requirement,
+                hit,
+                rule,
+                semantics_version,
+                label=key,
+                value=value,
+            )
+
+        entity_fields = (semantics.key_metrics_entity_field, "tipo", "label", "metric")
+        value_fields = (semantics.key_metrics_value_field, "valor", "value")
+        _ = (entity_fields, value_fields)
+
         for key in keys:
             raw = hit.key_metrics.get(key)
             if raw is None:
                 continue
-            try:
-                value = float(raw)
-            except (TypeError, ValueError):
+            rows = rows_from_key_metrics_entry(key, raw)
+            if not rows:
                 continue
-            confidence = confidence_for_path(ExtractionPath.KEY_METRICS)
-            if confidence < MIN_FACT_CONFIDENCE:
-                return None
-            return ExtractedFact(
-                fact_key=requirement.fact_key,
-                label=key,
-                value=format_currency(value),
-                unit="BRL",
-                fact_type=FactType.RAW,
-                confidence=confidence,
-                origin_id=hit.origin_id,
-                context_key=hit.context_key,
-                trace=FactTrace(
-                    fact_key=requirement.fact_key,
-                    resolved_from=(hit.origin_id,),
-                    context_keys=(hit.context_key,),
-                    rule_applied=rule,
-                    extraction_path=ExtractionPath.KEY_METRICS,
-                    semantics_version=semantics_version,
-                ),
-            )
+
+            value_field = semantics.key_metrics_value_field
+            if value_field == "percentual":
+                rows = _rows_with_percentual_values(rows)
+
+            if semantics.aggregation_rule == AggregationRule.LOOKUP:
+                if requirement.entity:
+                    row = lookup_entity(rows, requirement.entity)
+                    if row is None:
+                        continue
+                    display = row.percentual or row.raw_value if value_field == "percentual" else row.raw_value
+                    return self._build_key_metrics_fact(
+                        requirement,
+                        hit,
+                        rule,
+                        semantics_version,
+                        label=row.label,
+                        value=row.value,
+                        display_value=display,
+                        unit="pct" if value_field == "percentual" else "BRL",
+                    )
+                if semantics.fact_key == "faturamento_total_periodo":
+                    total = sum_row_values(rows)
+                    if total is not None:
+                        return self._build_key_metrics_fact(
+                            requirement,
+                            hit,
+                            rule,
+                            semantics_version,
+                            label=key,
+                            value=total,
+                        )
+                continue
+
+            if semantics.aggregation_rule in (AggregationRule.MIN, AggregationRule.MAX):
+                ascending = semantics.aggregation_rule == AggregationRule.MIN
+                row = aggregate_row(rows, ascending=ascending)
+                if row is None:
+                    continue
+                display = row.percentual or row.raw_value if value_field == "percentual" else row.raw_value
+                return self._build_key_metrics_fact(
+                    requirement,
+                    hit,
+                    rule,
+                    semantics_version,
+                    label=row.label,
+                    value=row.value,
+                    display_value=display,
+                    unit="pct" if value_field == "percentual" else "BRL",
+                )
+
         return None
+
+    def _build_key_metrics_fact(
+        self,
+        requirement: FactRequirement,
+        hit: KnowledgeHit,
+        rule: ResolutionRule,
+        semantics_version: str,
+        *,
+        label: str,
+        value: float,
+        display_value: str | None = None,
+        unit: str = "BRL",
+    ) -> ExtractedFact | None:
+        confidence = confidence_for_path(ExtractionPath.KEY_METRICS)
+        if confidence < MIN_FACT_CONFIDENCE:
+            return None
+        return ExtractedFact(
+            fact_key=requirement.fact_key,
+            label=label,
+            value=display_value or format_currency(value),
+            unit=unit,
+            fact_type=FactType.RAW,
+            confidence=confidence,
+            origin_id=hit.origin_id,
+            context_key=hit.context_key,
+            trace=FactTrace(
+                fact_key=requirement.fact_key,
+                resolved_from=(hit.origin_id,),
+                context_keys=(hit.context_key,),
+                rule_applied=rule,
+                extraction_path=ExtractionPath.KEY_METRICS,
+                semantics_version=semantics_version,
+            ),
+        )
 
     def _from_parsed_text(
         self,
@@ -162,33 +251,6 @@ class FactExtractor:
             if row is None:
                 return None
             path = ExtractionPath.RANKING_DERIVED
-            confidence = confidence_for_path(path)
-            return ExtractedFact(
-                fact_key=requirement.fact_key,
-                label=row.label,
-                value=row.raw_value,
-                unit="BRL",
-                fact_type=FactType.RAW,
-                confidence=confidence,
-                origin_id=hit.origin_id,
-                context_key=hit.context_key,
-                trace=FactTrace(
-                    fact_key=requirement.fact_key,
-                    resolved_from=(hit.origin_id,),
-                    context_keys=(hit.context_key,),
-                    rule_applied=rule,
-                    extraction_path=path,
-                    semantics_version=semantics_version,
-                ),
-            )
-
-        if semantics.fact_key == "faturamento_departamento_oficina":
-            section = find_section_by_needle(sections, "departamento", "oficina", "vendas")
-            entity = requirement.entity or "oficina"
-            row = lookup_row_by_entity(section, entity) if section else None
-            if row is None:
-                return None
-            path = ExtractionPath.STRUCTURED_PARSER
             confidence = confidence_for_path(path)
             return ExtractedFact(
                 fact_key=requirement.fact_key,
@@ -308,3 +370,22 @@ class FactExtractor:
         text = fact.value.replace("R$", "").replace("%", "").strip()
         text = text.replace(".", "").replace(",", ".")
         return float(text)
+
+
+def _rows_with_percentual_values(rows: tuple) -> tuple:
+    from orion_mcp_v3.public_chat.domain.key_metrics_reader import KeyMetricsRow, parse_metric_value
+
+    converted: list[KeyMetricsRow] = []
+    for row in rows:
+        if row.percentual:
+            value = parse_metric_value(row.percentual)
+            if value is not None:
+                converted.append(
+                    KeyMetricsRow(
+                        label=row.label,
+                        value=value,
+                        raw_value=row.percentual,
+                        percentual=row.percentual,
+                    )
+                )
+    return tuple(converted) if converted else rows

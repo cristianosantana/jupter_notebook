@@ -756,6 +756,44 @@ def test_enrich_does_not_fallback_single_window_for_other_months() -> None:
     assert enriched.knowledge[0].validated_answer == "Resumo errado de março."
 
 
+def test_parse_distillation_payload_enriches_key_metrics_with_meta() -> None:
+    module = _load_script_module()
+
+    batch = module.parse_distillation_payload(
+        json.dumps(
+            {
+                "knowledge": [
+                    {
+                        "user_id": "sistema_background",
+                        "category": "fechamento gerencial",
+                        "theme": "fechamento_maio_2026",
+                        "validated_answer": (
+                            "Fechamento validado de maio com detalhamento completo por seção "
+                            "e valores numéricos preservados integralmente no lote."
+                        ),
+                        "key_metrics": {
+                            "producao_por_servico": [
+                                {
+                                    "rank": "1",
+                                    "servico": "PPF FULL",
+                                    "valor": "R$ 442.570,00",
+                                    "percentual": "17,26%",
+                                }
+                            ]
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    payload = batch.knowledge[0].key_metrics["producao_por_servico"]
+    assert "_meta" in payload
+    assert payload["_meta"]["dimension"] == "servico"
+    assert payload["_meta"]["metric_kind"] == "revenue"
+    assert payload["rows"][0]["servico"] == "PPF FULL"
+
+
 def test_enrich_prefers_indexed_turns_over_messages() -> None:
     module = _load_script_module()
     short_message = (

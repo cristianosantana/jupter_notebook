@@ -35,12 +35,13 @@ async def test_memory_resolver_join_marco():
         operation=PublicOperationType.RANKING_ASC.value,
         dimension="forma_pagamento",
     )
-    plan = await planner.plan("pior forma pagamento março", contract=contract)
+    knowledge = ConhecimentoRecuperado(hits=(march_hit(),))
+    plan = await planner.plan("pior forma pagamento março", contract=contract, knowledge=knowledge)
     knowledge = ConhecimentoRecuperado(hits=(march_hit(),))
     result = await resolver.resolve(plan.requirements, knowledge)
     assert result.join_plan is not None
     assert result.join_plan.period == "2026-03"
-    assert "ranking_forma_pagamento" in result.resolved
+    assert any(key.startswith("dynamic:") for key in result.resolved)
 
 
 @pytest.mark.asyncio
