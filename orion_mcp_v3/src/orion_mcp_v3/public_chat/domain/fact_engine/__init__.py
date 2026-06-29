@@ -14,6 +14,7 @@ from orion_mcp_v3.public_chat.domain.fact_engine.models import (
     FactRequirement,
     RemissiveWorkspace,
 )
+from orion_mcp_v3.public_chat.domain.fact_engine.requirement_kind import RequirementKind
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import (
     AggregationRule,
     Comparator,
@@ -43,6 +44,7 @@ __all__ = [
     "MemoryJoinPlan",
     "MemorySourceRequirement",
     "RemissiveWorkspace",
+    "RequirementKind",
     "ResolutionRule",
     "SourcePriority",
     "confidence_for_path",

@@ -14,32 +14,9 @@ facts:
       - fechamento_gerencial_mensal
     key_metrics_keys:
       - faturamento_liquido
+      - faturamento_por_tipo_de_pagamento
 
-  ranking_forma_pagamento:
-    aggregation_rule: min
-    comparator: asc
-    source_priority:
-      - structured
-      - parsed_text
-    value_kind: currency
-    allows_multiple_values: true
-    memory_themes:
-      - fechamento_gerencial
-      - fechamento_gerencial_mensal
-
-  ranking_forma_pagamento_desc:
-    aggregation_rule: max
-    comparator: desc
-    source_priority:
-      - structured
-      - parsed_text
-    value_kind: currency
-    allows_multiple_values: true
-    memory_themes:
-      - fechamento_gerencial
-      - fechamento_gerencial_mensal
-
-  faturamento_departamento_oficina:
+  faturamento_forma_pagamento:
     aggregation_rule: lookup
     comparator: none
     source_priority:
@@ -48,17 +25,39 @@ facts:
     value_kind: currency
     allows_multiple_values: false
     memory_themes:
-      - vendas_departamento
+      - fechamento_gerencial
+      - fechamento_gerencial_mensal
     key_metrics_keys:
-      - oficina
-      - departamento_oficina
+      - faturamento_por_tipo_de_pagamento
+    key_metrics_entity_field: tipo
+    key_metrics_value_field: valor
 
-  participacao_oficina:
-    aggregation_rule: derived
-    comparator: none
-    source_priority: []
-    value_kind: pct
-    allows_multiple_values: false
-    derived_from:
-      - faturamento_departamento_oficina
-      - faturamento_total_periodo
+  ranking_forma_pagamento:
+    aggregation_rule: min
+    comparator: asc
+    source_priority:
+      - key_metrics
+      - structured
+      - parsed_text
+    value_kind: currency
+    allows_multiple_values: true
+    memory_themes:
+      - fechamento_gerencial
+      - fechamento_gerencial_mensal
+    key_metrics_keys:
+      - faturamento_por_tipo_de_pagamento
+
+  ranking_forma_pagamento_desc:
+    aggregation_rule: max
+    comparator: desc
+    source_priority:
+      - key_metrics
+      - structured
+      - parsed_text
+    value_kind: currency
+    allows_multiple_values: true
+    memory_themes:
+      - fechamento_gerencial
+      - fechamento_gerencial_mensal
+    key_metrics_keys:
+      - faturamento_por_tipo_de_pagamento

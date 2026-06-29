@@ -9,7 +9,9 @@ from enum import Enum
 class GapReason(str, Enum):
     NOT_IN_CATALOG = "not_in_catalog"
     NO_MEMORY_FOUND = "no_memory_found"
+    NOT_FOUND = "not_found"
     MEMORY_EXISTS_BUT_NO_MATCH = "memory_exists_but_no_match"
+    KEY_METRICS_INDEX_AMBIGUOUS = "key_metrics_index_ambiguous"
     PARTIAL_MATCH_ONLY = "partial_match_only"
     EXTRACTION_FAILED = "extraction_failed"
     LOW_CONFIDENCE = "low_confidence"

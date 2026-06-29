@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap
 from orion_mcp_v3.public_chat.domain.fact_engine.join_plan import MemoryJoinPlan
+from orion_mcp_v3.public_chat.domain.fact_engine.requirement_kind import RequirementKind
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import FactSemantics
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace
 
@@ -20,6 +21,10 @@ class FactRequirement:
     period: str | None
     operation: str | None
     semantics: FactSemantics
+    requirement_kind: RequirementKind = RequirementKind.LOOKUP
+    matched_key: str | None = None
+    match_method: str | None = None
+    heuristic_status: str | None = None
 
     def as_mapping(self) -> dict[str, object]:
         return {
@@ -29,6 +34,10 @@ class FactRequirement:
             "entity": self.entity,
             "period": self.period,
             "operation": self.operation,
+            "requirement_kind": self.requirement_kind.value,
+            "matched_key": self.matched_key,
+            "match_method": self.match_method,
+            "heuristic_status": self.heuristic_status,
             "semantics": self.semantics.as_mapping(),
         }
 
