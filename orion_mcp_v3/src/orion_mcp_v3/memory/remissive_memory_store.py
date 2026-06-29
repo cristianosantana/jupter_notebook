@@ -27,9 +27,11 @@ INSERT INTO "public"."memory_curta" (
     "key_metrics",
     "consolidated_at",
     "last_seen_at",
-    "ttl_expires_at"
+    "ttl_expires_at",
+    "metric_kind",
+    "dimension"
 )
-VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, COALESCE($7, now()), now(), $8)
+VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, COALESCE($7, now()), now(), $8, $9, $10)
 ON CONFLICT ("context_key")
 DO UPDATE SET
     "user_id" = EXCLUDED."user_id",
@@ -39,7 +41,9 @@ DO UPDATE SET
     "key_metrics" = EXCLUDED."key_metrics",
     "consolidated_at" = EXCLUDED."consolidated_at",
     "last_seen_at" = now(),
-    "ttl_expires_at" = EXCLUDED."ttl_expires_at"
+    "ttl_expires_at" = EXCLUDED."ttl_expires_at",
+    "metric_kind" = EXCLUDED."metric_kind",
+    "dimension" = EXCLUDED."dimension"
 RETURNING "id"
 """
 
@@ -152,6 +156,8 @@ class RemissiveMemoryStore:
                     _json(dict(item.key_metrics)),
                     item.consolidated_at,
                     item.ttl_expires_at,
+                    item.metric_kind,
+                    item.dimension,
                 )
                 origin_id = int(origin_id)
 

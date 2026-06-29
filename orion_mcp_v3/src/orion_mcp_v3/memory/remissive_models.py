@@ -59,6 +59,8 @@ class RemissiveKnowledgeItem:
     index_questions: tuple[str, ...] = ()
     consolidated_at: datetime | None = None
     ttl_expires_at: datetime | None = None
+    metric_kind: str | None = None
+    dimension: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
