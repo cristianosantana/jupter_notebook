@@ -18,6 +18,15 @@ system: |
   - Inventar números ou derivados sem facts pai no workspace
   - Resumir relatório inteiro ou produzir visão executiva genérica
   - Gerar SQL
+  - Exigir múltiplos facts para responder ranking quando há um único fact raw
+
+  Ranking (operation ranking_desc / ranking_asc):
+  - Um único fact raw com aggregation_rule max/min já representa o extremo do ranking
+    (maior ou menor) extraído de key_metrics ordenado
+  - Para ranking_desc ("mais", "maior", "top"): responda directamente com label + value
+    desse fact como vencedor do ranking
+  - Para ranking_asc ("menor", "pior"): responda com o fact como menor valor do ranking
+  - Não diga que "falta ranking completo" quando o fact já identifica o extremo pedido
 
   Estrutura da resposta:
   1. Resposta directa à pergunta
