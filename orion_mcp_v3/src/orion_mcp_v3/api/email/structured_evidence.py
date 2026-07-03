@@ -8,7 +8,7 @@ from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 
 
 def structured_email_evidence_from(evidence: EvidenceBlock | None) -> str | None:
-    """Prefere ``full_summary`` (ranking completo) quando a projeção foi escopada para chat."""
+    """Prefere texto completo (``full_section_detail`` / ``full_summary``) quando escopado para chat."""
     return analytical_direct_reply_from(evidence)
 
 
@@ -20,8 +20,9 @@ def analytical_direct_reply_from(evidence: EvidenceBlock | None) -> str | None:
     for key in ("direct_answer", "direct_answer_set"):
         payload = supporting.get(key)
         if isinstance(payload, Mapping):
-            full = payload.get("full_summary")
-            if isinstance(full, str) and full.strip():
-                return full.strip()
+            for field in ("full_section_detail", "full_summary"):
+                full = payload.get(field)
+                if isinstance(full, str) and full.strip():
+                    return full.strip()
     summary = (evidence.summary or "").strip()
     return summary or None

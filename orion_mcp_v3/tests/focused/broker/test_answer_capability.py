@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from orion_mcp_v3.broker import ANALYTICS_TEMPLATES, AnalyticsResult, EvidenceAggregator
-from orion_mcp_v3.broker.answer_projector import build_projected_answer, build_projected_answer_set
+from orion_mcp_v3.broker.answer_projector import (
+    build_full_section_detail,
+    build_projected_answer,
+    build_projected_answer_set,
+)
 from orion_mcp_v3.contracts.query_plan import RetrievalStrategy, SemanticQueryPlan
 from orion_mcp_v3.runtime.intent_resolver import IntentResolver
 
@@ -195,6 +199,27 @@ def test_fechamento_section_detail_shows_head_and_tail_when_more_than_20_rows() 
     assert "22. Concessionária 22:" in detail
     assert "31. Concessionária 31:" in detail
     assert "answers[].rows" not in detail
+
+
+def test_build_full_section_detail_lists_every_row_without_head_tail() -> None:
+    projected = build_projected_answer_set(
+        "Faça o fechamento gerencial de maio de 2026",
+        [
+            _fechamento_result(
+                "fechamento_faturamento_comissao_concessionaria_periodo",
+                _comissao_concessionaria_rows(31),
+            ),
+        ],
+        templates=ANALYTICS_TEMPLATES,
+    )
+    assert projected is not None
+
+    full_detail = build_full_section_detail(projected, templates=ANALYTICS_TEMPLATES)
+    assert full_detail is not None
+    assert "Omitidas" not in full_detail
+    assert "11. Concessionária 11:" in full_detail
+    assert "21. Concessionária 21:" in full_detail
+    assert "31. Concessionária 31:" in full_detail
 
 
 def test_fechamento_tipo_os_projects_commission_composition_table() -> None:

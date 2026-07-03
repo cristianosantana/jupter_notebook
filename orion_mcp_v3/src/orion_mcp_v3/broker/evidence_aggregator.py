@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from orion_mcp_v3.broker.answer_projector import (
     build_full_list_summary,
+    build_full_section_detail,
     build_projected_answer,
     build_projected_answer_set,
     filter_rows_for_entity_filters,
@@ -230,6 +231,12 @@ def _with_projected_answer(
         projected_set = build_projected_answer_set(query_text, results, templates=templates)
         if projected_set is not None:
             projected_set_dict = projected_set.as_dict()
+            full_section_detail = build_full_section_detail(
+                projected_set,
+                templates=templates,
+            )
+            if full_section_detail:
+                projected_set_dict["full_section_detail"] = full_section_detail
             metrics = {**dict(block.metrics), "answer_set": projected_set_dict}
             contract = EvidenceContract.from_mapping(block.supporting_data.get("evidence_contract"))
             if contract.status.value == "present":

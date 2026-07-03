@@ -524,6 +524,27 @@ def build_full_list_summary(
     return full.summary if full is not None else None
 
 
+def build_full_section_detail(
+    projected_set: ProjectedAnswerSet,
+    *,
+    templates: "QueryTemplateRegistry",
+) -> str | None:
+    """Detalhe completo do fechamento gerencial, sem truncagem cabeça/cauda."""
+    if not projected_set.answers:
+        return None
+    full_detail = _fechamento_section_detail(
+        projected_set.answers,
+        templates=templates,
+        apply_head_tail=False,
+    ).strip()
+    if not full_detail:
+        return None
+    scoped = (projected_set.section_detail or "").strip()
+    if scoped and full_detail == scoped:
+        return None
+    return full_detail
+
+
 def build_projected_answer(
     query_text: str,
     results: Sequence[AnalyticsResult],
@@ -658,6 +679,16 @@ _FECHAMENTO_LABELS = {
 _COMISSAO_TIPO_OS_SLUG = "fechamento_faturamento_comissao_tipo_os_concessionaria_periodo"
 _HEAD_TAIL_LIMIT = 10
 _HEAD_TAIL_FULL_THRESHOLD = 20
+
+
+def _append_all_lines(
+    lines: list[str],
+    rows: Sequence[Any],
+    *,
+    render: Any,
+) -> None:
+    for index, row in enumerate(rows, start=1):
+        lines.append(render(index, row))
 
 
 def _head_tail_omission_divider(omitted: int) -> str:
@@ -809,6 +840,7 @@ def _fechamento_section_detail(
     answers: Sequence[ProjectedAnswer],
     *,
     templates: "QueryTemplateRegistry",
+    apply_head_tail: bool = True,
 ) -> str:
     lines = ["Detalhe por seção do fechamento gerencial:"]
     for answer in answers:
@@ -820,7 +852,9 @@ def _fechamento_section_detail(
         if measure is None:
             continue
         if answer.plan.template_slug == _COMISSAO_TIPO_OS_SLUG:
-            lines.extend(_fechamento_comissao_tipo_os_table(answer))
+            lines.extend(
+                _fechamento_comissao_tipo_os_table(answer, apply_head_tail=apply_head_tail)
+            )
             continue
         label = _FECHAMENTO_LABELS.get(answer.plan.template_slug, answer.plan.template_slug)
         lines.extend(["", f"## {label}", f"Template: {answer.plan.template_slug}", f"Linhas disponíveis: {len(answer.rows)}"])
@@ -839,7 +873,10 @@ def _fechamento_section_detail(
                 total=total,
             )
 
-        _append_head_tail_lines(lines, answer.rows, render=render)
+        if apply_head_tail:
+            _append_head_tail_lines(lines, answer.rows, render=render)
+        else:
+            _append_all_lines(lines, answer.rows, render=render)
     return "\n".join(lines)
 
 
@@ -854,7 +891,11 @@ def _fechamento_comissao_tipo_os_row_line(row: Mapping[str, Any]) -> str:
     )
 
 
-def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer) -> list[str]:
+def _fechamento_comissao_tipo_os_table(
+    answer: ProjectedAnswer,
+    *,
+    apply_head_tail: bool = True,
+) -> list[str]:
     rows = _commission_type_rows(answer.rows)
     lines = [
         "",
@@ -870,7 +911,10 @@ def _fechamento_comissao_tipo_os_table(answer: ProjectedAnswer) -> list[str]:
     def render(_index: int, row: Mapping[str, Any]) -> str:
         return _fechamento_comissao_tipo_os_row_line(row)
 
-    _append_head_tail_lines(lines, rows, render=render)
+    if apply_head_tail:
+        _append_head_tail_lines(lines, rows, render=render)
+    else:
+        _append_all_lines(lines, rows, render=render)
     return lines
 
 

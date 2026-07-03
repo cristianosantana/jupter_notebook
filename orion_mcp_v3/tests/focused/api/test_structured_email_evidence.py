@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from orion_mcp_v3.api.email.structured_evidence import structured_email_evidence_from
+from orion_mcp_v3.api.email.structured_evidence import (
+    analytical_direct_reply_from,
+    structured_email_evidence_from,
+)
 from orion_mcp_v3.contracts.evidence_block import EvidenceBlock
 from orion_mcp_v3.contracts.provenance import CoverageInfo
 
@@ -35,3 +38,28 @@ def test_structured_email_evidence_prefers_full_summary_over_scoped_summary() ->
     )
 
     assert structured_email_evidence_from(evidence) == full
+
+
+def test_analytical_direct_reply_prefers_full_section_detail_over_scoped_summary() -> None:
+    scoped = "## Faturamento e comissão por concessionária\n1. Concessionária 01: ..."
+    full = (
+        "## Faturamento e comissão por concessionária\n"
+        "1. Concessionária 01: R$ 3.100,00 (comissão R$ 310,00)\n"
+        "...\n"
+        "31. Concessionária 31: R$ 100,00 (comissão R$ 10,00)"
+    )
+    evidence = EvidenceBlock(
+        summary=scoped,
+        insights={},
+        metrics={},
+        confidence=0.9,
+        coverage=CoverageInfo(),
+        supporting_data={
+            "direct_answer_set": {
+                "section_detail": scoped,
+                "full_section_detail": full,
+            },
+        },
+    )
+
+    assert analytical_direct_reply_from(evidence) == full
