@@ -28,7 +28,7 @@ Variável **`POSTGRES_URL`** ou **`DATABASE_URL`** em `.env` na raiz desta pasta
 No **host** (fora do Docker), use `127.0.0.1` ou `localhost` e a **porta exposta** do Postgres — não use o hostname interno do compose (`cs_postgres`), pois não resolve no seu sistema.
 
 ```bash
-python scripts/apply_migrations.py
+python3 scripts/apply_migrations.py
 ```
 
 É necessário **pgvector instalado no servidor PostgreSQL** (embeddings em `memory_embeddings`). Se aparecer `extension "vector" is not available`, instale o pacote no OS ou use uma imagem Docker com pgvector — ver o README das migrações.
@@ -98,7 +98,7 @@ Adote um tom analítico, técnico, direto e extremamente detalhado."
 A rotina é:
 
 ```bash
-python scripts/distill_supervised_memory.py \
+python3 scripts/distill_supervised_memory.py \
   --start 2026-06-09T00:00:00Z \
   --end 2026-06-10T00:00:00Z
 ```

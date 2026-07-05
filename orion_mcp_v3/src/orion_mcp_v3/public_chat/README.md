@@ -57,7 +57,7 @@ Com `PUBLIC_CHAT_ENABLED=true` e credenciais válidas, o endpoint fica disponív
 
 ```bash
 cd orion_mcp_v3
-python -m orion_mcp_v3.public_chat.scripts.apply_migrations
+python3 -m orion_mcp_v3.public_chat.scripts.apply_migrations
 ```
 
 Ver [`infrastructure/postgres/migrations/README.md`](infrastructure/postgres/migrations/README.md).
@@ -140,7 +140,7 @@ Na raiz do repo (`orion_mcp_v3/`):
 pip install -e .
 
 # 2. Migrações do public_chat (uma vez)
-python -m orion_mcp_v3.public_chat.scripts.apply_migrations
+python3 -m orion_mcp_v3.public_chat.scripts.apply_migrations
 
 # 3. Subir a API
 uvicorn orion_mcp_v3.api.main:app --reload --host 0.0.0.0 --port 8000

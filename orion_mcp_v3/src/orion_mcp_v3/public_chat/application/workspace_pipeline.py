@@ -12,6 +12,8 @@ from orion_mcp_v3.public_chat.domain.fact_extractor import FactExtractor
 from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado
+from orion_mcp_v3.public_chat.domain.knowledge_scoper import scope_knowledge_to_periods
+from orion_mcp_v3.public_chat.domain.period_selection import periods_from_contract
 from orion_mcp_v3.public_chat.domain.special_requirements import NoOpSpecialCatalog
 from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event
@@ -31,16 +33,21 @@ async def build_remissive_workspace(
     provider = llm
     if provider is None and planner is not None:
         provider = planner.provider
+    contract_periods = periods_from_contract(contract)
+    scoped_knowledge, scope_degraded = scope_knowledge_to_periods(
+        knowledge,
+        periods=contract_periods,
+    )
 
     plan = await plan_analytical_requirements(
         message,
         contract=contract,
-        knowledge=knowledge,
+        knowledge=scoped_knowledge,
         llm=provider,
         special_catalog=NoOpSpecialCatalog(),
         composition_planner=NoOpCompositionPlanner(),
     )
-    resolve_result = await resolver.resolve(plan.requirements, knowledge)
+    resolve_result = await resolver.resolve(plan.requirements, scoped_knowledge)
     extract_result = (extractor or FactExtractor()).extract(
         plan.requirements,
         resolve_result.resolved,
@@ -68,6 +75,10 @@ async def build_remissive_workspace(
             "gap_count": len(workspace.gaps),
             "workspace_confidence": workspace.workspace_confidence,
             "used_llm_disambiguation": plan.used_llm_disambiguation,
+            "scope_degraded": scope_degraded,
+            "scope_periods": list(contract_periods),
+            "hit_count_before_scope": len(knowledge.hits),
+            "hit_count_after_scope": len(scoped_knowledge.hits),
             "facts": [fact.as_mapping() for fact in workspace.facts],
             "gaps": [gap.as_mapping() for gap in workspace.gaps],
         },

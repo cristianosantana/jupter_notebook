@@ -8,6 +8,7 @@ from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import FactSemantics, AggregationRule, Comparator, SourcePriority
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_extractor import FactExtractor
+from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.tests.phase4.fixtures import FECHAMENTO_MARCO_2026, march_hit
 
 
@@ -76,3 +77,110 @@ def test_fact_extractor_faturamento_total_key_metrics():
     result = FactExtractor().extract((requirement,), resolved)
     assert len(result.facts) == 1
     assert result.facts[0].confidence == 0.95
+
+
+def test_fact_extractor_sums_cortesia_group_from_tipo_venda_key_metrics():
+    hit = KnowledgeHit(
+        origin_id=42,
+        context_key="sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-2026-06",
+        category="Fechamento Gerencial",
+        validated_answer="",
+        key_metrics={
+            "faturamento_por_tipo_de_venda": {
+                "rows": [
+                    {"tipo": "Venda Normal", "valor": "R$ 1.609.424,25 (57,76%)", "percentual": "57,76%"},
+                    {"tipo": "Prestação de Serviços", "valor": "R$ 889.298,02 (31,91%)", "percentual": "31,91%"},
+                    {"tipo": "Cortesia Concessionária", "valor": "R$ 150.829,00 (5,41%)", "percentual": "5,41%"},
+                    {"tipo": "Financiamento", "valor": "R$ 130.880,00 (4,70%)", "percentual": "4,70%"},
+                    {"tipo": "Cortesia Funcionário", "valor": "R$ 6.028,60 (0,22%)", "percentual": "0,22%"},
+                ],
+                "_meta": {
+                    "schema": "ranked_list",
+                    "dimension": "tipo_de_venda",
+                    "metric_kind": "revenue",
+                    "value_field": "valor",
+                    "entity_field": "tipo",
+                },
+            },
+        },
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:faturamento_por_tipo_de_venda",
+        aggregation_rule=AggregationRule.LOOKUP,
+        comparator=Comparator.NONE,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        key_metrics_keys=("faturamento_por_tipo_de_venda",),
+        key_metrics_entity_field="tipo",
+        key_metrics_value_field="valor",
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_por_tipo_de_venda",
+        metric="faturamento",
+        dimension="tipo_de_venda",
+        entity="cortesias",
+        period="2026-06",
+        operation="summary",
+        semantics=semantics,
+    )
+
+    result = FactExtractor().extract(
+        (requirement,),
+        {"dynamic:faturamento_por_tipo_de_venda": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL)},
+    )
+
+    assert len(result.facts) == 1
+    assert result.facts[0].label == "cortesias"
+    assert result.facts[0].value == "R$ 156.857,60"
+
+
+def test_fact_extractor_lookup_parcelas_5x_from_parcelamento_key_metrics():
+    hit = KnowledgeHit(
+        origin_id=31,
+        context_key="sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-04",
+        category="Fechamento Gerencial",
+        validated_answer="",
+        key_metrics={
+            "parcelamento_de_cartao": {
+                "rows": [
+                    {"parcelas": "10X", "valor": "R$ 682.982,00 (62,58%)", "percentual": "62,58%"},
+                    {"parcelas": "5X", "valor": "R$ 29.515,90 (2,70%)", "percentual": "2,70%"},
+                ],
+                "_meta": {
+                    "schema": "ranked_list",
+                    "dimension": "parcelas",
+                    "metric_kind": "revenue",
+                    "value_field": "valor",
+                    "entity_field": "parcelas",
+                },
+            },
+        },
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:parcelamento_de_cartao",
+        aggregation_rule=AggregationRule.LOOKUP,
+        comparator=Comparator.NONE,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        key_metrics_keys=("parcelamento_de_cartao",),
+        key_metrics_entity_field="parcelas",
+        key_metrics_value_field="valor",
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:parcelamento_de_cartao",
+        metric="faturamento",
+        dimension="parcelas",
+        entity="5X",
+        period="2026-04",
+        operation="summary",
+        semantics=semantics,
+    )
+
+    result = FactExtractor().extract(
+        (requirement,),
+        {"dynamic:parcelamento_de_cartao": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL)},
+    )
+
+    assert len(result.facts) == 1
+    assert result.facts[0].label == "5X"
+    assert result.facts[0].value == "R$ 29.515,90 (2,70%)"

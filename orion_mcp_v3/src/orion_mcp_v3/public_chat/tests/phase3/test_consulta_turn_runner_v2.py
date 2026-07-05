@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -67,6 +68,16 @@ def _knowledge() -> ConhecimentoRecuperado:
                 key_metrics={"faturamento": 1},
             ),
         )
+    )
+
+
+def _period_hit(origin_id: int, period: str) -> KnowledgeHit:
+    return KnowledgeHit(
+        origin_id=origin_id,
+        context_key=f"sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-{period}",
+        category="Fechamento Gerencial",
+        validated_answer=f"Faturamento {period}.",
+        key_metrics={"faturamento_por_tipo_de_venda": {"rows": [], "_meta": {}}},
     )
 
 
@@ -199,6 +210,70 @@ async def test_knowledge_fingerprint_invalidation() -> None:
 
     fingerprint_arg = conn.fetchval.await_args.args[4]
     assert fingerprint_arg != "stale-fp"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_completes_multi_period_evidence_before_updating_payload() -> None:
+    question_id = uuid4()
+    response_id = uuid4()
+    thread_id = uuid4()
+    insert = _insert_row(
+        question_id=question_id,
+        thread_id=thread_id,
+        topic="faturamento:2026-04",
+        semantic_hash="hash-comparison",
+    )
+    cached = _cached_row(
+        response_id=response_id,
+        topic="faturamento:2026-04",
+        semantic_hash="hash-comparison",
+        fingerprint="stale-fp",
+    )
+
+    conn = AsyncMock()
+    conn.fetchrow.side_effect = [
+        insert,
+        {"thread_id": thread_id},
+        insert,
+        cached,
+    ]
+    conn.fetchval.return_value = response_id
+    conn.execute.return_value = "INSERT 0 1"
+
+    llm = AsyncMock()
+    llm.chat.return_value = LLMResponse(
+        text=(
+            '{"intent":"comparacao","metric":"faturamento","period":"2026-04",'
+            '"operation":"comparison","entity_filters":[{"dimension":"periodo","value":"2026-05","match":"exact"}],'
+            '"confidence":0.9}'
+        )
+    )
+
+    async def _stream(*_args, **_kwargs):
+        yield LLMStreamChunk(delta="Comparação narrada.")
+
+    llm.stream = _stream
+
+    maio = _period_hit(34, "2026-05")
+    abril = _period_hit(28, "2026-04")
+    retriever = AsyncMock(spec=RemissiveRetriever)
+    retriever.reload_from_payload.return_value = ConhecimentoRecuperado(hits=(maio,))
+    retriever.complete_period_evidence.return_value = ConhecimentoRecuperado(hits=(maio, abril))
+
+    runner = ConsultaTurnRunner(
+        settings=PublicChatSettings(cache_ttl_days=90),
+        store=ResponseStore(_pool_with_conn(conn)),
+        intent_interpreter=PublicIntentInterpreter(llm),
+        retriever=retriever,
+        narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
+    )
+
+    await runner.run_turn_with_metadata("qual o faturamento em maio de 2026 vs abril de 2026?")
+
+    retriever.complete_period_evidence.assert_awaited_once()
+    payload_arg = json.loads(conn.fetchval.await_args.args[3])
+    assert set(payload_arg["knowledge_ids"]) == {28, 34}
 
 
 @pytest.mark.asyncio

@@ -7,12 +7,13 @@ import pytest
 from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import FallbackPolicy, ResolvedMemoryHit
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import FactSemantics, AggregationRule, Comparator, SourcePriority
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract, PublicOperationType
-from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado
+from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
 from orion_mcp_v3.public_chat.domain.memory_catalog import get_memory_catalog
 from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
-from orion_mcp_v3.public_chat.tests.phase4.fixtures import march_hit, other_month_hit
+from orion_mcp_v3.public_chat.tests.phase4.fixtures import load_maio_contract_fixture, march_hit, other_month_hit
 
 
 class FakeReader:
@@ -74,3 +75,61 @@ async def test_memory_resolver_gap_when_no_match():
     assert result.hit is None
     assert result.gap is not None
     assert result.gap.reason.value == "memory_exists_but_no_match"
+
+
+@pytest.mark.asyncio
+async def test_memory_resolver_prefers_requirement_source_origin_id_over_vector_order():
+    fixture = load_maio_contract_fixture()
+    parcelamento = KnowledgeHit(
+        origin_id=37,
+        context_key="sistema_background:fechamento_gerencial:parcelamento_cartao:2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Parcelamento de cartão em maio.",
+        key_metrics={"parcelamento_de_cartao": fixture["key_metrics"]["parcelamento_de_cartao"]},
+        score=0.275767,
+    )
+    faturamento = KnowledgeHit(
+        origin_id=33,
+        context_key="sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Faturamento por forma de pagamento em maio.",
+        key_metrics={
+            "faturamento_por_tipo_de_pagamento": fixture["key_metrics"][
+                "faturamento_por_tipo_de_pagamento"
+            ],
+        },
+        score=0.354322,
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:faturamento_por_tipo_de_pagamento",
+        aggregation_rule=AggregationRule.LOOKUP,
+        comparator=Comparator.NONE,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        memory_themes=("fechamento_gerencial",),
+        key_metrics_keys=("faturamento_por_tipo_de_pagamento",),
+        key_metrics_entity_field="tipo",
+        key_metrics_value_field="valor",
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_por_tipo_de_pagamento",
+        metric="faturamento",
+        dimension="forma_pagamento",
+        entity=None,
+        period="2026-05",
+        operation="comparison",
+        matched_key="faturamento_por_tipo_de_pagamento",
+        source_origin_id=33,
+        source_context_key=faturamento.context_key,
+        semantics=semantics,
+    )
+
+    resolver = MemoryResolver(FakeReader(), catalog=get_memory_catalog(), fallback=FallbackPolicy())
+    result = await resolver.resolve(
+        (requirement,),
+        ConhecimentoRecuperado(hits=(parcelamento, faturamento)),
+    )
+
+    resolved = result.resolved["dynamic:faturamento_por_tipo_de_pagamento"]
+    assert resolved.hit.origin_id == 33
+    assert result.traces[0].rule_applied == ResolutionRule.VECTOR_RETRIEVAL

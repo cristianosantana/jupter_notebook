@@ -241,6 +241,33 @@ class PublicRemissiveReader:
         )
         return hits
 
+    async def load_hits_by_context_key_patterns(
+        self,
+        patterns: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[KnowledgeHit]:
+        normalized = [pattern.strip().lower() for pattern in patterns if pattern.strip()]
+        if not normalized:
+            return []
+        hits_by_id: dict[int, KnowledgeHit] = {}
+        async with self._pool.acquire() as conn:
+            for pattern in normalized:
+                rows = await conn.fetch(_LOAD_CURTA_BY_CONTEXT_KEY_THEME, pattern, limit)
+                for row in rows:
+                    origin_id = int(row["id"])
+                    if origin_id in hits_by_id:
+                        continue
+                    hits_by_id[origin_id] = KnowledgeHit(
+                        origin_id=origin_id,
+                        context_key=str(row["context_key"]),
+                        category=str(row["category"]),
+                        validated_answer=str(row["validated_answer"]),
+                        key_metrics=_json_mapping(row["key_metrics"]),
+                        score=None,
+                    )
+        return list(hits_by_id.values())
+
 
 def _json_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):

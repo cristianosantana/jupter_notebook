@@ -28,6 +28,7 @@ def _load_script_module():
 class FakeReader:
     def __init__(self) -> None:
         self.calls: list[tuple[datetime, datetime, int]] = []
+        self.marked_batches: list[list[str]] = []
 
     async def read_window(
         self,
@@ -45,6 +46,9 @@ class FakeReader:
                 indexed_turns=[{"message_id": "sess-1:1", "content": "Qual foi o faturamento?"}],
             )
         ]
+
+    async def mark_processed(self, windows: list[RemissiveConversationWindow]) -> None:
+        self.marked_batches.append([window.session_id for window in windows])
 
 
 class FakeLLM:
@@ -64,6 +68,85 @@ class FakeStore:
     async def persist_batch(self, batch):
         self.batches.append(batch)
         return [301]
+
+
+class SequenceLLM:
+    def __init__(self, payloads: list[dict]) -> None:
+        self.payloads = payloads
+        self.prompts: list[str] = []
+
+    async def generate(self, prompt: str, **kwargs) -> LLMResponse:
+        self.prompts.append(prompt)
+        payload = self.payloads[len(self.prompts) - 1]
+        return LLMResponse(text=json.dumps(payload))
+
+
+class CountingStore:
+    def __init__(self) -> None:
+        self.batches = []
+        self.next_id = 301
+
+    async def persist_batch(self, batch):
+        self.batches.append(batch)
+        origin_ids = list(range(self.next_id, self.next_id + len(batch.knowledge)))
+        self.next_id += len(batch.knowledge)
+        return origin_ids
+
+
+class FailingStore:
+    def __init__(self) -> None:
+        self.batches = []
+
+    async def persist_batch(self, batch):
+        self.batches.append(batch)
+        raise RuntimeError("persist failed")
+
+
+def _period_payload(periodo: str, label: str) -> dict:
+    return {
+        "knowledge": [
+            {
+                "user_id": "sistema_background",
+                "category": "Fechamento Gerencial",
+                "theme": "faturamento_por_forma_pagamento",
+                "metric_kind": "faturamento",
+                "dimension": "por_forma_pagamento",
+                "periodo": periodo,
+                "validated_answer": (
+                    f"Faturamento validado para {label} com detalhamento por forma de pagamento "
+                    "e valores completos preservados a partir do fechamento gerencial."
+                ),
+                "recent_questions": [f"Qual foi o faturamento de {label}?"],
+                "key_metrics": {"total": f"R$ {periodo[-2:]}.000,00"},
+                "index_questions": [
+                    f"qual forma de pagamento liderou em {label}?",
+                    f"qual foi o faturamento por pagamento em {label}?",
+                ],
+            }
+        ],
+        "essence": [],
+        "compression_log": {
+            "user_id": "sistema_background",
+            "from_state": "raw_windows_v2",
+            "to_state": "memoria_remissiva_v2",
+            "messages_compressed": 2,
+        },
+    }
+
+
+def _window_for_period(session_id: str, question: str, answer: str) -> RemissiveConversationWindow:
+    return RemissiveConversationWindow(
+        session_id=session_id,
+        user_id="sistema_background",
+        messages=[
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ],
+        indexed_turns=[
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ],
+    )
 
 
 @pytest.mark.asyncio
@@ -125,8 +208,94 @@ async def test_command_distills_window_with_fake_llm_and_persists_batch() -> Non
     assert store.batches[0].compression_log.messages_compressed == 1
     assert (
         store.batches[0].compression_log.batch_key
-        == "2026-06-09T00:00:00+00:00:2026-06-10T00:00:00+00:00:sistema_background"
+        == "2026-06-09T00:00:00+00:00:2026-06-10T00:00:00+00:00:sem_periodo:sess-1:sistema_background"
     )
+    assert reader.marked_batches == [["sess-1"]]
+
+
+@pytest.mark.asyncio
+async def test_command_distills_each_detected_period_in_separate_llm_call() -> None:
+    module = _load_script_module()
+    start = datetime(2026, 7, 3, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 7, 4, 0, 0, tzinfo=timezone.utc)
+
+    class MultiPeriodReader(FakeReader):
+        async def read_window(self, start, end, *, limit=500):
+            self.calls.append((start, end, limit))
+            return [
+                _window_for_period(
+                    "sess-jan",
+                    "Quero o fechamento gerencial de janeiro de 2026!",
+                    "Detalhe por seção do fechamento gerencial de janeiro com valores completos.",
+                ),
+                _window_for_period(
+                    "sess-mai",
+                    "Quero o fechamento gerencial de maio de 2026!",
+                    "Detalhe por seção do fechamento gerencial de maio com valores completos.",
+                ),
+            ]
+
+    store = CountingStore()
+    llm = SequenceLLM(
+        [
+            _period_payload("2026-01", "janeiro de 2026"),
+            _period_payload("2026-05", "maio de 2026"),
+        ]
+    )
+
+    result = await module.DistillSupervisedMemoryCommand(MultiPeriodReader(), store, llm).run(
+        start, end
+    )
+
+    assert len(llm.prompts) == 2
+    assert "sess-jan" in llm.prompts[0]
+    assert "sess-mai" not in llm.prompts[0]
+    assert "sess-mai" in llm.prompts[1]
+    assert "sess-jan" not in llm.prompts[1]
+    assert result.knowledge_written == 2
+    assert result.origin_ids == [301, 302]
+    assert len(store.batches) == 2
+    assert [batch.knowledge[0].context_key for batch in store.batches] == [
+        "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:2026-01",
+        "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:2026-05",
+    ]
+    assert store.batches[0].compression_log.batch_key.endswith(":2026-01:sistema_background")
+    assert store.batches[1].compression_log.batch_key.endswith(":2026-05:sistema_background")
+
+
+@pytest.mark.asyncio
+async def test_command_does_not_mark_period_processed_when_persist_fails() -> None:
+    module = _load_script_module()
+    start = datetime(2026, 7, 3, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 7, 4, 0, 0, tzinfo=timezone.utc)
+    reader = FakeReader()
+    store = FailingStore()
+    llm = FakeLLM(_period_payload("2026-05", "maio de 2026"))
+
+    with pytest.raises(RuntimeError, match="persist failed"):
+        await module.DistillSupervisedMemoryCommand(reader, store, llm).run(start, end)
+
+    assert len(store.batches) == 1
+    assert reader.marked_batches == []
+
+
+def test_distillation_prompt_uses_generic_period_examples() -> None:
+    module = _load_script_module()
+    prompt = module.build_distillation_prompt(
+        [
+            _window_for_period(
+                "sess-jul",
+                "Quero o fechamento gerencial de julho de 2026!",
+                "Detalhe por seção do fechamento gerencial com valores completos.",
+            )
+        ]
+    )
+    instructions = prompt.split("Janelas:", 1)[0]
+
+    assert "PERIODO_YYYY_MM" in instructions
+    assert "MES_ANO" in instructions
+    assert "maio de 2026" not in instructions.lower()
+    assert "2026-05" not in instructions
 
 
 def test_parse_distillation_payload_rejects_non_json_text() -> None:
@@ -754,6 +923,47 @@ def test_enrich_does_not_fallback_single_window_for_other_months() -> None:
     enriched = module.enrich_knowledge_from_windows(batch, windows)
 
     assert enriched.knowledge[0].validated_answer == "Resumo errado de março."
+
+
+def test_enrich_uses_user_turn_period_when_assistant_evidence_has_no_period_marker() -> None:
+    module = _load_script_module()
+    evidence = (
+        "Detalhe por seção do fechamento gerencial:\n\n"
+        "## Faturamento por tipo de pagamento\n"
+        "1. Cartão de Crédito: R$ 1.264.088,02 (47,10%)\n"
+        "2. Concessionária: R$ 913.134,71 (34,02%)\n"
+        "Texto factual longo sem repetir explicitamente o mês no corpo do assistant."
+    )
+    windows = [
+        RemissiveConversationWindow(
+            session_id="sess-maio",
+            user_id="sistema_background",
+            messages=[
+                {"role": "user", "content": "Quero o fechamento gerencial de maio de 2026!"},
+                {"role": "assistant", "content": evidence},
+            ],
+            indexed_turns=[],
+        )
+    ]
+    item = RemissiveKnowledgeItem(
+        user_id="sistema_background",
+        category="fechamento_gerencial",
+        context_key=build_context_key(
+            "sistema_background",
+            "fechamento_gerencial",
+            "faturamento_por_forma_pagamento",
+            "2026-05",
+        ),
+        validated_answer="Resumo curto de maio.",
+        index_questions=("Qual foi o fechamento de maio?",),
+    )
+
+    enriched = module.enrich_knowledge_from_windows(
+        SupervisedMemoryBatch(knowledge=(item,)),
+        windows,
+    )
+
+    assert enriched.knowledge[0].validated_answer == evidence
 
 
 def test_parse_distillation_payload_enriches_key_metrics_with_meta() -> None:

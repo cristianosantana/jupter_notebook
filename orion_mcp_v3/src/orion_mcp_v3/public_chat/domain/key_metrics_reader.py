@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -11,7 +12,7 @@ from orion_mcp_v3.public_chat.domain.direct_answer_parser import _parse_br_curre
 _CURRENCY_IN_TEXT_RE = re.compile(r"R\$\s*([\d.]+,\d{2})", re.IGNORECASE)
 _PERCENT_RE = re.compile(r"([\d.,]+)\s*%")
 
-_DEFAULT_ENTITY_FIELDS = ("tipo", "label", "metric", "concessionaria", "departamento", "servico", "produto")
+_DEFAULT_ENTITY_FIELDS = ("tipo", "label", "metric", "concessionaria", "departamento", "servico", "produto", "parcelas")
 _DEFAULT_VALUE_FIELDS = ("valor", "value", "faturamento", "valor_comissao", "percentual")
 
 
@@ -155,6 +156,17 @@ def lookup_entity(rows: tuple[KeyMetricsRow, ...], entity: str) -> KeyMetricsRow
     return None
 
 
+def lookup_entity_group(rows: tuple[KeyMetricsRow, ...], entity: str) -> KeyMetricsRow | None:
+    group_token = _group_lookup_token(entity)
+    if group_token is None:
+        return None
+    matches = [row for row in rows if group_token in _normalize_text(row.label)]
+    if not matches:
+        return None
+    total = sum(row.value for row in matches)
+    return KeyMetricsRow(label=entity.lower(), value=total, raw_value=format_currency(total))
+
+
 def aggregate_row(
     rows: tuple[KeyMetricsRow, ...],
     *,
@@ -214,6 +226,19 @@ def _parse_percent(raw: str) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _group_lookup_token(entity: str) -> str | None:
+    normalized = _normalize_text(entity)
+    if normalized in {"cortesia", "cortesias"}:
+        return "cortesia"
+    return None
+
+
+def _normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_text).strip()
 
 
 def _first_str(item: Mapping[str, Any], fields: tuple[str, ...]) -> str | None:

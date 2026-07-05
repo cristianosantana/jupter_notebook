@@ -7,7 +7,7 @@ As migrações `003_memory_embeddings.sql`, `008_chat_turn_embeddings.sql` e `01
 - **Docker:** imagem com pgvector, por exemplo `pgvector/pgvector:pg16`.
 - **Debian/Ubuntu:** por exemplo `sudo apt install postgresql-16-pgvector` (ajuste à versão do seu servidor).
 
-Com `python scripts/apply_migrations.py`, a extensão é criada automaticamente **após** o pgvector estar instalado no servidor.
+Com `python3 scripts/apply_migrations.py`, a extensão é criada automaticamente **após** o pgvector estar instalado no servidor.
 
 Ordem de aplicação (prefixo numérico):
 
@@ -35,7 +35,7 @@ As tabelas `public_chat_*` **não** estão nesta pasta. Migrações e script de 
 `src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/`
 
 ```bash
-python -m orion_mcp_v3.public_chat.scripts.apply_migrations
+python3 -m orion_mcp_v3.public_chat.scripts.apply_migrations
 ```
 
 Documentação: [`public_chat/README.md`](../../public_chat/README.md)
@@ -71,7 +71,7 @@ Estas migrações alimentam apenas o subsistema opcional `chat_turn_embeddings` 
 A rotina que grava essas tabelas é o comando independente:
 
 ```bash
-python scripts/distill_supervised_memory.py \
+python3 scripts/distill_supervised_memory.py \
   --start 2026-06-09T00:00:00Z \
   --end 2026-06-10T00:00:00Z
 ```
@@ -86,7 +86,7 @@ Na pasta **`orion_mcp_v3`**:
 
 ```bash
 pip install -r requirements.txt
-python scripts/apply_migrations.py
+python3 scripts/apply_migrations.py
 ```
 
 O script usa **asyncpg** e lê o `.env` automaticamente.

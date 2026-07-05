@@ -169,3 +169,95 @@ def test_fallback_policy_prefers_vector_order_over_catalog_sql_order() -> None:
     assert result.hit is not None
     assert result.hit.hit.origin_id == 67
     assert result.hit.rule == ResolutionRule.VECTOR_RETRIEVAL
+
+
+def test_fallback_policy_filters_catalog_by_required_key_metrics_key() -> None:
+    catalog = get_memory_catalog()
+    hit_taxas = KnowledgeHit(
+        origin_id=32,
+        context_key="sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-04",
+        category="Fechamento Gerencial",
+        validated_answer="Taxas de cartão em abril.",
+        key_metrics={"taxas_cartao_credito": {"rows": [], "_meta": {}}},
+        score=None,
+    )
+    hit_faturamento = KnowledgeHit(
+        origin_id=28,
+        context_key="sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-2026-04",
+        category="Fechamento Gerencial",
+        validated_answer="Faturamento por tipo de venda em abril.",
+        key_metrics={"faturamento_por_tipo_de_venda": {"rows": [], "_meta": {}}},
+        score=None,
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_por_tipo_de_venda:2026-04",
+        metric="faturamento",
+        dimension="tipo_de_venda",
+        entity=None,
+        period="2026-04",
+        operation="comparison",
+        matched_key="faturamento_por_tipo_de_venda",
+        semantics=FactSemantics(
+            fact_key="dynamic:faturamento_por_tipo_de_venda:2026-04",
+            aggregation_rule=AggregationRule.LOOKUP,
+            comparator=Comparator.NONE,
+            source_priority=(SourcePriority.KEY_METRICS, SourcePriority.PARSED_TEXT),
+            value_kind="currency",
+            memory_themes=("fechamento_gerencial", "fechamento_gerencial_mensal"),
+            key_metrics_keys=("faturamento_por_tipo_de_venda",),
+            key_metrics_entity_field="tipo",
+            key_metrics_value_field="valor",
+        ),
+    )
+
+    result = FallbackPolicy().resolve_from_hits(
+        requirement,
+        catalog_hits=[hit_taxas, hit_faturamento],
+        vector_hits=[],
+        catalog=catalog,
+    )
+
+    assert result.hit is not None
+    assert result.hit.hit.origin_id == 28
+    assert result.hit.rule == ResolutionRule.CATALOG
+
+
+def test_fallback_policy_rejects_vector_hit_from_wrong_period() -> None:
+    catalog = get_memory_catalog()
+    maio = KnowledgeHit(
+        origin_id=34,
+        context_key="sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Faturamento por tipo de venda em maio.",
+        key_metrics={"faturamento_por_tipo_de_venda": {"rows": [], "_meta": {}}},
+        score=0.12,
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_por_tipo_de_venda:2026-04",
+        metric="faturamento",
+        dimension="tipo_de_venda",
+        entity=None,
+        period="2026-04",
+        operation="comparison",
+        matched_key="faturamento_por_tipo_de_venda",
+        semantics=FactSemantics(
+            fact_key="dynamic:faturamento_por_tipo_de_venda:2026-04",
+            aggregation_rule=AggregationRule.LOOKUP,
+            comparator=Comparator.NONE,
+            source_priority=(SourcePriority.KEY_METRICS, SourcePriority.PARSED_TEXT),
+            value_kind="currency",
+            memory_themes=("fechamento_gerencial", "fechamento_gerencial_mensal"),
+            key_metrics_keys=("faturamento_por_tipo_de_venda",),
+        ),
+    )
+
+    result = FallbackPolicy().resolve_from_hits(
+        requirement,
+        catalog_hits=[],
+        vector_hits=[maio],
+        catalog=catalog,
+    )
+
+    assert result.hit is None
+    assert result.gap is not None
+    assert result.gap.reason.value == "memory_exists_but_no_match"

@@ -45,7 +45,7 @@ def test_period_scoper_filters_march() -> None:
     assert degraded is False
 
 
-def test_period_scoper_degraded_fallback() -> None:
+def test_period_scoper_does_not_fallback_to_other_period() -> None:
     knowledge = ConhecimentoRecuperado(
         hits=(
             other_month_hit(origin_id=3, month_slug="fevereiro_2026", period="2026-02-01-to-2026-02-28"),
@@ -53,5 +53,5 @@ def test_period_scoper_degraded_fallback() -> None:
         )
     )
     scoped, degraded = scope_knowledge(knowledge, period="2026-03")
-    assert len(scoped.hits) == 1
+    assert len(scoped.hits) == 0
     assert degraded is True

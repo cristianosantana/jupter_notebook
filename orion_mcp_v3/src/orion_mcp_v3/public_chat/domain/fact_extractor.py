@@ -26,6 +26,7 @@ from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import Resolved
 from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
     aggregate_row,
     lookup_entity,
+    lookup_entity_group,
     rows_from_array,
     rows_from_key_metrics_entry,
     scalar_from_key_metrics,
@@ -152,7 +153,7 @@ class FactExtractor:
 
             if semantics.aggregation_rule == AggregationRule.LOOKUP:
                 if requirement.entity:
-                    row = lookup_entity(rows, requirement.entity)
+                    row = lookup_entity_group(rows, requirement.entity) or lookup_entity(rows, requirement.entity)
                     if row is None:
                         continue
                     display = row.percentual or row.raw_value if value_field == "percentual" else row.raw_value

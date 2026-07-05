@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider
@@ -19,11 +19,17 @@ from orion_mcp_v3.public_chat.domain.key_metrics_introspection import (
     MatchMethod,
     available_key_metrics_payload,
     build_dynamic_requirement,
-    build_key_metrics_index,
+    build_key_metrics_index_from_hits,
     dimensions_from_contract,
     find_key_metrics_source,
 )
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado
+from orion_mcp_v3.public_chat.domain.period_selection import (
+    entity_for_dimension,
+    non_period_entity_filters,
+    periods_from_contract,
+)
+from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
 from orion_mcp_v3.public_chat.domain.special_requirements import NoOpSpecialCatalog, SpecialRequirementsCatalog
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event
 from orion_mcp_v3.public_chat.prompts import get_public_chat_prompt_registry
@@ -53,8 +59,8 @@ async def plan_analytical_requirements(
     special = special_catalog or NoOpSpecialCatalog()
     composition = composition_planner or NoOpCompositionPlanner()
 
-    primary_hit = knowledge.hits[0] if knowledge.hits else None
-    if primary_hit is None or not primary_hit.key_metrics:
+    index = build_key_metrics_index_from_hits(knowledge.hits)
+    if not index:
         result = FactPlanResult(
             requirements=(),
             composite=False,
@@ -72,7 +78,6 @@ async def plan_analytical_requirements(
         _log_plan(result, t0)
         return result
 
-    index = build_key_metrics_index(primary_hit.key_metrics)
     lookup_reqs, lookup_gaps, used_llm = await _resolve_lookup_requirements(
         message,
         contract=contract,
@@ -126,9 +131,20 @@ async def _resolve_lookup_requirements(
     requirements: list[FactRequirement] = []
     gaps: list[FactGap] = []
     used_llm = False
+    comparison_periods = periods_from_contract(contract)
+    if len(comparison_periods) > 1:
+        return await _resolve_period_comparison_requirements(
+            message,
+            contract=contract,
+            periods=comparison_periods,
+            dims=dims,
+            index=index,
+            llm=llm,
+            max_tokens=max_tokens,
+        )
 
-    entity = next((filt.value for filt in contract.entity_filters if filt.value), None)
     for dimension in dims:
+        entity = entity_for_dimension(contract, dimension, message=message)
         match = find_key_metrics_source(
             index,
             dimension=dimension,
@@ -142,6 +158,7 @@ async def _resolve_lookup_requirements(
                     match.entry,
                     contract=contract,
                     match_method=match.match_method,
+                    message=message,
                 )
             )
             continue
@@ -163,6 +180,7 @@ async def _resolve_lookup_requirements(
                         contract=contract,
                         match_method=MatchMethod.LLM,
                         heuristic_status=HeuristicStatus.RESOLVED,
+                        message=message,
                     )
                 )
                 continue
@@ -184,6 +202,118 @@ async def _resolve_lookup_requirements(
         )
 
     return tuple(requirements), gaps, used_llm
+
+
+async def _resolve_period_comparison_requirements(
+    message: str,
+    *,
+    contract: IntentContract,
+    periods: tuple[str, ...],
+    dims: tuple[str, ...],
+    index: tuple[KeyMetricsIndexEntry, ...],
+    llm: LLMProvider | None,
+    max_tokens: int,
+) -> tuple[tuple[FactRequirement, ...], list[FactGap], bool]:
+    requirements: list[FactRequirement] = []
+    gaps: list[FactGap] = []
+    used_llm = False
+    period_dims = dims or ("periodo",)
+
+    for period in periods:
+        period_index = _index_for_period(index, period)
+        candidate_index = period_index or index
+        period_contract = replace(
+            contract,
+            period=period,
+            entity_filters=non_period_entity_filters(contract),
+        )
+        for dimension in period_dims:
+            entity = entity_for_dimension(period_contract, dimension, message=message)
+            match = find_key_metrics_source(
+                candidate_index,
+                dimension=dimension,
+                metric_kind=period_contract.metric,
+                entity=entity,
+                message=message,
+            )
+            if match.status == HeuristicStatus.RESOLVED and match.entry is not None:
+                requirement = build_dynamic_requirement(
+                    match.entry,
+                    contract=period_contract,
+                    match_method=match.match_method,
+                    message=message,
+                )
+                if not period_index:
+                    requirement = _catalog_resolved_requirement(requirement)
+                requirements.append(_period_specific_requirement(requirement, period))
+                continue
+            if match.status == HeuristicStatus.AMBIGUOUS:
+                resolved = await _llm_disambiguate_index(
+                    message,
+                    contract=period_contract,
+                    index=candidate_index,
+                    candidates=match.candidates,
+                    llm=llm,
+                    max_tokens=max_tokens,
+                )
+                if resolved is not None:
+                    used_llm = True
+                    requirement = build_dynamic_requirement(
+                        resolved,
+                        contract=period_contract,
+                        match_method=MatchMethod.LLM,
+                        heuristic_status=HeuristicStatus.RESOLVED,
+                        message=message,
+                    )
+                    if not period_index:
+                        requirement = _catalog_resolved_requirement(requirement)
+                    requirements.append(_period_specific_requirement(requirement, period))
+                    continue
+                gaps.append(
+                    FactGap(
+                        fact_key=f"dynamic:{dimension}:{period}",
+                        reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS,
+                        detail=f"period={period}; candidates={[entry.key for entry in match.candidates]}",
+                    )
+                )
+                continue
+            gaps.append(
+                FactGap(
+                    fact_key=f"dynamic:{dimension}:{period}",
+                    reason=GapReason.NOT_FOUND,
+                    detail=f"dimension={dimension}; period={period}",
+                )
+            )
+
+    return tuple(requirements), gaps, used_llm
+
+
+def _index_for_period(
+    index: tuple[KeyMetricsIndexEntry, ...],
+    period: str,
+) -> tuple[KeyMetricsIndexEntry, ...]:
+    return tuple(
+        entry
+        for entry in index
+        if entry.context_key is not None and period_in_context_key(entry.context_key, period)
+    )
+
+
+def _period_specific_requirement(requirement: FactRequirement, period: str) -> FactRequirement:
+    fact_key = f"{requirement.fact_key}:{period}"
+    return replace(
+        requirement,
+        fact_key=fact_key,
+        semantics=replace(requirement.semantics, fact_key=fact_key),
+    )
+
+
+def _catalog_resolved_requirement(requirement: FactRequirement) -> FactRequirement:
+    return replace(
+        requirement,
+        source_origin_id=None,
+        source_context_key=None,
+    )
 
 
 async def _llm_disambiguate_index(
@@ -291,6 +421,8 @@ def _log_plan(
                     "key": entry.key,
                     "dimension": entry.dimension,
                     "metric_kind": entry.metric_kind,
+                    "origin_id": entry.origin_id,
+                    "context_key": entry.context_key,
                 }
                 for entry in index
             ],

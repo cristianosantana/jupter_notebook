@@ -24,19 +24,24 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
-from dataclasses import asdict, replace
+import unicodedata
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 import asyncpg
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC  = ROOT / "src"
+SCRIPTS = ROOT / "scripts"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 from orion_mcp_v3.config.settings import get_settings, get_settings_uncached
 from orion_mcp_v3.memory.remissive_memory_store import RemissiveMemoryStore
@@ -72,6 +77,8 @@ class ConversationReader(Protocol):
         self, start: datetime, end: datetime, *, limit: int = 500
     ) -> list[RemissiveConversationWindow]: ...
 
+    async def mark_processed(self, windows: Sequence[RemissiveConversationWindow]) -> None: ...
+
 
 class MemoryStore(Protocol):
     async def persist_batch(self, batch: SupervisedMemoryBatch) -> list[int]: ...
@@ -106,30 +113,43 @@ class DistillSupervisedMemoryCommand:
             return DistillationResult(windows_read=0, knowledge_written=0, origin_ids=[])
 
         logger.info("Janelas lidas: %d", len(windows))
-        prompt   = build_distillation_prompt(windows)
-        response = await self._llm.generate(
-            prompt, 
-            temperature=0, 
-            max_tokens=get_settings().distillation_max_tokens
-        )
-
-        try:
-            batch = enrich_knowledge_from_windows(
-                parse_distillation_payload(response.text), windows
+        origin_ids: list[int] = []
+        knowledge_written = 0
+        for period_key, period_windows in _group_windows_by_period(windows):
+            logger.info("Destilando grupo de periodo %s: %d janela(s)", period_key, len(period_windows))
+            prompt = build_distillation_prompt(period_windows)
+            response = await self._llm.generate(
+                prompt,
+                temperature=0,
+                max_tokens=get_settings().distillation_max_tokens,
             )
-        except ValueError as exc:
-            log_path = _write_failed_response(response.text, error=str(exc), windows=windows)
-            raise ValueError(f"{exc}. Resposta bruta salva em: {log_path}") from exc
 
-        batch = _stamp_batch_key(batch, start, end, windows)
-        origin_ids = await self._store.persist_batch(batch)
+            try:
+                batch = enrich_knowledge_from_windows(
+                    parse_distillation_payload(response.text), period_windows
+                )
+            except ValueError as exc:
+                log_path = _write_failed_response(
+                    response.text,
+                    error=str(exc),
+                    windows=period_windows,
+                    log_dir=self._log_dir,
+                )
+                raise ValueError(f"{exc}. Resposta bruta salva em: {log_path}") from exc
+
+            batch = _stamp_batch_key(batch, start, end, period_windows, group_key=period_key)
+            period_origin_ids = await self._store.persist_batch(batch)
+            await self._reader.mark_processed(period_windows)
+            origin_ids.extend(period_origin_ids)
+            knowledge_written += len(batch.knowledge)
+
         logger.info(
             "Destilacao concluida -- knowledge: %d, origin_ids: %s",
-            len(batch.knowledge), origin_ids,
+            knowledge_written, origin_ids,
         )
         return DistillationResult(
             windows_read=len(windows),
-            knowledge_written=len(batch.knowledge),
+            knowledge_written=knowledge_written,
             origin_ids=origin_ids,
         )
 
@@ -138,11 +158,109 @@ class DistillSupervisedMemoryCommand:
 # Helpers internos
 # ---------------------------------------------------------------------------
 
+_MONTH_NAMES = {
+    "janeiro": 1,
+    "jan": 1,
+    "fevereiro": 2,
+    "fev": 2,
+    "marco": 3,
+    "março": 3,
+    "mar": 3,
+    "abril": 4,
+    "abriu": 4,
+    "abr": 4,
+    "maio": 5,
+    "mai": 5,
+    "junho": 6,
+    "jun": 6,
+    "julho": 7,
+    "jul": 7,
+    "agosto": 8,
+    "ago": 8,
+    "setembro": 9,
+    "set": 9,
+    "outubro": 10,
+    "out": 10,
+    "novembro": 11,
+    "nov": 11,
+    "dezembro": 12,
+    "dez": 12,
+}
+
+
+def _normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.lower())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _message_text(message: Mapping[str, Any]) -> str:
+    content = message.get("content")
+    return content.strip() if isinstance(content, str) else ""
+
+
+def _period_from_text(text: str) -> str | None:
+    if not text.strip():
+        return None
+    numeric = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])\b", text)
+    if numeric:
+        return f"{numeric.group(1)}-{numeric.group(2)}"
+
+    normalized = _normalize_text(text)
+    year_match = re.search(r"\b(20\d{2})\b", normalized)
+    if not year_match:
+        return None
+    year = year_match.group(1)
+    for month_name, month in _MONTH_NAMES.items():
+        normalized_month = _normalize_text(month_name)
+        if re.search(rf"\b{re.escape(normalized_month)}\b", normalized):
+            return f"{year}-{month:02d}"
+    return None
+
+
+def _period_from_window(window: RemissiveConversationWindow) -> str | None:
+    for source in (window.messages, window.indexed_turns):
+        for message in source:
+            if str(message.get("role", "")).strip().lower() != "user":
+                continue
+            period = _period_from_text(_message_text(message))
+            if period:
+                return period
+    for source in (window.messages, window.indexed_turns):
+        for message in source:
+            period = _period_from_text(_message_text(message))
+            if period:
+                return period
+    return None
+
+
+def _group_windows_by_period(
+    windows: Sequence[RemissiveConversationWindow],
+) -> list[tuple[str, list[RemissiveConversationWindow]]]:
+    grouped: dict[str, list[RemissiveConversationWindow]] = {}
+    order: list[str] = []
+    for window in windows:
+        period = _period_from_window(window) or f"sem_periodo:{window.session_id}"
+        if period not in grouped:
+            grouped[period] = []
+            order.append(period)
+        grouped[period].append(window)
+    return [(period, grouped[period]) for period in order]
+
+
+def _result_payload(result: DistillationResult) -> dict[str, Any]:
+    return {
+        "windows_read": result.windows_read,
+        "knowledge_written": result.knowledge_written,
+        "origin_ids": list(result.origin_ids),
+    }
+
 def _stamp_batch_key(
     batch: SupervisedMemoryBatch,
     start: datetime,
     end: datetime,
     windows: Sequence[RemissiveConversationWindow],
+    *,
+    group_key: str,
 ) -> SupervisedMemoryBatch:
     if batch.compression_log is None:
         return batch
@@ -152,7 +270,7 @@ def _stamp_batch_key(
         batch,
         compression_log=replace(
             log,
-            batch_key=f"{start.isoformat()}:{end.isoformat()}:{user_id}",
+            batch_key=f"{start.isoformat()}:{end.isoformat()}:{group_key}:{user_id}",
         ),
     )
 
@@ -162,8 +280,9 @@ def _write_failed_response(
     *,
     error: str,
     windows: Sequence[RemissiveConversationWindow],
+    log_dir: Path | None = None,
 ) -> Path:
-    log_dir = ROOT / "logs"
+    log_dir = log_dir or ROOT / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     path  = log_dir / f"distill_supervised_memory_failed_{stamp}.json"
@@ -179,6 +298,16 @@ def _write_failed_response(
                 "input_summary": {
                     "windows_count": len(windows),
                     "total_messages": sum(len(w.messages) for w in windows),
+                    "total_indexed_turns": sum(len(w.indexed_turns) for w in windows),
+                    "windows": [
+                        {
+                            "session_id": window.session_id,
+                            "user_id": window.user_id,
+                            "messages_count": len(window.messages),
+                            "indexed_turns_count": len(window.indexed_turns),
+                        }
+                        for window in windows
+                    ],
                 },
                 "model_response": parsed,
             },
@@ -257,7 +386,7 @@ async def _run_cli(args: argparse.Namespace) -> None:
         )
     finally:
         await pool.close()
-    print(json.dumps(asdict(result), ensure_ascii=True))
+    print(json.dumps(_result_payload(result), ensure_ascii=True))
 
 
 def main() -> None:

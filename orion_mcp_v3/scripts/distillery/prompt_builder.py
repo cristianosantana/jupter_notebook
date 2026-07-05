@@ -50,7 +50,7 @@ def build_distillation_prompt(
         '  "theme": "slug da dimensao analitica (ver REGRAS abaixo)",\n'
         '  "metric_kind": "metrica principal (ver valores validos abaixo)",\n'
         '  "dimension": "como a metrica esta agrupada (ver valores validos abaixo)",\n'
-        '  "periodo": "YYYY-MM (ex: 2026-05) ou null",\n'
+        '  "periodo": "YYYY-MM (ex: PERIODO_YYYY_MM) ou null",\n'
         '  "validated_answer": "resposta direta e completa ao theme (minimo 50 chars)",\n'
         '  "recent_questions": ["1 a 5 perguntas ESPECIFICAS ao theme que os dados respondem"],\n'
         '  "key_metrics": {"chave": "valor — somente dados analiticos, sem metadados"},\n'
@@ -61,7 +61,7 @@ def build_distillation_prompt(
         # ── REGRA CENTRAL: 1 item = 1 dimensão ───────────────────────────────
         "REGRA DE GRANULARIDADE (obrigatoria):\n"
         "Cada item responde a UMA pergunta especifica. PROIBIDO misturar dimensoes.\n"
-        "Exemplo de decomposicao correta para fechamento 2026-05:\n"
+        "Exemplo de decomposicao correta para fechamento PERIODO_YYYY_MM:\n"
         "  theme='comissao_por_concessionaria'          metric_kind='comissao'     dimension='por_concessionaria'\n"
         "  theme='comissao_por_concessionaria_tipo_os'  metric_kind='comissao'     dimension='por_concessionaria_tipo_os'\n"
         "  theme='producao_por_servico'                 metric_kind='producao'     dimension='por_servico'\n"
@@ -92,7 +92,7 @@ def build_distillation_prompt(
         "theme: slug que combina metric_kind + dimension de forma unica.\n"
         "VALIDO:   'faturamento_por_forma_pagamento', 'comissao_por_concessionaria',\n"
         "          'producao_por_servico', 'parcelamento_cartao', 'taxas_cartao_credito'.\n"
-        "INVALIDO: 'fechamento_gerencial', 'relatorio_maio', 'analise_completa'.\n"
+        "INVALIDO: 'fechamento_gerencial', 'relatorio_periodo', 'analise_completa'.\n"
         "\n"
 
         # ── validated_answer ──────────────────────────────────────────────────
@@ -100,6 +100,7 @@ def build_distillation_prompt(
         "PROIBIDO incluir dados de outras dimensoes no mesmo validated_answer.\n"
         "PROIBIDO resumir ou produzir resumo executivo.\n"
         "Copie valores, tabelas e listas exatamente como aparecem na conversa.\n"
+        "Mantenha evidencias factuais preservadas por periodo e por theme.\n"
         "\n"
 
         # ── key_metrics ───────────────────────────────────────────────────────
@@ -113,14 +114,14 @@ def build_distillation_prompt(
         "recent_questions: liste de 1 a 5 perguntas ESPECIFICAS AO THEME que\n"
         "os dados deste item respondem diretamente.\n"
         "PROIBIDO repetir a pergunta generica que originou o fechamento completo.\n"
-        "PROIBIDO: 'Quero o fechamento gerencial de maio de 2026?' (generico demais).\n"
+        "PROIBIDO: 'Quero o fechamento gerencial de MES_ANO?' (generico demais).\n"
         "CORRETO para theme='comissao_por_concessionaria':\n"
-        "  - 'Qual concessionaria teve maior comissao em maio?'\n"
-        "  - 'Ranking de comissao por concessionaria maio 2026'\n"
-        "  - 'Quem mais comissionou em maio de 2026?'\n"
+        "  - 'Qual concessionaria teve maior comissao em MES_ANO?'\n"
+        "  - 'Ranking de comissao por concessionaria PERIODO_YYYY_MM'\n"
+        "  - 'Quem mais comissionou em MES_ANO?'\n"
         "CORRETO para theme='parcelamento_cartao':\n"
-        "  - 'Como ficou o parcelamento do cartao em maio?'\n"
-        "  - 'Qual parcela foi mais usada em maio 2026?'\n"
+        "  - 'Como ficou o parcelamento do cartao em MES_ANO?'\n"
+        "  - 'Qual parcela foi mais usada em PERIODO_YYYY_MM?'\n"
         "Se nao houver pergunta especifica na conversa, gere perguntas coerentes\n"
         "com o theme. Prefira vazio a pergunta generica de fechamento.\n"
         "\n"
@@ -134,13 +135,13 @@ def build_distillation_prompt(
         "  3. proporcao  — 'qual percentual/quanto representa?'\n"
         "  4. comparacao — 'X superou Y? A diferenca entre X e Y?'\n"
         "  5. coloquial  — como um gerente perguntaria no dia a dia\n"
-        "Exemplo para theme='faturamento_por_forma_pagamento' periodo='2026-05':\n"
-        "  1. 'qual forma de pagamento dominou o faturamento em maio de 2026?'\n"
-        "  2. 'qual forma de pagamento teve menor participacao em maio 2026?'\n"
-        "  3. 'qual percentual do faturamento veio de cartao de credito em maio de 2026?'\n"
-        "  4. 'a forma de pagamento A superou a forma de pagamento B em maio de 2026?\n"
+        "Exemplo para theme='faturamento_por_forma_pagamento' periodo='PERIODO_YYYY_MM':\n"
+        "  1. 'qual forma de pagamento dominou o faturamento em MES_ANO?'\n"
+        "  2. 'qual forma de pagamento teve menor participacao em PERIODO_YYYY_MM?'\n"
+        "  3. 'qual percentual do faturamento veio de cartao de credito em MES_ANO?'\n"
+        "  4. 'a forma de pagamento A superou a forma de pagamento B em MES_ANO?\n"
         " (OBS: A pode ser o PIX e B o Depósito Bancário e varias outras combinações)'\n"
-        "  5. 'quanto a concessionaria X recebeu os pagamentos em maio de 2026?'\n"
+        "  5. 'quanto a concessionaria X recebeu os pagamentos em MES_ANO?'\n"
         "\n"
         
         # ── NUNCA gerar context_key ───────────────────────────────────────────
@@ -163,8 +164,8 @@ def build_distillation_prompt(
         "\n"
 
         # ── periodo ───────────────────────────────────────────────────────────
-        "periodo: formato YYYY-MM (ex: '2026-05').\n"
-        "NUNCA 'maio de 2026' — use '2026-05'.\n"
+        "periodo: formato YYYY-MM (ex: 'PERIODO_YYYY_MM').\n"
+        "NUNCA texto livre como 'MES_ANO' — use o valor canonico PERIODO_YYYY_MM.\n"
         "\n"
 
         # ── Janelas ───────────────────────────────────────────────────────────

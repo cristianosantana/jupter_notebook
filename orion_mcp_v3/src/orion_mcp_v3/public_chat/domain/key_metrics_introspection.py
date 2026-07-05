@@ -27,6 +27,13 @@ from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
     rows_from_key_metrics_entry,
     sample_labels_from_entry,
 )
+from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
+from orion_mcp_v3.public_chat.domain.period_selection import (
+    contract_has_parcel_filter,
+    entity_for_dimension,
+    message_has_parcel_count,
+    non_period_entity_filters,
+)
 
 _DYNAMIC_PREFIX = "dynamic:"
 _MIN_ACCEPT_SCORE = 3.0
@@ -57,6 +64,8 @@ class KeyMetricsIndexEntry:
     shape: str
     subdimension: str | None = None
     score_breakdown: tuple[tuple[str, float], ...] = ()
+    origin_id: int | None = None
+    context_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +78,12 @@ class SourceMatchResult:
     score_breakdown: tuple[tuple[str, float], ...] = ()
 
 
-def build_key_metrics_index(key_metrics: Mapping[str, Any]) -> tuple[KeyMetricsIndexEntry, ...]:
+def build_key_metrics_index(
+    key_metrics: Mapping[str, Any],
+    *,
+    origin_id: int | None = None,
+    context_key: str | None = None,
+) -> tuple[KeyMetricsIndexEntry, ...]:
     entries: list[KeyMetricsIndexEntry] = []
     for key, raw in key_metrics.items():
         if key.startswith("_"):
@@ -94,9 +108,25 @@ def build_key_metrics_index(key_metrics: Mapping[str, Any]) -> tuple[KeyMetricsI
                 sample_labels=labels,
                 shape=shape,
                 subdimension=str(meta["subdimension"]) if meta.get("subdimension") else None,
+                origin_id=origin_id,
+                context_key=context_key,
             )
         )
     return tuple(entries)
+
+
+def build_key_metrics_index_from_hits(
+    hits: tuple[KnowledgeHit, ...],
+) -> tuple[KeyMetricsIndexEntry, ...]:
+    return tuple(
+        entry
+        for hit in hits
+        for entry in build_key_metrics_index(
+            hit.key_metrics,
+            origin_id=hit.origin_id,
+            context_key=hit.context_key,
+        )
+    )
 
 
 def resolve_scalar_metrics(key_metrics: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
@@ -118,7 +148,7 @@ def dimensions_from_contract(contract: IntentContract, message: str = "") -> tup
     if contract.dimension:
         dims.append(_normalize_dimension(contract.dimension))
 
-    for filt in contract.entity_filters:
+    for filt in non_period_entity_filters(contract):
         if filt.dimension:
             normalized = _normalize_dimension(filt.dimension)
             if normalized not in dims:
@@ -127,13 +157,22 @@ def dimensions_from_contract(contract: IntentContract, message: str = "") -> tup
     keyword_map = (
         ("servico", ("servico", "serviço", "servicos", "serviços")),
         ("produto", ("produto", "produtos")),
-        ("forma_pagamento", ("forma de pagamento", "formas de pagamento", "pagamento", "pix")),
+        ("parcelas", ("parcelas", "parcelamento", "parcela")),
+        ("forma_pagamento", ("forma de pagamento", "formas de pagamento", "pix")),
         ("tipo_de_venda", ("tipo de venda", "tipos de venda")),
         ("concessionaria", ("concessionaria", "concessionária", "concessionarias")),
     )
     for dimension, needles in keyword_map:
         if any(needle in text for needle in needles) and dimension not in dims:
             dims.append(dimension)
+
+    if message_has_parcel_count(message) or contract_has_parcel_filter(contract):
+        dims = [dimension for dimension in dims if dimension != "forma_pagamento"]
+        if "parcelas" not in dims:
+            dims.insert(0, "parcelas")
+    elif any(needle in text for needle in ("pagamento", "forma de pagamento", "formas de pagamento")):
+        if "forma_pagamento" not in dims:
+            dims.append("forma_pagamento")
 
     if not dims and _mentions_revenue(contract, message):
         dims.append("periodo")
@@ -200,10 +239,11 @@ def build_dynamic_requirement(
     contract: IntentContract,
     match_method: MatchMethod | None = None,
     heuristic_status: HeuristicStatus = HeuristicStatus.RESOLVED,
+    message: str = "",
 ) -> FactRequirement:
     aggregation, comparator = _aggregation_for_contract(contract, entry)
     value_field = _value_field_for_contract(contract, entry)
-    entity = _entity_from_contract(contract)
+    entity = _entity_from_contract(contract, entry_dimension=entry.dimension, message=message)
     fact_key = f"{_DYNAMIC_PREFIX}{entry.key}"
     return FactRequirement(
         fact_key=fact_key,
@@ -216,6 +256,8 @@ def build_dynamic_requirement(
         matched_key=entry.key,
         match_method=match_method.value if match_method else MatchMethod.HEURISTIC.value,
         heuristic_status=heuristic_status.value,
+        source_origin_id=entry.origin_id,
+        source_context_key=entry.context_key,
         semantics=FactSemantics(
             fact_key=fact_key,
             aggregation_rule=aggregation,
@@ -249,6 +291,8 @@ def available_key_metrics_payload(index: tuple[KeyMetricsIndexEntry, ...]) -> li
             "metric_kind": entry.metric_kind,
             "sample_labels": list(entry.sample_labels[:5]),
             "schema": entry.schema,
+            "origin_id": entry.origin_id,
+            "context_key": entry.context_key,
         }
         for entry in index
     ]
@@ -269,6 +313,13 @@ def _score_entry(
         if entry.dimension == target_dimension:
             score += 5.0
             breakdown.append(("meta_dimension", 5.0))
+        elif _period_dimension_can_use_entry(entry, target_dimension, target_metric):
+            score += 4.0
+            breakdown.append(("period_revenue_source", 4.0))
+            priority = _period_revenue_source_priority(entry.key)
+            if priority:
+                score += priority
+                breakdown.append(("period_revenue_source_priority", priority))
         elif _dimension_matches(entry.dimension, target_dimension):
             score += 3.5
             breakdown.append(("dimension_alias", 3.5))
@@ -285,6 +336,11 @@ def _score_entry(
         elif _metric_kind_matches(entry.metric_kind, target_metric):
             score += 1.0
             breakdown.append(("metric_kind_alias", 1.0))
+
+    key_boost = _key_token_message_boost(entry.key, message)
+    if key_boost:
+        score += key_boost
+        breakdown.append(("key_token_message_boost", key_boost))
 
     penalty = _token_penalty(entry.key, target_dimension, message)
     if penalty:
@@ -349,6 +405,15 @@ def _message_boost(entry: KeyMetricsIndexEntry, message: str) -> float:
     return min(boost, 2.0)
 
 
+def _key_token_message_boost(key: str, message: str) -> float:
+    if not message:
+        return 0.0
+    message_tokens = set(_segment_tokens(message))
+    key_tokens = set(_segment_tokens(key))
+    matched = {token for token in key_tokens if len(token) > 4 and token in message_tokens}
+    return min(len(matched) * 1.0, 2.0)
+
+
 def _structural_validation(entry: KeyMetricsIndexEntry, entity: str | None) -> float:
     if not entity or not entry.sample_labels:
         return 0.0
@@ -363,7 +428,7 @@ def _aggregation_for_contract(
     entry: KeyMetricsIndexEntry,
 ) -> tuple[AggregationRule, Comparator]:
     operation = (contract.operation or "").lower()
-    if contract.entity_filters or _entity_from_contract(contract):
+    if non_period_entity_filters(contract) or _entity_from_contract(contract):
         return AggregationRule.LOOKUP, Comparator.NONE
     if operation in (PublicOperationType.RANKING_ASC.value, "ranking_asc", "min"):
         return AggregationRule.MIN, Comparator.ASC
@@ -386,11 +451,17 @@ def _value_field_for_contract(contract: IntentContract, entry: KeyMetricsIndexEn
     return entry.value_field
 
 
-def _entity_from_contract(contract: IntentContract) -> str | None:
-    for filt in contract.entity_filters:
-        if filt.value:
-            return filt.value
-    return None
+def _entity_from_contract(
+    contract: IntentContract,
+    *,
+    entry_dimension: str | None = None,
+    message: str = "",
+) -> str | None:
+    if entry_dimension:
+        entity = entity_for_dimension(contract, entry_dimension, message=message)
+        if entity:
+            return entity
+    return entity_for_dimension(contract, contract.dimension or "", message=message)
 
 
 def _mentions_revenue(contract: IntentContract, message: str) -> bool:
@@ -432,6 +503,35 @@ def _metric_kind_matches(entry_kind: str, target: str) -> bool:
     aliases = METRIC_KIND_ALIASES.get(target, (target,))
     entry_norm = _normalize_text(entry_kind)
     return any(entry_norm == _normalize_text(alias) for alias in aliases)
+
+
+def _period_dimension_can_use_entry(
+    entry: KeyMetricsIndexEntry,
+    target_dimension: str,
+    target_metric: str | None,
+) -> bool:
+    if target_dimension != "periodo":
+        return False
+    if target_metric and not (
+        entry.metric_kind == target_metric or _metric_kind_matches(entry.metric_kind, target_metric)
+    ):
+        return False
+    if "parcelamento" in _normalize_text(entry.key):
+        return False
+    return entry.metric_kind in {"revenue", "faturamento"} and entry.value_field in {
+        "valor",
+        "total",
+        "total_faturamento",
+    }
+
+
+def _period_revenue_source_priority(key: str) -> float:
+    normalized = _normalize_text(key)
+    if normalized == "faturamento_por_tipo_de_venda":
+        return 2.0
+    if normalized == "faturamento_por_tipo_de_pagamento":
+        return 1.0
+    return 0.0
 
 
 def _normalize_text(value: str) -> str:

@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import re
 
-from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract, PublicOperationType
-from orion_mcp_v3.public_chat.domain.intent_parser import normalize_period
+from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
+from orion_mcp_v3.public_chat.domain.intent_parser import extract_mentioned_periods, normalize_period
+from orion_mcp_v3.public_chat.domain.period_selection import (
+    extract_parcel_count_entity,
+    normalize_parcel_entity,
+)
 
 _OPERATION_ASC = (
     "pior",
@@ -35,10 +39,10 @@ _OPERATION_DESC = (
 
 _DIMENSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("forma_pagamento", ("forma de pagamento", "formas de pagamento", "meio de pagamento", "pagamento")),
+    ("tipo_venda", ("tipo de venda", "tipos de venda", "tipo de vendas", "tipos de vendas")),
     ("concessionaria", ("concessionária", "concessionaria", "concessionárias", "concessionarias")),
     ("servico", ("serviço", "servico", "serviços", "servicos", "produção por serviço", "producao por servico")),
     ("produto", ("produto", "produtos", "produção por produto", "producao por produto")),
-    ("tipo_venda", ("tipo de venda", "tipos de venda")),
     ("parcelamento", ("parcelamento", "parcela", "parcelas")),
     ("comissao", ("comissão", "comissao", "comissões", "comissoes")),
 )
@@ -71,17 +75,29 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     signals = extract_heuristic_signals(message)
     operation = contract.operation or signals["operation"]
     dimension = contract.dimension or signals["dimension"]
-    period = contract.period or signals["period"]
+    mentioned_periods = extract_mentioned_periods(message)
+    period = contract.period or signals["period"] or (mentioned_periods[0] if mentioned_periods else None)
     sort_direction = contract.sort_direction or _sort_direction_from_operation(operation)
     metric = contract.metric
     if dimension == "forma_pagamento" and not metric:
         metric = "faturamento"
+    entity_filters = _merge_period_filters(
+        contract.entity_filters,
+        primary_period=period,
+        periods=mentioned_periods,
+    )
+    parcel_entity = extract_parcel_count_entity(message)
+    if parcel_entity:
+        dimension = "parcelas"
+        entity_filters = _apply_parcel_filters(entity_filters, parcel_entity)
+    dimension = _dimension_for_cortesia_group(dimension, entity_filters)
+    entity_filters = _entity_filters_for_dimension(entity_filters, dimension)
     return IntentContract(
         intent=contract.intent,
         metric=metric,
         period=period,
         domain=contract.domain,
-        entity_filters=contract.entity_filters,
+        entity_filters=entity_filters,
         confidence=contract.confidence,
         operation=operation,
         dimension=dimension,
@@ -99,3 +115,69 @@ def _sort_direction_from_operation(operation: str | None) -> str | None:
 
 def _contains_needle(text: str, needles: tuple[str, ...]) -> bool:
     return any(re.search(rf"\b{re.escape(needle)}\b", text) for needle in needles)
+
+
+def _merge_period_filters(
+    filters: tuple[EntityFilter, ...],
+    *,
+    primary_period: str | None,
+    periods: tuple[str, ...],
+) -> tuple[EntityFilter, ...]:
+    merged = list(filters)
+    existing = {
+        filt.value
+        for filt in merged
+        if filt.dimension == "periodo" and filt.value
+    }
+    for period in periods:
+        if period == primary_period or period in existing:
+            continue
+        merged.append(EntityFilter(dimension="periodo", value=period, match="exact"))
+        existing.add(period)
+    return tuple(merged)
+
+
+def _dimension_for_cortesia_group(
+    dimension: str | None,
+    filters: tuple[EntityFilter, ...],
+) -> str | None:
+    if dimension in {None, "tipo_venda", "tipo_de_venda"}:
+        return dimension
+    if any(_is_cortesia_group(filt.value) for filt in filters):
+        return "tipo_venda"
+    return dimension
+
+
+def _entity_filters_for_dimension(
+    filters: tuple[EntityFilter, ...],
+    dimension: str | None,
+) -> tuple[EntityFilter, ...]:
+    if dimension not in {"tipo_venda", "tipo_de_venda"}:
+        return filters
+    normalized: list[EntityFilter] = []
+    for filt in filters:
+        if _is_cortesia_group(filt.value) and filt.dimension != "periodo":
+            normalized.append(EntityFilter(dimension="tipo_venda", value=filt.value, match=filt.match))
+            continue
+        normalized.append(filt)
+    return tuple(normalized)
+
+
+def _is_cortesia_group(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"cortesia", "cortesias"}
+
+
+def _apply_parcel_filters(
+    filters: tuple[EntityFilter, ...],
+    parcel_entity: str,
+) -> tuple[EntityFilter, ...]:
+    cleaned: list[EntityFilter] = []
+    for filt in filters:
+        if filt.dimension == "periodo":
+            cleaned.append(filt)
+            continue
+        if extract_parcel_count_entity(filt.value or ""):
+            continue
+        cleaned.append(filt)
+    cleaned.append(EntityFilter(dimension="parcelas", value=normalize_parcel_entity(parcel_entity), match="contains"))
+    return tuple(cleaned)

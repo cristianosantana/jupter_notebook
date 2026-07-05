@@ -7,13 +7,14 @@ from dataclasses import dataclass
 
 from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import (
     FallbackPolicy,
+    ResolveResult,
     ResolvedMemoryHit,
     build_trace_for_resolution,
 )
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap
 from orion_mcp_v3.public_chat.domain.fact_engine.join_plan import MemoryJoinPlan
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
-from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace, ResolutionRule
 from orion_mcp_v3.public_chat.domain.join_plan_builder import build_join_plan
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
 from orion_mcp_v3.public_chat.domain.memory_catalog import MemoryCatalog, get_memory_catalog
@@ -67,13 +68,22 @@ class MemoryResolver:
         for requirement in requirements:
             if requirement.semantics.aggregation_rule.value == "derived":
                 continue
-            period_filtered = _filter_by_period(catalog_hits, join_plan.period if join_plan else None)
-            result = self._fallback.resolve_from_hits(
-                requirement,
-                catalog_hits=period_filtered,
-                vector_hits=vector_hits,
-                catalog=self._catalog,
+            period_filtered = _filter_by_period(
+                catalog_hits,
+                requirement.period or (join_plan.period if join_plan else None),
             )
+            result = _resolve_from_source_origin_id(
+                requirement,
+                vector_hits=vector_hits,
+                catalog_hits=period_filtered,
+            )
+            if result is None:
+                result = self._fallback.resolve_from_hits(
+                    requirement,
+                    catalog_hits=period_filtered,
+                    vector_hits=vector_hits,
+                    catalog=self._catalog,
+                )
             if result.hit is not None:
                 resolved[requirement.fact_key] = result.hit
                 traces.append(
@@ -117,10 +127,38 @@ class MemoryResolver:
         if not patterns:
             return []
         hits = await self._reader.load_hits_by_theme_patterns(patterns)
-        return _filter_by_period(hits, join_plan.period)
+        return hits
 
 
 def _filter_by_period(hits: list[KnowledgeHit], period: str | None) -> list[KnowledgeHit]:
     if not period:
         return hits
     return [hit for hit in hits if period_in_context_key(hit.context_key, period)]
+
+
+def _resolve_from_source_origin_id(
+    requirement: FactRequirement,
+    *,
+    vector_hits: list[KnowledgeHit],
+    catalog_hits: list[KnowledgeHit],
+) -> ResolveResult | None:
+    if requirement.source_origin_id is None:
+        return None
+    matched_key = requirement.matched_key
+    for hit in vector_hits:
+        if hit.origin_id == requirement.source_origin_id and (
+            matched_key is None or matched_key in hit.key_metrics
+        ):
+            return ResolveResult(
+                hit=ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL),
+                gap=None,
+            )
+    for hit in catalog_hits:
+        if hit.origin_id == requirement.source_origin_id and (
+            matched_key is None or matched_key in hit.key_metrics
+        ):
+            return ResolveResult(
+                hit=ResolvedMemoryHit(hit=hit, rule=ResolutionRule.CATALOG),
+                gap=None,
+            )
+    return None

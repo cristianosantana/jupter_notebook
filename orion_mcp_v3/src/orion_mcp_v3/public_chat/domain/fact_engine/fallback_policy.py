@@ -9,6 +9,7 @@ from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace, ResolutionRule
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.domain.memory_catalog import MemoryCatalog
+from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ class FallbackPolicy:
             themes = requirement.semantics.memory_themes
 
         picked, rule = _pick_hit_for_themes(
+            requirement=requirement,
             vector_hits=vector_hits,
             catalog_hits=catalog_hits,
             themes=themes,
@@ -91,6 +93,7 @@ def _filter_hits_for_themes(
 
 def _pick_hit_for_themes(
     *,
+    requirement: FactRequirement,
     vector_hits: list[KnowledgeHit],
     catalog_hits: list[KnowledgeHit],
     themes: tuple[str, ...],
@@ -105,23 +108,56 @@ def _pick_hit_for_themes(
     2. Sem catálogo: primeiro vector hit que casa com o tema.
     3. Fallback: primeiro hit elegível do catálogo (ordem SQL).
     """
-    eligible_catalog = _filter_hits_for_themes(catalog_hits, themes, catalog)
+    eligible_catalog = _filter_hits_for_required_keys(
+        _filter_hits_for_themes(catalog_hits, themes, catalog),
+        requirement,
+    )
     eligible_ids = {hit.origin_id for hit in eligible_catalog}
 
     if eligible_ids:
         for hit in vector_hits:
-            if hit.origin_id in eligible_ids:
+            if hit.origin_id in eligible_ids and _hit_matches_required_keys(hit, requirement):
                 return hit, ResolutionRule.VECTOR_RETRIEVAL
 
     if not eligible_catalog:
         for hit in vector_hits:
-            if _hit_matches_themes(hit, themes, catalog):
+            if _hit_matches_themes(hit, themes, catalog) and _hit_matches_required_keys(hit, requirement):
                 return hit, ResolutionRule.VECTOR_RETRIEVAL
 
     if eligible_catalog:
         return eligible_catalog[0], ResolutionRule.CATALOG
 
     return None, None
+
+
+def _filter_hits_for_required_keys(
+    hits: list[KnowledgeHit],
+    requirement: FactRequirement,
+) -> list[KnowledgeHit]:
+    return [hit for hit in hits if _hit_matches_required_keys(hit, requirement)]
+
+
+def _hit_matches_required_keys(hit: KnowledgeHit, requirement: FactRequirement) -> bool:
+    if not _hit_matches_period(hit, requirement):
+        return False
+    required = _required_key_metrics_keys(requirement)
+    if not required:
+        return True
+    return any(key in hit.key_metrics for key in required)
+
+
+def _hit_matches_period(hit: KnowledgeHit, requirement: FactRequirement) -> bool:
+    if not requirement.period:
+        return True
+    return period_in_context_key(hit.context_key, requirement.period)
+
+
+def _required_key_metrics_keys(requirement: FactRequirement) -> tuple[str, ...]:
+    keys: list[str] = []
+    if requirement.matched_key:
+        keys.append(requirement.matched_key)
+    keys.extend(requirement.semantics.key_metrics_keys)
+    return tuple(dict.fromkeys(key for key in keys if key))
 
 
 def build_trace_for_resolution(

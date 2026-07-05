@@ -48,6 +48,8 @@ async def test_reader_reads_conversation_state_and_turn_embeddings_without_write
     assert "SELECT" in sql
     assert "CONVERSATION_STATE" in sql
     assert "CHAT_TURN_EMBEDDINGS" in sql
+    assert "CS.CREATED_AT >= $1" in sql
+    assert "CS.DISTILLED_AT IS NULL" in sql
     assert "INSERT" not in sql
     assert "UPDATE" not in sql
     assert "DELETE" not in sql
@@ -90,3 +92,28 @@ async def test_reader_decodes_jsonb_returned_as_text() -> None:
     assert windows[0].messages[0]["content"] == "Faca o fechamento gerencial"
     assert windows[0].messages[1]["content"] == "Fechamento validado."
     assert windows[0].indexed_turns[0]["message_id"] == "sess-json:1"
+
+
+@pytest.mark.asyncio
+async def test_reader_marks_windows_as_distilled_after_successful_persist() -> None:
+    conn = AsyncMock()
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    await SupervisedConversationReader(pool).mark_processed(
+        [
+            MagicMock(session_id="2941564f-8d3a-4d71-81c7-ea6cb6d2c306"),
+            MagicMock(session_id="8b92a387-bba5-4653-9899-1d7c2e902891"),
+        ]
+    )
+
+    conn.execute.assert_awaited_once()
+    sql = conn.execute.await_args.args[0].upper()
+    assert "UPDATE" in sql
+    assert "CONVERSATION_STATE" in sql
+    assert "DISTILLED_AT = NOW()" in sql
+    assert conn.execute.await_args.args[1] == [
+        "2941564f-8d3a-4d71-81c7-ea6cb6d2c306",
+        "8b92a387-bba5-4653-9899-1d7c2e902891",
+    ]

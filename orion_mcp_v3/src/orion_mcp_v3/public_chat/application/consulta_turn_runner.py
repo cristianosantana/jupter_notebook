@@ -257,6 +257,7 @@ class ConsultaTurnRunner:
         )
 
         knowledge = await self._retriever.reload_from_payload(cached.answer_payload)
+        knowledge = await self._complete_period_evidence(knowledge, contract=contract)
         new_fingerprint = build_knowledge_fingerprint_from_knowledge(knowledge)
         fingerprint_stale = new_fingerprint != cached.knowledge_fingerprint
         response_id = cached.id
@@ -310,7 +311,7 @@ class ConsultaTurnRunner:
                 await self._store.upsert_resolution(
                     topic=topic,
                     semantic_hash=semantic_hash,
-                    answer_payload=cached.answer_payload,
+                    answer_payload=build_answer_payload(knowledge),
                     knowledge_fingerprint=new_fingerprint,
                     cache_ttl_days=self._settings.cache_ttl_days,
                     presentation_snapshot=presentation,
@@ -385,6 +386,7 @@ class ConsultaTurnRunner:
         )
 
         knowledge = await self._retriever.retrieve(message)
+        knowledge = await self._complete_period_evidence(knowledge, contract=contract)
         presentation_parts: list[str] = []
         async for delta in self._stream_presentation(
             message,
@@ -504,3 +506,15 @@ class ConsultaTurnRunner:
         )
         async for delta in self._narrator.stream(message, contract=contract, selected=selected):
             yield delta
+
+    async def _complete_period_evidence(
+        self,
+        knowledge: ConhecimentoRecuperado,
+        *,
+        contract: IntentContract,
+    ) -> ConhecimentoRecuperado:
+        completed = await self._retriever.complete_period_evidence(
+            knowledge=knowledge,
+            contract=contract,
+        )
+        return completed if isinstance(completed, ConhecimentoRecuperado) else knowledge

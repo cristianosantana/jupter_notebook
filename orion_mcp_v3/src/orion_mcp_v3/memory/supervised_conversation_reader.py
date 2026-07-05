@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Sequence
 
 import asyncpg
 
@@ -33,11 +33,18 @@ LEFT JOIN chat_turn_embeddings cte
     ON cte.session_id = cs.session_id::text
     AND cte.created_at >= $1
     AND cte.created_at < $2
-WHERE cs.created_at < $2
-  AND (cs.expires_at IS NULL OR cs.expires_at >= $1)
+WHERE cs.created_at >= $1
+  AND cs.created_at < $2
+  AND cs.distilled_at IS NULL
 GROUP BY cs.session_id, cs.user_id, cs.messages, cs.created_at
 ORDER BY cs.created_at ASC
 LIMIT $3
+"""
+
+_MARK_PROCESSED = """
+UPDATE conversation_state
+SET distilled_at = now()
+WHERE session_id = ANY($1::uuid[])
 """
 
 
@@ -81,3 +88,10 @@ class SupervisedConversationReader:
             )
             for row in rows
         ]
+
+    async def mark_processed(self, windows: Sequence[RemissiveConversationWindow]) -> None:
+        session_ids = [window.session_id for window in windows if window.session_id]
+        if not session_ids:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(_MARK_PROCESSED, session_ids)

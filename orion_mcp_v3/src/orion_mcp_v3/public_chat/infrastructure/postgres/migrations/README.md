@@ -20,7 +20,7 @@ Na pasta `orion_mcp_v3`:
 
 ```bash
 export PUBLIC_CHAT_POSTGRES_URL="postgresql://postgres:secret@127.0.0.1:5432/dev"
-python -m orion_mcp_v3.public_chat.scripts.apply_migrations
+python3 -m orion_mcp_v3.public_chat.scripts.apply_migrations
 ```
 
 Variáveis aceites: `PUBLIC_CHAT_POSTGRES_URL`, `PUBLIC_CHAT_DATABASE_URL`.

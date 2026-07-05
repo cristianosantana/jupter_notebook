@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, Mapping
 
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract, PublicIntentType
@@ -23,6 +24,22 @@ _MONTH_NAMES = {
     "outubro": 10,
     "novembro": 11,
     "dezembro": 12,
+}
+_MONTH_ALIASES = {
+    **_MONTH_NAMES,
+    "jan": 1,
+    "fev": 2,
+    "mar": 3,
+    "abr": 4,
+    "abriu": 4,
+    "mai": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "set": 9,
+    "out": 10,
+    "nov": 11,
+    "dez": 12,
 }
 
 
@@ -127,6 +144,36 @@ def normalize_period(value: str | None) -> str | None:
     return text
 
 
+def extract_mentioned_periods(message: str | None) -> tuple[str, ...]:
+    """Extrai todos os períodos YYYY-MM mencionados em ordem textual."""
+    text = _normalize_text(message or "")
+    if not text:
+        return ()
+
+    matches: list[tuple[int, str]] = []
+    for match in re.finditer(r"\b(20\d{2})[-/](0?[1-9]|1[0-2])\b", text):
+        matches.append((match.start(), f"{match.group(1)}-{int(match.group(2)):02d}"))
+
+    aliases = "|".join(re.escape(alias) for alias in sorted(_MONTH_ALIASES, key=len, reverse=True))
+    month_year_re = re.compile(rf"\b({aliases})\b\s*(?:de\s*)?(20\d{{2}})\b")
+    for match in month_year_re.finditer(text):
+        month = _MONTH_ALIASES[match.group(1)]
+        matches.append((match.start(), f"{match.group(2)}-{month:02d}"))
+
+    years = tuple(dict.fromkeys(re.findall(r"\b(20\d{2})\b", text)))
+    if len(years) == 1:
+        month_re = re.compile(rf"\b({aliases})\b")
+        for match in month_re.finditer(text):
+            month = _MONTH_ALIASES[match.group(1)]
+            matches.append((match.start(), f"{years[0]}-{month:02d}"))
+
+    ordered: list[str] = []
+    for _, period in sorted(matches, key=lambda item: item[0]):
+        if period not in ordered:
+            ordered.append(period)
+    return tuple(ordered)
+
+
 def parse_json_object(text: str) -> dict[str, Any] | None:
     """Extrai objeto JSON de resposta do LLM."""
     raw = (text or "").strip()
@@ -155,3 +202,9 @@ def _normalize_token(value: str | None) -> str | None:
         return None
     text = value.strip().lower()
     return text or None
+
+
+def _normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_text).strip()

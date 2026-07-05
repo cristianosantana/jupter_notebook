@@ -25,6 +25,8 @@ class FactRequirement:
     matched_key: str | None = None
     match_method: str | None = None
     heuristic_status: str | None = None
+    source_origin_id: int | None = None
+    source_context_key: str | None = None
 
     def as_mapping(self) -> dict[str, object]:
         return {
@@ -38,6 +40,8 @@ class FactRequirement:
             "matched_key": self.matched_key,
             "match_method": self.match_method,
             "heuristic_status": self.heuristic_status,
+            "source_origin_id": self.source_origin_id,
+            "source_context_key": self.source_context_key,
             "semantics": self.semantics.as_mapping(),
         }
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
 
 _MONTH_SLUGS = {
@@ -33,10 +35,30 @@ def scope_knowledge(
     if matched:
         return ConhecimentoRecuperado(hits=matched, essence=knowledge.essence), False
 
-    best = _best_scored_hit(knowledge.hits)
-    if best is None:
-        return knowledge, True
-    return ConhecimentoRecuperado(hits=(best,), essence=knowledge.essence), True
+    if not any(_hit_has_period_hint(hit) for hit in knowledge.hits):
+        return knowledge, False
+
+    return ConhecimentoRecuperado(hits=(), essence=knowledge.essence), True
+
+
+def scope_knowledge_to_periods(
+    knowledge: ConhecimentoRecuperado,
+    *,
+    periods: tuple[str, ...],
+) -> tuple[ConhecimentoRecuperado, bool]:
+    if not periods:
+        return knowledge, False
+    if len(periods) == 1:
+        return scope_knowledge(knowledge, period=periods[0])
+
+    matched = tuple(
+        hit for hit in knowledge.hits if any(_hit_matches_period(hit, period) for period in periods)
+    )
+    if matched:
+        return ConhecimentoRecuperado(hits=matched, essence=knowledge.essence), False
+    if not any(_hit_has_period_hint(hit) for hit in knowledge.hits):
+        return knowledge, False
+    return ConhecimentoRecuperado(hits=(), essence=knowledge.essence), True
 
 
 def _hit_matches_period(hit: KnowledgeHit, period: str) -> bool:
@@ -59,6 +81,13 @@ def _hit_matches_period(hit: KnowledgeHit, period: str) -> bool:
         if slug in key and year in key:
             return True
     return False
+
+
+def _hit_has_period_hint(hit: KnowledgeHit) -> bool:
+    key = hit.context_key.lower()
+    if re.search(r"20\d{2}[-_/](0[1-9]|1[0-2])", key):
+        return True
+    return any(slug in key for slugs in _MONTH_SLUGS.values() for slug in slugs)
 
 
 def _best_scored_hit(hits: tuple[KnowledgeHit, ...]) -> KnowledgeHit | None:

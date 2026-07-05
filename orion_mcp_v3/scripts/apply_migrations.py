@@ -6,7 +6,7 @@ Uso (na pasta orion_mcp_v3):
 
   export POSTGRES_URL="postgresql://..."   # ou usar .env
   pip install -r requirements.txt
-  python scripts/apply_migrations.py
+  python3 scripts/apply_migrations.py
 
 Variáveis aceites: POSTGRES_URL, DATABASE_URL (primeira definida ganha).
 """
@@ -136,7 +136,7 @@ def _print_pgvector_help(exc: BaseException) -> None:
     )
     print(
         "• Depois reinicie o Postgres e volte a correr:\n"
-        "    python scripts/apply_migrations.py\n",
+        "    python3 scripts/apply_migrations.py\n",
         file=sys.stderr,
     )
 

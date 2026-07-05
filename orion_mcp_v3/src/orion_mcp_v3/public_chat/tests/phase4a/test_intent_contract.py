@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract, PublicOperationType
+from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
 from orion_mcp_v3.public_chat.domain.intent_heuristics import (
     apply_heuristic_enrichment,
     extract_heuristic_signals,
@@ -33,6 +33,101 @@ def test_intent_ranking_asc_pior() -> None:
     assert contract.period == "2026-03"
     assert contract.metric == "faturamento"
     assert contract.sort_direction == "asc"
+
+
+def test_intent_enrichment_extracts_comparison_period_from_message_typo() -> None:
+    contract = parse_public_intent_payload(
+        {
+            "intent": "comparacao",
+            "metric": "faturamento",
+            "period": "2026-05",
+            "operation": "comparison",
+            "entity_filters": [],
+            "confidence": 0.8,
+        },
+        message="qual o faturamento em maio de 2026 vs abriu de 2026?",
+    )
+
+    assert contract.period == "2026-05"
+    assert [item.as_mapping() for item in contract.entity_filters] == [
+        {"dimension": "periodo", "value": "2026-04", "match": "exact"},
+    ]
+
+
+def test_cortesias_enrichment_targets_tipo_venda_not_forma_pagamento() -> None:
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="consulta_metrica",
+            metric="faturamento",
+            period="2026-06",
+            dimension="forma_pagamento",
+            entity_filters=(EntityFilter(dimension="forma_pagamento", value="cortesias", match="contains"),),
+            confidence=0.92,
+        ),
+        "qual o faturamos com cortesias em junho de 2026?",
+    )
+
+    assert contract.dimension == "tipo_venda"
+    assert contract.entity_filters[0].as_mapping() == {
+        "dimension": "tipo_venda",
+        "value": "cortesias",
+        "match": "contains",
+    }
+
+
+def test_tipo_de_vendas_has_priority_over_concessionaria_token() -> None:
+    signals = extract_heuristic_signals(
+        "quanto faturamos no tipo de vendas Cortesia Concessionária em junho de 2026?"
+    )
+
+    assert signals["dimension"] == "tipo_venda"
+
+
+def test_cartao_credito_5x_enrichment_targets_parcelas_dimension() -> None:
+    message = "qual o total de vendas com pagamento em cartão de credito em 5x em abril de 2026?"
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="consulta_metrica",
+            metric="faturamento",
+            period="2026-04",
+            dimension="forma_pagamento",
+            entity_filters=(
+                EntityFilter(dimension="forma_pagamento", value="cartão de crédito 5x", match="contains"),
+            ),
+            confidence=0.95,
+        ),
+        message,
+    )
+
+    assert contract.dimension == "parcelas"
+    assert contract.entity_filters[-1].as_mapping() == {
+        "dimension": "parcelas",
+        "value": "5X",
+        "match": "contains",
+    }
+
+
+def test_cartao_credito_5x_splits_forma_pagamento_and_parcelas_filters() -> None:
+    message = "qual o total de vendas com pagamento em cartão de credito em 5x em abril de 2026?"
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="consulta_metrica",
+            metric="faturamento",
+            period="2026-04",
+            dimension="forma_pagamento",
+            entity_filters=(
+                EntityFilter(dimension="forma_pagamento", value="cartão de crédito", match="contains"),
+                EntityFilter(dimension="parcelas", value="5x", match="contains"),
+            ),
+            confidence=0.9,
+        ),
+        message,
+    )
+
+    assert contract.dimension == "parcelas"
+    parcel_filters = [item for item in contract.entity_filters if item.dimension == "parcelas"]
+    assert len(parcel_filters) == 1
+    assert parcel_filters[0].value == "5X"
 
 
 def test_topic_includes_dimension() -> None:

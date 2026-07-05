@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
@@ -9,8 +11,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
-
-from orion_mcp_v3.memory.remissive_models import slugify_memory_label
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +64,14 @@ def context_key_theme_slug(context_key: str) -> str | None:
     if len(parts) < 2:
         return None
     return parts[1]
+
+
+def slugify_memory_label(text: str) -> str:
+    """Normaliza rótulo de memória sem depender do módulo externo de memória."""
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^\w\s-]", "", ascii_text.lower())
+    return re.sub(r"[\s-]+", "_", slug).strip("_")
 
 
 def _parse_theme(slug: str, raw: Mapping[str, Any]) -> MemoryThemeEntry:

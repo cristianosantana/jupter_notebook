@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import replace
 from typing import Any, Sequence
 
@@ -57,6 +58,34 @@ _VALIDATED_ANSWER_KEYS = (
 _PERIOD_RANGE_RX    = re.compile(r"(\d{4}-\d{2})-\d{2}\s+a\s+\d{4}-\d{2}-\d{2}", re.IGNORECASE)
 _CONTEXT_RANGE_RX   = re.compile(r"(\d{4}-\d{2})-\d{2}-to-\d{4}-\d{2}-\d{2}")
 _CONTEXT_YM_RX      = re.compile(r":(\d{4}-\d{2})(?:$|:)")
+_MONTH_NAMES = {
+    "janeiro": 1,
+    "jan": 1,
+    "fevereiro": 2,
+    "fev": 2,
+    "marco": 3,
+    "março": 3,
+    "mar": 3,
+    "abril": 4,
+    "abriu": 4,
+    "abr": 4,
+    "maio": 5,
+    "mai": 5,
+    "junho": 6,
+    "jun": 6,
+    "julho": 7,
+    "jul": 7,
+    "agosto": 8,
+    "ago": 8,
+    "setembro": 9,
+    "set": 9,
+    "outubro": 10,
+    "out": 10,
+    "novembro": 11,
+    "nov": 11,
+    "dezembro": 12,
+    "dez": 12,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +108,7 @@ def _validate_knowledge_item(item: dict[str, Any], validated_answer: str) -> boo
         logger.warning("Item com resposta validada curta ignorado: %s", label)
         return False
     if confidence(item) == "low":
-        logger.warning("Item com baixa confianca ignorado: %s", label)
+        logger.warning("Item com baixa confiança ignorado: %s", label)
         return False
     return True
 
@@ -232,7 +261,25 @@ def _year_month_from_text(text: str) -> str | None:
     if m:
         return m.group(1)
     m = re.search(r"(\d{4}-\d{2})-\d{2}", text)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    m = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])\b", text)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+
+    normalized = unicodedata.normalize("NFKD", text.lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    year_match = re.search(r"\b(20\d{2})\b", normalized)
+    if not year_match:
+        return None
+    for month_name, month in _MONTH_NAMES.items():
+        normalized_month = unicodedata.normalize("NFKD", month_name.lower())
+        normalized_month = "".join(
+            char for char in normalized_month if not unicodedata.combining(char)
+        )
+        if re.search(rf"\b{re.escape(normalized_month)}\b", normalized):
+            return f"{year_match.group(1)}-{month:02d}"
+    return None
 
 
 def _message_content(message: dict[str, Any]) -> str:
@@ -255,6 +302,22 @@ def _assistant_messages(window: RemissiveConversationWindow) -> tuple[str, ...]:
     return tuple(parts)
 
 
+def _window_year_month(window: RemissiveConversationWindow) -> str | None:
+    for source in (window.messages, window.indexed_turns):
+        for message in source:
+            if str(message.get("role", "")).strip().lower() != "user":
+                continue
+            period = _year_month_from_text(_message_content(message))
+            if period:
+                return period
+    for source in (window.messages, window.indexed_turns):
+        for message in source:
+            period = _year_month_from_text(_message_content(message))
+            if period:
+                return period
+    return None
+
+
 def _best_evidence(
     item: RemissiveKnowledgeItem,
     windows: Sequence[RemissiveConversationWindow],
@@ -263,12 +326,13 @@ def _best_evidence(
     target_month = _year_month_from_context_key(item.context_key)
     if not target_month:
         return None
-    candidates = [
-        text
-        for window in windows
-        for text in _assistant_messages(window)
-        if _year_month_from_text(text) == target_month
-    ]
+    candidates: list[str] = []
+    for window in windows:
+        window_month = _window_year_month(window)
+        for text in _assistant_messages(window):
+            text_month = _year_month_from_text(text)
+            if text_month == target_month or (text_month is None and window_month == target_month):
+                candidates.append(text)
     return max(candidates, key=len) if candidates else None
 
 
