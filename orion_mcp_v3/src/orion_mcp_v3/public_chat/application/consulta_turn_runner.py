@@ -11,13 +11,18 @@ from orion_mcp_v3.public_chat.application.context_pipeline import prepare_select
 from orion_mcp_v3.public_chat.application.context_window import load_context_window
 from orion_mcp_v3.public_chat.application.workspace_pipeline import build_remissive_workspace
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
+from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_FACT_CONFIDENCE
+from orion_mcp_v3.public_chat.domain.fact_engine.models import RemissiveWorkspace
 from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, build_answer_payload
 from orion_mcp_v3.public_chat.domain.knowledge_fingerprint import (
     build_knowledge_fingerprint_from_knowledge,
 )
-from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import AnalyticalNarrator
+from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import (
+    AnalyticalNarrator,
+    is_no_facts_fallback,
+)
 from orion_mcp_v3.public_chat.infrastructure.context_selector import PublicContextSelector
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
@@ -52,6 +57,23 @@ class TurnResult:
 class TurnStreamChunk:
     delta: str = ""
     result: TurnResult | None = None
+
+
+def should_store_resolution_cache(
+    workspace: RemissiveWorkspace | None,
+    *,
+    presentation: str | None = None,
+) -> bool:
+    """Não persiste cache quando o workspace não tem fatos validados suficientes."""
+    if presentation is not None and is_no_facts_fallback(presentation):
+        return False
+    if workspace is None:
+        return True
+    return (
+        not workspace.gaps
+        and bool(workspace.facts)
+        and workspace.workspace_confidence >= MIN_FACT_CONFIDENCE
+    )
 
 
 class ConsultaTurnRunner:
@@ -104,6 +126,7 @@ class ConsultaTurnRunner:
         contract, topic, semantic_hash = await self._intent.interpret(
             message,
             ancestors=ancestors,
+            parent_question_id=parent_question_id,
         )
         question = await self._store.insert_question(
             query_original=message,
@@ -199,6 +222,7 @@ class ConsultaTurnRunner:
         contract, topic, semantic_hash = await self._intent.interpret(
             message,
             ancestors=ancestors,
+            parent_question_id=parent_question_id,
         )
         question = await self._store.insert_question(
             query_original=message,
@@ -286,7 +310,24 @@ class ConsultaTurnRunner:
             not fingerprint_stale
             and self._settings.use_presentation_snapshot
             and bool(snapshot)
+            and not is_no_facts_fallback(snapshot or "")
         )
+
+        if (
+            not fingerprint_stale
+            and self._settings.use_presentation_snapshot
+            and bool(cached.presentation_snapshot)
+            and is_no_facts_fallback(cached.presentation_snapshot or "")
+        ):
+            log_public_chat_event(
+                etapa="runner.cache_store_skipped",
+                fase="post",
+                dados={
+                    "path": "cache_hit",
+                    "reason": "poisoned_presentation_snapshot",
+                    "response_id": str(cached.id),
+                },
+            )
 
         if use_snapshot:
             log_public_chat_event(
@@ -299,15 +340,21 @@ class ConsultaTurnRunner:
                 yield TurnStreamChunk(delta=presentation)
         else:
             presentation_parts: list[str] = []
+            workspace_holder: list[RemissiveWorkspace] = []
             async for delta in self._stream_presentation(
                 message,
                 contract=contract,
                 knowledge=knowledge,
+                workspace_out=workspace_holder,
             ):
                 presentation_parts.append(delta)
                 yield TurnStreamChunk(delta=delta)
             presentation = "".join(presentation_parts)
-            if self._settings.use_presentation_snapshot and presentation:
+            workspace = workspace_holder[0] if workspace_holder else None
+            if (
+                self._settings.use_presentation_snapshot
+                and should_store_resolution_cache(workspace, presentation=presentation)
+            ):
                 await self._store.upsert_resolution(
                     topic=topic,
                     semantic_hash=semantic_hash,
@@ -353,6 +400,7 @@ class ConsultaTurnRunner:
             cache_resolution=cached,
             fingerprint_stale=fingerprint_stale,
             used_presentation_snapshot=use_snapshot,
+            cache_stored=True,
         )
         yield TurnStreamChunk(
             result=TurnResult(
@@ -388,42 +436,62 @@ class ConsultaTurnRunner:
         knowledge = await self._retriever.retrieve(message)
         knowledge = await self._complete_period_evidence(knowledge, contract=contract)
         presentation_parts: list[str] = []
+        workspace_holder: list[RemissiveWorkspace] = []
         async for delta in self._stream_presentation(
             message,
             contract=contract,
             knowledge=knowledge,
+            workspace_out=workspace_holder,
         ):
             presentation_parts.append(delta)
             yield TurnStreamChunk(delta=delta)
         presentation = "".join(presentation_parts)
+        workspace = workspace_holder[0] if workspace_holder else None
 
         answer_payload = build_answer_payload(knowledge)
         knowledge_fingerprint = build_knowledge_fingerprint_from_knowledge(knowledge)
-        snapshot = presentation if self._settings.use_presentation_snapshot else None
-        response_id = await self._store.upsert_resolution(
-            topic=topic,
-            semantic_hash=semantic_hash,
-            answer_payload=answer_payload,
-            knowledge_fingerprint=knowledge_fingerprint,
-            cache_ttl_days=self._settings.cache_ttl_days,
-            presentation_snapshot=snapshot,
-        )
-        await self._store.link_question_response(
-            question_id=question_id,
-            response_id=response_id,
-            is_repeat=False,
-            presentation_delivered=presentation,
-        )
-        log_cache_stored(
-            response_id=str(response_id),
-            topic=topic,
-            semantic_hash=semantic_hash,
-            answer_payload=answer_payload,
-            knowledge_fingerprint=knowledge_fingerprint,
-            is_repeat=False,
-            presentation_chars=len(presentation),
-            stored_snapshot=snapshot is not None,
-        )
+        store_cache = should_store_resolution_cache(workspace, presentation=presentation)
+        if store_cache:
+            snapshot = presentation if self._settings.use_presentation_snapshot else None
+            response_id = await self._store.upsert_resolution(
+                topic=topic,
+                semantic_hash=semantic_hash,
+                answer_payload=answer_payload,
+                knowledge_fingerprint=knowledge_fingerprint,
+                cache_ttl_days=self._settings.cache_ttl_days,
+                presentation_snapshot=snapshot,
+            )
+            await self._store.link_question_response(
+                question_id=question_id,
+                response_id=response_id,
+                is_repeat=False,
+                presentation_delivered=presentation,
+            )
+            log_cache_stored(
+                response_id=str(response_id),
+                topic=topic,
+                semantic_hash=semantic_hash,
+                answer_payload=answer_payload,
+                knowledge_fingerprint=knowledge_fingerprint,
+                is_repeat=False,
+                presentation_chars=len(presentation),
+                stored_snapshot=snapshot is not None,
+            )
+        else:
+            response_id = question_id
+            log_public_chat_event(
+                etapa="runner.cache_store_skipped",
+                fase="post",
+                dados={
+                    "path": "cache_miss",
+                    "reason": "weak_workspace",
+                    "no_facts_fallback": is_no_facts_fallback(presentation),
+                    "gap_count": len(workspace.gaps) if workspace else 0,
+                    "fact_count": len(workspace.facts) if workspace else 0,
+                    "workspace_confidence": workspace.workspace_confidence if workspace else None,
+                    "min_fact_confidence": MIN_FACT_CONFIDENCE,
+                },
+            )
         log_public_chat_event(
             etapa="runner.cache_miss",
             fase="post",
@@ -433,6 +501,7 @@ class ConsultaTurnRunner:
                 "knowledge_fingerprint": knowledge_fingerprint,
                 "presentation_chars": len(presentation),
                 "is_repeat": False,
+                "cache_stored": store_cache,
             },
         )
         log_qa_turn_summary(
@@ -449,7 +518,8 @@ class ConsultaTurnRunner:
             confidence=contract.confidence,
             is_repeat=False,
             knowledge=knowledge,
-            answer_payload=answer_payload,
+            answer_payload=answer_payload if store_cache else None,
+            cache_stored=store_cache,
         )
         yield TurnStreamChunk(
             result=TurnResult(
@@ -478,6 +548,7 @@ class ConsultaTurnRunner:
         *,
         contract: IntentContract,
         knowledge: ConhecimentoRecuperado,
+        workspace_out: list[RemissiveWorkspace] | None = None,
     ) -> AsyncIterator[str]:
         if self._use_workspace():
             assert self._fact_planner is not None
@@ -490,6 +561,8 @@ class ConsultaTurnRunner:
                 planner=self._fact_planner,
                 resolver=self._memory_resolver,
             )
+            if workspace_out is not None:
+                workspace_out.append(workspace)
             async for delta in self._analytical_narrator.stream(
                 message,
                 contract=contract,

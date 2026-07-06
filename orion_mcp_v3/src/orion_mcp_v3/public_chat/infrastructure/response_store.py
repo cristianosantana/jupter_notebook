@@ -14,6 +14,7 @@ from orion_mcp_v3.public_chat.domain.errors import InvalidParentQuestionError
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
 from orion_mcp_v3.public_chat.domain.knowledge import AnswerPayload
 from orion_mcp_v3.public_chat.domain.models import AncestorTurn, PublicQuestion
+from orion_mcp_v3.public_chat.domain.query_normalizer import normalize_query_for_intent_cache
 
 _INSERT_QUESTION = """
 INSERT INTO "public"."public_chat_questions" (
@@ -22,11 +23,22 @@ INSERT INTO "public"."public_chat_questions" (
     "topic",
     "intent_contract",
     "semantic_hash",
-    "query_original"
+    "query_original",
+    "query_normalized"
 )
-VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
 RETURNING "id", "thread_id", "parent_question_id", "topic", "intent_contract",
           "semantic_hash", "query_original", "created_at"
+"""
+
+_FIND_CACHED_INTENT = """
+SELECT "topic", "intent_contract", "semantic_hash"
+FROM "public"."public_chat_questions"
+WHERE "query_normalized" = $1
+  AND "parent_question_id" IS NOT DISTINCT FROM $2
+  AND "query_normalized" IS NOT NULL
+ORDER BY "created_at" DESC
+LIMIT 1
 """
 
 _SET_ROOT_THREAD = """
@@ -88,6 +100,13 @@ DO UPDATE SET
 
 
 @dataclass(frozen=True, slots=True)
+class CachedIntent:
+    topic: str
+    intent_contract: IntentContract
+    semantic_hash: str
+
+
+@dataclass(frozen=True, slots=True)
 class CachedResolution:
     id: UUID
     topic: str
@@ -123,6 +142,8 @@ class ResponseStore:
         else:
             thread_id = uuid4()
 
+        query_normalized = normalize_query_for_intent_cache(query_original)
+
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 _INSERT_QUESTION,
@@ -132,6 +153,7 @@ class ResponseStore:
                 json.dumps(intent_contract.as_mapping(), ensure_ascii=False),
                 semantic_hash,
                 query_original,
+                query_normalized or None,
             )
             if row is None:
                 raise RuntimeError("failed to insert public_chat question")
@@ -183,6 +205,29 @@ class ResponseStore:
     async def _fetch_question(self, question_id: UUID) -> asyncpg.Record | None:
         async with self._pool.acquire() as conn:
             return await conn.fetchrow(_SELECT_QUESTION, question_id)
+
+    async def find_cached_intent(
+        self,
+        message: str,
+        *,
+        parent_question_id: UUID | None = None,
+    ) -> CachedIntent | None:
+        query_normalized = normalize_query_for_intent_cache(message)
+        if not query_normalized:
+            return None
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                _FIND_CACHED_INTENT,
+                query_normalized,
+                parent_question_id,
+            )
+        if row is None:
+            return None
+        return CachedIntent(
+            topic=row["topic"],
+            intent_contract=_contract_from_json(row["intent_contract"]),
+            semantic_hash=row["semantic_hash"],
+        )
 
     async def find_resolution(self, topic: str, semantic_hash: str) -> CachedResolution | None:
         async with self._pool.acquire() as conn:

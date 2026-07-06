@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionTrace
 
 
 class GapReason(str, Enum):
@@ -23,11 +27,17 @@ class FactGap:
     reason: GapReason
     detail: str | None = None
     origin_ids_attempted: tuple[int, ...] = ()
+    attempted_rules: tuple[str, ...] = ()
+    resolution_trace: ResolutionTrace | None = None
 
     def as_mapping(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "fact_key": self.fact_key,
             "reason": self.reason.value,
             "detail": self.detail,
             "origin_ids_attempted": list(self.origin_ids_attempted),
+            "attempted_rules": list(self.attempted_rules),
         }
+        if self.resolution_trace is not None:
+            payload["resolution_trace"] = self.resolution_trace.as_mapping()
+        return payload

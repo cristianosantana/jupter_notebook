@@ -43,6 +43,9 @@ _MONTH_ALIASES = {
 }
 
 
+_MAX_PERIOD_TOKEN_LEN = 64
+
+
 def parse_public_intent_payload(
     payload: Mapping[str, Any] | None,
     *,
@@ -58,6 +61,8 @@ def parse_public_intent_payload(
         return IntentContract.geral()
 
     period = normalize_period(contract.period)
+    if message and not period:
+        period = normalize_period(message)
     contract = IntentContract(
         intent=contract.intent or PublicIntentType.GERAL.value,
         metric=_normalize_token(contract.metric),
@@ -95,9 +100,9 @@ def normalize_contract_for_hash(contract: IntentContract) -> dict[str, Any]:
     filters = sorted(
         (
             {
-                "dimension": item.dimension,
-                "match": item.match,
-                "value": item.value,
+                "dimension": _normalize_token(item.dimension) or "",
+                "match": _normalize_token(item.match) or item.match,
+                "value": normalize_entity_filter_value(item.value),
             }
             for item in contract.entity_filters
         ),
@@ -114,7 +119,7 @@ def normalize_contract_for_hash(contract: IntentContract) -> dict[str, Any]:
 
 
 def normalize_period(value: str | None) -> str | None:
-    """Normaliza período para ``YYYY-MM`` quando possível."""
+    """Normaliza período para token curto (``YYYY-MM``, ``YYYY-H1``, intervalo compacto)."""
     if not value:
         return None
     text = value.strip().lower()
@@ -124,6 +129,10 @@ def normalize_period(value: str | None) -> str | None:
     iso_match = re.fullmatch(r"(\d{4})-(\d{2})", text)
     if iso_match:
         return f"{iso_match.group(1)}-{iso_match.group(2)}"
+
+    half_match = re.fullmatch(r"(\d{4})-h([12])", text)
+    if half_match:
+        return f"{half_match.group(1)}-H{half_match.group(2)}"
 
     slash_match = re.fullmatch(r"(\d{4})/(\d{1,2})", text)
     if slash_match:
@@ -141,7 +150,44 @@ def normalize_period(value: str | None) -> str | None:
     if month_match and year_match:
         return f"{year_match.group(1)}-{int(month_match.group(1)):02d}"
 
-    return text
+    extracted = extract_mentioned_periods(text)
+    if extracted:
+        return _compact_period_span(extracted)
+
+    semestre = _normalize_semestre(text)
+    if semestre:
+        return semestre
+
+    if len(text) <= _MAX_PERIOD_TOKEN_LEN:
+        return text
+    return None
+
+
+def _normalize_semestre(text: str) -> str | None:
+    year_match = re.search(r"(20\d{2})", text)
+    if not year_match:
+        return None
+    year = year_match.group(1)
+    if re.search(r"primeiro\s+semestre|1\s*[ºo°]\s*semestre|\bh1\b", text):
+        return f"{year}-H1"
+    if re.search(r"segundo\s+semestre|2\s*[ºo°]\s*semestre|\bh2\b", text):
+        return f"{year}-H2"
+    return None
+
+
+def _compact_period_span(periods: tuple[str, ...]) -> str:
+    ordered = tuple(dict.fromkeys(periods))
+    if len(ordered) == 1:
+        return ordered[0]
+    first, last = ordered[0], ordered[-1]
+    if first[:4] == last[:4]:
+        compact = f"{first}..{last}"
+        if len(compact) <= _MAX_PERIOD_TOKEN_LEN:
+            return compact
+    joined = ",".join(ordered)
+    if len(joined) <= _MAX_PERIOD_TOKEN_LEN:
+        return joined
+    return f"{ordered[0]}..{ordered[-1]}"
 
 
 def extract_mentioned_periods(message: str | None) -> tuple[str, ...]:
@@ -202,6 +248,12 @@ def _normalize_token(value: str | None) -> str | None:
         return None
     text = value.strip().lower()
     return text or None
+
+
+def normalize_entity_filter_value(value: str) -> str:
+    """Forma canônica para chave de cache — ignora acento, espaço vs underscore."""
+    collapsed = value.strip().lower().replace("_", " ")
+    return _normalize_text(collapsed)
 
 
 def _normalize_text(value: str) -> str:

@@ -192,6 +192,7 @@ def log_qa_turn_summary(
     cache_resolution: CachedResolution | None = None,
     fingerprint_stale: bool = False,
     used_presentation_snapshot: bool = False,
+    cache_stored: bool | None = None,
 ) -> None:
     """Evento consolidado pergunta → fontes memory_* / cache → resposta."""
     dados: dict[str, Any] = {
@@ -212,6 +213,8 @@ def log_qa_turn_summary(
             "used_presentation_snapshot": used_presentation_snapshot,
         },
     }
+    if cache_stored is not None:
+        dados["cache"]["stored"] = cache_stored
     if knowledge is not None:
         dados["memory"] = snapshot_knowledge(knowledge)
     if answer_payload is not None:

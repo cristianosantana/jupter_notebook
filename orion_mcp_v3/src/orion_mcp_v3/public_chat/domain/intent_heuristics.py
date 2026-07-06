@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 
 from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
-from orion_mcp_v3.public_chat.domain.intent_parser import extract_mentioned_periods, normalize_period
+from orion_mcp_v3.public_chat.domain.intent_parser import (
+    _normalize_text,
+    extract_mentioned_periods,
+    normalize_period,
+)
 from orion_mcp_v3.public_chat.domain.period_selection import (
     extract_parcel_count_entity,
     normalize_parcel_entity,
@@ -47,6 +51,23 @@ _DIMENSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("comissao", ("comissão", "comissao", "comissões", "comissoes")),
 )
 
+_PAYMENT_METHOD_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"cartao\s+de\s+credito", "cartao de credito"),
+    (r"cartao\s+de\s+debito", "cartao de debito"),
+    (r"\bpix\b", "pix"),
+    (r"\bdinheiro\b", "dinheiro"),
+    (r"\bcheque\b", "cheque"),
+    (r"deposito\s+bancario", "deposito bancario"),
+    (r"\bpermuta\b", "permuta"),
+)
+
+
+def _coalesce_period(period: str | None) -> str | None:
+    normalized = normalize_period(period)
+    if normalized and len(normalized) <= 64:
+        return normalized
+    return None
+
 
 def extract_heuristic_signals(message: str) -> dict[str, str | None]:
     """Extrai operation/dimension/period candidatos da mensagem."""
@@ -76,7 +97,11 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     operation = contract.operation or signals["operation"]
     dimension = contract.dimension or signals["dimension"]
     mentioned_periods = extract_mentioned_periods(message)
-    period = contract.period or signals["period"] or (mentioned_periods[0] if mentioned_periods else None)
+    period = (
+        _coalesce_period(contract.period)
+        or signals["period"]
+        or (mentioned_periods[0] if mentioned_periods else None)
+    )
     sort_direction = contract.sort_direction or _sort_direction_from_operation(operation)
     metric = contract.metric
     if dimension == "forma_pagamento" and not metric:
@@ -90,6 +115,7 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     if parcel_entity:
         dimension = "parcelas"
         entity_filters = _apply_parcel_filters(entity_filters, parcel_entity)
+    entity_filters = _apply_payment_method_filter(entity_filters, message)
     dimension = _dimension_for_cortesia_group(dimension, entity_filters)
     entity_filters = _entity_filters_for_dimension(entity_filters, dimension)
     return IntentContract(
@@ -165,6 +191,29 @@ def _entity_filters_for_dimension(
 
 def _is_cortesia_group(value: str | None) -> bool:
     return (value or "").strip().lower() in {"cortesia", "cortesias"}
+
+
+def extract_payment_method_entity(message: str) -> str | None:
+    """Detecta forma de pagamento mencionada na mensagem (valor canônico)."""
+    text = _normalize_text(message or "")
+    if not text:
+        return None
+    for pattern, canonical in _PAYMENT_METHOD_PATTERNS:
+        if re.search(pattern, text):
+            return canonical
+    return None
+
+
+def _apply_payment_method_filter(
+    filters: tuple[EntityFilter, ...],
+    message: str,
+) -> tuple[EntityFilter, ...]:
+    payment = extract_payment_method_entity(message)
+    if not payment:
+        return filters
+    if any(filt.dimension == "forma_pagamento" for filt in filters):
+        return filters
+    return filters + (EntityFilter(dimension="forma_pagamento", value=payment, match="contains"),)
 
 
 def _apply_parcel_filters(

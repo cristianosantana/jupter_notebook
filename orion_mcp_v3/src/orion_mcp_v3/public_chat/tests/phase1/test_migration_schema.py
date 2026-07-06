@@ -5,7 +5,11 @@ from orion_mcp_v3.public_chat.infrastructure.postgres import list_migration_file
 
 def test_migration_schema() -> None:
     files = list_migration_files()
-    assert files == ["001_public_chat_schema.sql"]
+    assert files == [
+        "001_public_chat_schema.sql",
+        "002_query_normalized.sql",
+        "003_topic_varchar256.sql",
+    ]
 
     sql = read_migration("001_public_chat_schema.sql")
 
@@ -21,3 +25,10 @@ def test_migration_schema() -> None:
     assert "ivfflat" not in sql.lower()
     assert "hnsw" not in sql.lower()
     assert 'CREATE TABLE IF NOT EXISTS "public"."public_chat_question_responses"' in sql
+
+    sql_002 = read_migration("002_query_normalized.sql")
+    assert '"query_normalized" TEXT NULL' in sql_002
+    assert "idx_pcq_intent_cache" in sql_002
+
+    sql_003 = read_migration("003_topic_varchar256.sql")
+    assert 'ALTER COLUMN "topic" TYPE VARCHAR(256)' in sql_003

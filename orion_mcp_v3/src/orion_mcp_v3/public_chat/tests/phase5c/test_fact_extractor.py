@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from orion_mcp_v3.public_chat.domain.direct_answer_parser import parse_validated_answer, ranking_row, find_section_by_needle
-from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import ResolvedMemoryHit
+from orion_mcp_v3.public_chat.tests.conftest import make_resolved_hit
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import FactSemantics, AggregationRule, Comparator, SourcePriority
+from orion_mcp_v3.public_chat.domain.fact_engine.gap import GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_extractor import FactExtractor
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
@@ -42,7 +43,9 @@ def test_fact_extractor_ranking_forma_pagamento():
         semantics=semantics,
     )
     resolved = {
-        "ranking_forma_pagamento": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.CATALOG),
+        "ranking_forma_pagamento": make_resolved_hit(
+            hit, ResolutionRule.CATALOG, fact_key="ranking_forma_pagamento"
+        ),
     }
     result = FactExtractor().extract((requirement,), resolved)
     assert len(result.facts) == 1
@@ -72,7 +75,9 @@ def test_fact_extractor_faturamento_total_key_metrics():
         semantics=semantics,
     )
     resolved = {
-        "faturamento_total_periodo": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.CATALOG),
+        "faturamento_total_periodo": make_resolved_hit(
+            hit, ResolutionRule.CATALOG, fact_key="faturamento_total_periodo"
+        ),
     }
     result = FactExtractor().extract((requirement,), resolved)
     assert len(result.facts) == 1
@@ -126,7 +131,13 @@ def test_fact_extractor_sums_cortesia_group_from_tipo_venda_key_metrics():
 
     result = FactExtractor().extract(
         (requirement,),
-        {"dynamic:faturamento_por_tipo_de_venda": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL)},
+        {
+            "dynamic:faturamento_por_tipo_de_venda": make_resolved_hit(
+                hit,
+                ResolutionRule.VECTOR_RETRIEVAL,
+                fact_key="dynamic:faturamento_por_tipo_de_venda",
+            )
+        },
     )
 
     assert len(result.facts) == 1
@@ -178,9 +189,62 @@ def test_fact_extractor_lookup_parcelas_5x_from_parcelamento_key_metrics():
 
     result = FactExtractor().extract(
         (requirement,),
-        {"dynamic:parcelamento_de_cartao": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL)},
+        {
+            "dynamic:parcelamento_de_cartao": make_resolved_hit(
+                hit,
+                ResolutionRule.VECTOR_RETRIEVAL,
+                fact_key="dynamic:parcelamento_de_cartao",
+            )
+        },
     )
 
     assert len(result.facts) == 1
     assert result.facts[0].label == "5X"
     assert result.facts[0].value == "R$ 29.515,90 (2,70%)"
+    assert result.facts[0].trace.extraction_path.value == "key_metrics"
+    assert result.facts[0].trace.rule_applied == ResolutionRule.VECTOR_RETRIEVAL
+
+
+def test_fact_extractor_gap_includes_attempted_rules_from_resolution_trace():
+    hit = KnowledgeHit(
+        origin_id=70,
+        context_key="sistema_background:fechamento_gerencial:taxas_cartao_credito:2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Taxas de cartão.",
+        key_metrics={"taxas_cartao_credito": {"rows": [], "_meta": {}}},
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:faturamento_e_comissao_por_concessionaria",
+        aggregation_rule=AggregationRule.MAX,
+        comparator=Comparator.DESC,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        key_metrics_keys=("faturamento_e_comissao_por_concessionaria",),
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_e_comissao_por_concessionaria",
+        metric="comissoes",
+        dimension="concessionaria",
+        entity=None,
+        period="2026-05",
+        operation="ranking_desc",
+        matched_key="faturamento_e_comissao_por_concessionaria",
+        semantics=semantics,
+    )
+    resolved = {
+        requirement.fact_key: make_resolved_hit(
+            hit,
+            ResolutionRule.CATALOG,
+            fact_key=requirement.fact_key,
+        ),
+    }
+
+    result = FactExtractor().extract((requirement,), resolved)
+
+    assert not result.facts
+    assert len(result.gaps) == 1
+    gap = result.gaps[0]
+    assert gap.reason == GapReason.MEMORY_EXISTS_BUT_NO_MATCH
+    assert gap.attempted_rules == ("catalog",)
+    assert gap.resolution_trace is not None
+    assert gap.resolution_trace.rule_applied == ResolutionRule.CATALOG

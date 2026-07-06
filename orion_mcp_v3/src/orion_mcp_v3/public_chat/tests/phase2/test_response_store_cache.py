@@ -47,6 +47,33 @@ async def test_upsert_resolution_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_cached_intent_returns_latest_contract() -> None:
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {
+        "topic": "parcelas:2026-04",
+        "intent_contract": {
+            "intent": "consulta_metrica",
+            "metric": "faturamento",
+            "period": "2026-04",
+            "confidence": 0.9,
+        },
+        "semantic_hash": "hash-stable",
+    }
+    store = ResponseStore(_pool_with_conn(conn))
+
+    cached = await store.find_cached_intent(
+        "qual o total em cartão de crédito em 10x em abril de 2026?",
+        parent_question_id=None,
+    )
+
+    assert cached is not None
+    assert cached.topic == "parcelas:2026-04"
+    assert cached.semantic_hash == "hash-stable"
+    sql = str(conn.fetchrow.await_args.args[0])
+    assert "query_normalized" in sql
+
+
+@pytest.mark.asyncio
 async def test_find_resolution_returns_cached_payload() -> None:
     response_id = uuid4()
     conn = AsyncMock()

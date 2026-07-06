@@ -46,13 +46,38 @@ Exemplos canónicos:
 
 ## Fact Resolution Trace
 
-Cada fact extraído carrega rastreabilidade em `FactTrace`:
+Dois tipos separados evitam serialização enganosa no JSONL de `fact.resolve`:
+
+### `ResolutionTrace` (só resolução — evento `fact.resolve`)
+
+Gravado no **exact return** de cada branch do `FallbackPolicy` / `MemoryResolver`:
+
+- `CATALOG` / `VECTOR_RETRIEVAL` — `FallbackPolicy._pick_hit_for_themes`
+- `CATALOG` — `MemoryResolver._resolve_from_source_origin_id` quando o planner já fixou `source_origin_id` (ex.: `match_method: meta_exact`)
+
+- `fact_key`
 - `resolved_from`: origin_ids
 - `context_keys`
 - `rule_applied`: CATALOG | VECTOR_RETRIEVAL | LLM_FALLBACK | JOIN_PLAN
+- `semantics_version`
+
+**Sem** `extraction_path` — a extracção ainda não ocorreu.
+
+### `FactTrace` (resolução + extracção — evento `fact.extract`)
+
+Estende `ResolutionTrace` com:
+
 - `extraction_path`: KEY_METRICS | STRUCTURED_PARSER | RANKING_DERIVED | LLM_EXTRACT | DERIVED_COMPUTE
 
+Montado **somente** quando o `FactExtractor` extrai valor com sucesso, mergeando
+`resolution_trace` do hit resolvido com o path real do branch vencedor em `source_priority`.
+
 Logging JSONL (5E): `fact.plan`, `fact.join_plan`, `fact.resolve`, `fact.extract`, `workspace.build`.
+
+| Evento | Trace serializado |
+|---|---|
+| `fact.resolve` | `ResolutionTrace[]` por requirement |
+| `fact.extract` | `FactTrace` completo nos facts; gaps com `attempted_rules` + `resolution_trace` opcional |
 
 ## MemoryJoin Strategy
 
@@ -76,12 +101,15 @@ Substituem gaps opacos por `FactGap` tipado:
 
 | Reason | Significado |
 |---|---|
-| `NOT_IN_CATALOG` | fact_key desconhecido |
+| `NOT_IN_CATALOG` | fact_key estático ausente de `fact_semantics.yaml` (facts `dynamic:*` **não** disparam este reason — têm semântica inline no `FactRequirement`) |
 | `NO_MEMORY_FOUND` | zero hits no período |
-| `MEMORY_EXISTS_BUT_NO_MATCH` | hit errado tema/entity |
+| `MEMORY_EXISTS_BUT_NO_MATCH` | hit errado tema/entity/key_metrics |
 | `PARTIAL_MATCH_ONLY` | key_metrics vazio, só texto |
-| `EXTRACTION_FAILED` | extractor falhou |
+| `EXTRACTION_FAILED` | hit estruturalmente plausível mas extractor falhou |
 | `LOW_CONFIDENCE` | abaixo threshold |
+
+Gaps de resolução/extracção incluem `attempted_rules` (rules avaliadas no `FallbackPolicy`)
+e, quando aplicável, `resolution_trace` do último hit tentado.
 
 ## Confiança por camada
 
@@ -118,10 +146,13 @@ Ordem fixa por fact_key:
 
 | Estado | Acção |
 |---|---|
-| Catálogo encontra theme + SQL hit | Extrair via source_priority |
-| Catálogo ok, SQL miss, vector tem hit | Usar vector; trace `VECTOR_RETRIEVAL` |
-| Hit existe, extractor falha | Gap `EXTRACTION_FAILED` |
+| Catálogo encontra theme + key_metrics compatível | Resolver; trace `CATALOG` ou `VECTOR_RETRIEVAL` |
+| Catálogo ok, vector tem hit elegível | Preferir ordem vector; trace `VECTOR_RETRIEVAL` |
+| Memórias existem mas nenhum hit casa (tema/key/período) | Gap `MEMORY_EXISTS_BUT_NO_MATCH` + `attempted_rules` |
+| Hit resolvido, extractor falha | Gap `EXTRACTION_FAILED` + `attempted_rules` + `resolution_trace` |
 | Nunca inventar valor | Gap `NO_MEMORY_FOUND` |
+
+`LLM_FALLBACK` reservado no enum e em `attempted_rules`; implementação real fora de escopo v1.
 
 ## Mapeamento EvidenceBlock ↔ RemissiveWorkspace
 

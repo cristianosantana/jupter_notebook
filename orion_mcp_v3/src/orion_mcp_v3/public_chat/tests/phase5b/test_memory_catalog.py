@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import FallbackPolicy
+from orion_mcp_v3.public_chat.domain.fact_engine.gap import GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import (
@@ -261,3 +262,49 @@ def test_fallback_policy_rejects_vector_hit_from_wrong_period() -> None:
     assert result.hit is None
     assert result.gap is not None
     assert result.gap.reason.value == "memory_exists_but_no_match"
+
+
+def test_fallback_policy_rejects_origin_id_70_for_comissao_requirement() -> None:
+    """Regressão: taxas (70) não pode satisfazer requirement de comissão por concessionária."""
+    catalog = get_memory_catalog()
+    hit_taxas = KnowledgeHit(
+        origin_id=70,
+        context_key="sistema_background:fechamento_gerencial:taxas_cartao_credito:2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="MFP: R$ 775,07",
+        key_metrics={"taxas_cartao_credito": {"rows": [], "_meta": {}}},
+        score=0.44,
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_e_comissao_por_concessionaria",
+        metric="comissoes",
+        dimension="concessionaria",
+        entity=None,
+        period="2026-05",
+        operation="ranking_desc",
+        matched_key="faturamento_e_comissao_por_concessionaria",
+        semantics=FactSemantics(
+            fact_key="dynamic:faturamento_e_comissao_por_concessionaria",
+            aggregation_rule=AggregationRule.MAX,
+            comparator=Comparator.DESC,
+            source_priority=(SourcePriority.KEY_METRICS, SourcePriority.PARSED_TEXT),
+            value_kind="currency",
+            allows_multiple_values=True,
+            memory_themes=("fechamento_gerencial", "fechamento_gerencial_mensal"),
+            key_metrics_keys=("faturamento_e_comissao_por_concessionaria",),
+            key_metrics_entity_field="concessionaria",
+            key_metrics_value_field="valor_comissao",
+        ),
+    )
+
+    result = FallbackPolicy().resolve_from_hits(
+        requirement,
+        catalog_hits=[hit_taxas],
+        vector_hits=[hit_taxas],
+        catalog=catalog,
+    )
+
+    assert result.hit is None
+    assert result.gap is not None
+    assert result.gap.reason == GapReason.MEMORY_EXISTS_BUT_NO_MATCH
+    assert "vector_retrieval" in result.gap.attempted_rules

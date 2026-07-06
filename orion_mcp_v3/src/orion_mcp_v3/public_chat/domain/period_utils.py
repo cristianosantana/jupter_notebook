@@ -43,12 +43,14 @@ def period_in_context_key(context_key: str, period: str) -> bool:
         return True
     year, month = normalized.split("-")
     key = context_key.lower()
-    if normalized in key:
+
+    if key.endswith(normalized):
         return True
-    month_int = int(month)
-    month_slug = f"{month_int:02d}"
-    if f"_{month_slug}_" in key or f"-{month_int}-" in key:
+    if f"periodo-{normalized}" in key:
         return True
+    if f"-{normalized}" in key:
+        return True
+
     for name, num in _MONTH_NAMES.items():
         if num == month and name in key and year in key:
             return True

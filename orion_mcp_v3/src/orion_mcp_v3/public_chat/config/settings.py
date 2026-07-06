@@ -31,7 +31,8 @@ def _env_bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True, slots=True)
 class PublicChatSettings:
     enabled: bool = False
-    use_presentation_snapshot: bool = False
+    use_presentation_snapshot: bool = True
+    use_intent_cache: bool = True
     use_workspace: bool = False
     postgres_url: str = ""
     postgres_pool_min: int = 1
@@ -94,7 +95,8 @@ class PublicChatSettings:
         llm_base = os.environ.get("PUBLIC_CHAT_LLM_BASE_URL")
         return cls(
             enabled=_env_bool("PUBLIC_CHAT_ENABLED", False),
-            use_presentation_snapshot=_env_bool("PUBLIC_CHAT_USE_PRESENTATION_SNAPSHOT", False),
+            use_presentation_snapshot=_env_bool("PUBLIC_CHAT_USE_PRESENTATION_SNAPSHOT", True),
+            use_intent_cache=_env_bool("PUBLIC_CHAT_USE_INTENT_CACHE", True),
             use_workspace=_env_bool("PUBLIC_CHAT_USE_WORKSPACE", False),
             postgres_url=url,
             postgres_pool_min=_env_int("PUBLIC_CHAT_POSTGRES_POOL_MIN", 1),

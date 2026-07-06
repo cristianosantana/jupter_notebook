@@ -12,7 +12,11 @@ from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event, preview_message
 from orion_mcp_v3.public_chat.prompts import get_public_chat_prompt_registry
 
-_NO_FACTS_MESSAGE = "Não encontrei fatos validados suficientes para responder."
+NO_FACTS_FALLBACK_MESSAGE = "Não encontrei fatos validados suficientes para responder."
+
+
+def is_no_facts_fallback(presentation: str) -> bool:
+    return presentation.strip() == NO_FACTS_FALLBACK_MESSAGE
 _SYSTEM_PROMPT = get_public_chat_prompt_registry().get_text("public_chat_analytical_narrator.system")
 
 
@@ -47,10 +51,10 @@ class AnalyticalNarrator:
                 dados={
                     "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
                     "no_facts_fallback": True,
-                    "presentation_chars": len(_NO_FACTS_MESSAGE),
+                    "presentation_chars": len(NO_FACTS_FALLBACK_MESSAGE),
                 },
             )
-            yield _NO_FACTS_MESSAGE
+            yield NO_FACTS_FALLBACK_MESSAGE
             return
 
         prompt = json.dumps(
@@ -92,4 +96,4 @@ class AnalyticalNarrator:
         parts: list[str] = []
         async for delta in self.stream(message, contract=contract, workspace=workspace):
             parts.append(delta)
-        return "".join(parts) if parts else _NO_FACTS_MESSAGE
+        return "".join(parts) if parts else NO_FACTS_FALLBACK_MESSAGE

@@ -7,11 +7,24 @@ from uuid import uuid4
 import pytest
 
 from orion_mcp_v3.protocols.llm import LLMResponse, LLMStreamChunk
-from orion_mcp_v3.public_chat.application.consulta_turn_runner import ConsultaTurnRunner
+from orion_mcp_v3.public_chat.application.consulta_turn_runner import (
+    ConsultaTurnRunner,
+    should_store_resolution_cache,
+)
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
+from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_FACT_CONFIDENCE
+from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap, GapReason
+from orion_mcp_v3.public_chat.domain.fact_engine.models import RemissiveWorkspace
 from orion_mcp_v3.public_chat.domain.knowledge import (
     ConhecimentoRecuperado,
     KnowledgeHit,
+)
+from orion_mcp_v3.public_chat.domain.knowledge_fingerprint import (
+    build_knowledge_fingerprint_from_knowledge,
+)
+from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import (
+    AnalyticalNarrator,
+    NO_FACTS_FALLBACK_MESSAGE,
 )
 from orion_mcp_v3.public_chat.infrastructure.intent_interpreter import PublicIntentInterpreter
 from orion_mcp_v3.public_chat.infrastructure.narrator import PublicNarrator
@@ -133,6 +146,62 @@ async def test_cache_hit_by_semantic_hash() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cache_hit_serves_presentation_snapshot_without_narrator() -> None:
+    question_id = uuid4()
+    response_id = uuid4()
+    thread_id = uuid4()
+    insert = _insert_row(question_id=question_id, thread_id=thread_id)
+
+    conn = AsyncMock()
+    conn.fetchrow.side_effect = [
+        insert,
+        {"thread_id": thread_id},
+        insert,
+        {
+            **_cached_row(
+                response_id=response_id,
+                topic=insert["topic"],
+                semantic_hash=insert["semantic_hash"],
+                fingerprint=build_knowledge_fingerprint_from_knowledge(_knowledge()),
+            ),
+            "presentation_snapshot": "Resposta cacheada pronta.",
+        },
+    ]
+    conn.fetchval.return_value = response_id
+    conn.execute.return_value = "INSERT 0 1"
+
+    llm = AsyncMock()
+    llm.chat.return_value = LLMResponse(
+        text='{"intent":"consulta_metrica","metric":"faturamento","period":"2026-05","confidence":0.9}'
+    )
+    stream_calls = 0
+
+    async def _stream(*_args, **_kwargs):
+        nonlocal stream_calls
+        stream_calls += 1
+        yield LLMStreamChunk(delta="Narrativa inesperada.")
+
+    llm.stream = _stream
+
+    retriever = AsyncMock(spec=RemissiveRetriever)
+    retriever.reload_from_payload.return_value = _knowledge()
+
+    runner = ConsultaTurnRunner(
+        settings=PublicChatSettings(),
+        store=ResponseStore(_pool_with_conn(conn)),
+        intent_interpreter=PublicIntentInterpreter(llm),
+        retriever=retriever,
+        narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
+    )
+
+    _, presentation = await runner.run_turn_with_metadata("faturamento maio?")
+
+    assert stream_calls == 0
+    assert presentation == "Resposta cacheada pronta."
+
+
+@pytest.mark.asyncio
 async def test_cache_hit_regenerates_narrative() -> None:
     question_id = uuid4()
     response_id = uuid4()
@@ -166,7 +235,7 @@ async def test_cache_hit_regenerates_narrative() -> None:
     retriever.reload_from_payload.return_value = _knowledge()
 
     runner = ConsultaTurnRunner(
-        settings=PublicChatSettings(),
+        settings=PublicChatSettings(use_presentation_snapshot=False),
         store=ResponseStore(_pool_with_conn(conn)),
         intent_interpreter=PublicIntentInterpreter(llm),
         retriever=retriever,
@@ -296,3 +365,100 @@ async def test_runner_full_hit_then_miss() -> None:
 
     assert result.cached is False
     retriever.retrieve.assert_awaited_once()
+
+
+def _weak_workspace(*, gap_count: int = 1, fact_count: int = 0, confidence: float = 0.0) -> RemissiveWorkspace:
+    gaps = tuple(
+        FactGap(fact_key=f"dynamic:periodo-{index}", reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS)
+        for index in range(gap_count)
+    )
+    return RemissiveWorkspace(
+        period="2026-02",
+        facts=(),
+        gaps=gaps if gap_count else (),
+        requirements=(),
+        join_plan=None,
+        workspace_confidence=confidence,
+    )
+
+
+def test_should_store_resolution_cache_legacy_path() -> None:
+    assert should_store_resolution_cache(None) is True
+
+
+def test_should_store_resolution_cache_rejects_no_facts_fallback() -> None:
+    assert should_store_resolution_cache(None, presentation=NO_FACTS_FALLBACK_MESSAGE) is False
+
+
+def test_should_store_resolution_cache_rejects_weak_workspace() -> None:
+    assert should_store_resolution_cache(_weak_workspace()) is False
+    assert should_store_resolution_cache(_weak_workspace(gap_count=0, fact_count=0, confidence=0.9)) is False
+    assert (
+        should_store_resolution_cache(
+            _weak_workspace(gap_count=0, fact_count=0, confidence=MIN_FACT_CONFIDENCE - 0.01)
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_skips_store_when_workspace_has_gaps(monkeypatch: pytest.MonkeyPatch) -> None:
+    question_id = uuid4()
+    thread_id = uuid4()
+    insert = _insert_row(
+        question_id=question_id,
+        thread_id=thread_id,
+        topic="faturamento:2026-02",
+        semantic_hash="hash-fev",
+    )
+
+    conn = AsyncMock()
+    conn.fetchrow.side_effect = [insert, {"thread_id": thread_id}, insert, None]
+    conn.execute.return_value = "INSERT 0 1"
+
+    retriever = AsyncMock(spec=RemissiveRetriever)
+    retriever.retrieve.return_value = _knowledge()
+
+    llm = AsyncMock()
+    llm.chat.return_value = LLMResponse(
+        text='{"intent":"consulta_metrica","metric":"faturamento","period":"2026-02","confidence":0.9}'
+    )
+
+    async def _stream(*_args, **_kwargs):
+        yield LLMStreamChunk(delta="Não encontrei fatos validados suficientes para responder.")
+
+    llm.stream = _stream
+
+    store = ResponseStore(_pool_with_conn(conn))
+    upsert = AsyncMock(wraps=store.upsert_resolution)
+    link = AsyncMock(wraps=store.link_question_response)
+    store.upsert_resolution = upsert
+    store.link_question_response = link
+
+    async def _fake_build(*_args, **_kwargs):
+        return _weak_workspace()
+
+    monkeypatch.setattr(
+        "orion_mcp_v3.public_chat.application.consulta_turn_runner.build_remissive_workspace",
+        _fake_build,
+    )
+
+    runner = ConsultaTurnRunner(
+        settings=PublicChatSettings(use_workspace=True),
+        store=store,
+        intent_interpreter=PublicIntentInterpreter(llm),
+        retriever=retriever,
+        narrator=PublicNarrator(llm),
+        context_selector=PassthroughContextSelector(llm),
+        fact_planner=AsyncMock(),
+        memory_resolver=AsyncMock(),
+        analytical_narrator=AnalyticalNarrator(llm),
+    )
+
+    result, _ = await runner.run_turn_with_metadata("qual o faturamento total em fevereiro de 2026?")
+
+    assert result.cached is False
+    assert result.response_id == question_id
+    upsert.assert_not_awaited()
+    link.assert_not_awaited()
+    conn.fetchval.assert_not_awaited()

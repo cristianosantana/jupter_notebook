@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
+from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
 
 _MONTH_SLUGS = {
     1: ("janeiro", "jan"),
@@ -62,25 +63,7 @@ def scope_knowledge_to_periods(
 
 
 def _hit_matches_period(hit: KnowledgeHit, period: str) -> bool:
-    key = hit.context_key.lower()
-    normalized_period = period.strip()
-    if normalized_period and normalized_period in key:
-        return True
-
-    parts = normalized_period.split("-")
-    if len(parts) != 2:
-        return False
-    year, month_raw = parts[0], parts[1]
-    try:
-        month = int(month_raw)
-    except ValueError:
-        return False
-    if year in key and f"{month:02d}" in key:
-        return True
-    for slug in _MONTH_SLUGS.get(month, ()):
-        if slug in key and year in key:
-            return True
-    return False
+    return period_in_context_key(hit.context_key, period)
 
 
 def _hit_has_period_hint(hit: KnowledgeHit) -> bool:

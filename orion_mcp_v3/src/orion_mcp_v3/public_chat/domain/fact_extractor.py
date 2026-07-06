@@ -21,8 +21,16 @@ from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap, GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.models import ExtractedFact, FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import AggregationRule, SourcePriority
-from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace, ResolutionRule
-from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import ResolvedMemoryHit
+from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import (
+    ResolvedMemoryHit,
+    _hit_matches_required_keys,
+)
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import (
+    ExtractionPath,
+    FactTrace,
+    ResolutionRule,
+    fact_trace_from_resolution,
+)
 from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
     aggregate_row,
     lookup_entity,
@@ -94,15 +102,26 @@ class FactExtractor:
         semantics_version: str,
     ) -> tuple[ExtractedFact | None, FactGap | None]:
         hit = resolved_hit.hit
+        resolution_trace = resolved_hit.resolution_trace
         semantics = requirement.semantics
+
+        if not _hit_matches_required_keys(hit, requirement):
+            return None, FactGap(
+                fact_key=requirement.fact_key,
+                reason=GapReason.MEMORY_EXISTS_BUT_NO_MATCH,
+                detail="hit missing required key_metrics keys",
+                origin_ids_attempted=(hit.origin_id,),
+                attempted_rules=(resolution_trace.rule_applied.value,),
+                resolution_trace=resolution_trace,
+            )
 
         for source in semantics.source_priority:
             if source == SourcePriority.KEY_METRICS:
-                fact = self._from_key_metrics(requirement, hit, resolved_hit.rule, semantics_version)
+                fact = self._from_key_metrics(requirement, hit, resolution_trace)
                 if fact is not None:
                     return fact, None
             elif source in (SourcePriority.STRUCTURED, SourcePriority.PARSED_TEXT):
-                fact = self._from_parsed_text(requirement, hit, resolved_hit.rule, semantics_version)
+                fact = self._from_parsed_text(requirement, hit, resolution_trace)
                 if fact is not None:
                     return fact, None
 
@@ -111,14 +130,15 @@ class FactExtractor:
             reason=GapReason.EXTRACTION_FAILED,
             detail="all source_priority paths failed",
             origin_ids_attempted=(hit.origin_id,),
+            attempted_rules=(resolution_trace.rule_applied.value,),
+            resolution_trace=resolution_trace,
         )
 
     def _from_key_metrics(
         self,
         requirement: FactRequirement,
         hit: KnowledgeHit,
-        rule: ResolutionRule,
-        semantics_version: str,
+        resolution_trace,
     ) -> ExtractedFact | None:
         semantics = requirement.semantics
         keys = semantics.key_metrics_keys or ("faturamento_liquido",)
@@ -129,8 +149,7 @@ class FactExtractor:
             return self._build_key_metrics_fact(
                 requirement,
                 hit,
-                rule,
-                semantics_version,
+                resolution_trace,
                 label=key,
                 value=value,
             )
@@ -160,8 +179,7 @@ class FactExtractor:
                     return self._build_key_metrics_fact(
                         requirement,
                         hit,
-                        rule,
-                        semantics_version,
+                        resolution_trace,
                         label=row.label,
                         value=row.value,
                         display_value=display,
@@ -173,8 +191,7 @@ class FactExtractor:
                         return self._build_key_metrics_fact(
                             requirement,
                             hit,
-                            rule,
-                            semantics_version,
+                            resolution_trace,
                             label=key,
                             value=total,
                         )
@@ -189,8 +206,7 @@ class FactExtractor:
                 return self._build_key_metrics_fact(
                     requirement,
                     hit,
-                    rule,
-                    semantics_version,
+                    resolution_trace,
                     label=row.label,
                     value=row.value,
                     display_value=display,
@@ -203,8 +219,7 @@ class FactExtractor:
         self,
         requirement: FactRequirement,
         hit: KnowledgeHit,
-        rule: ResolutionRule,
-        semantics_version: str,
+        resolution_trace,
         *,
         label: str,
         value: float,
@@ -223,22 +238,14 @@ class FactExtractor:
             confidence=confidence,
             origin_id=hit.origin_id,
             context_key=hit.context_key,
-            trace=FactTrace(
-                fact_key=requirement.fact_key,
-                resolved_from=(hit.origin_id,),
-                context_keys=(hit.context_key,),
-                rule_applied=rule,
-                extraction_path=ExtractionPath.KEY_METRICS,
-                semantics_version=semantics_version,
-            ),
+            trace=fact_trace_from_resolution(resolution_trace, ExtractionPath.KEY_METRICS),
         )
 
     def _from_parsed_text(
         self,
         requirement: FactRequirement,
         hit: KnowledgeHit,
-        rule: ResolutionRule,
-        semantics_version: str,
+        resolution_trace,
     ) -> ExtractedFact | None:
         sections = parse_validated_answer(hit.validated_answer)
         semantics = requirement.semantics
@@ -262,14 +269,7 @@ class FactExtractor:
                 confidence=confidence,
                 origin_id=hit.origin_id,
                 context_key=hit.context_key,
-                trace=FactTrace(
-                    fact_key=requirement.fact_key,
-                    resolved_from=(hit.origin_id,),
-                    context_keys=(hit.context_key,),
-                    rule_applied=rule,
-                    extraction_path=path,
-                    semantics_version=semantics_version,
-                ),
+                trace=fact_trace_from_resolution(resolution_trace, path),
             )
 
         if semantics.aggregation_rule == AggregationRule.LOOKUP:
@@ -289,13 +289,9 @@ class FactExtractor:
                         confidence=confidence_for_path(ExtractionPath.STRUCTURED_PARSER),
                         origin_id=hit.origin_id,
                         context_key=hit.context_key,
-                        trace=FactTrace(
-                            fact_key=requirement.fact_key,
-                            resolved_from=(hit.origin_id,),
-                            context_keys=(hit.context_key,),
-                            rule_applied=rule,
-                            extraction_path=ExtractionPath.STRUCTURED_PARSER,
-                            semantics_version=semantics_version,
+                        trace=fact_trace_from_resolution(
+                            resolution_trace,
+                            ExtractionPath.STRUCTURED_PARSER,
                         ),
                     )
         return None

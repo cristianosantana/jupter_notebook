@@ -23,3 +23,11 @@ O único check que falhou foi cosmético — o texto `"field_parsers"` aparece n
 - Lógica de orquestração ou CLI → só `distill_supervised_memory.py`
 
 Nenhum desses casos exige tocar mais de um arquivo.
+
+**Migrations**
+
+ - python3 scripts/apply_migrations.py
+ - python3 src/orion_mcp_v3/public_chat/scripts/apply_migrations.py
+ - ||
+ - python3 -m orion_mcp_v3.scripts.apply_migrations
+ - python3 -m orion_mcp_v3.public_chat.scripts.apply_migrations

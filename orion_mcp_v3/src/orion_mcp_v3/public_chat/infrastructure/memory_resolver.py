@@ -9,12 +9,11 @@ from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import (
     FallbackPolicy,
     ResolveResult,
     ResolvedMemoryHit,
-    build_trace_for_resolution,
 )
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap
 from orion_mcp_v3.public_chat.domain.fact_engine.join_plan import MemoryJoinPlan
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
-from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace, ResolutionRule
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule, ResolutionTrace, build_resolution_trace
 from orion_mcp_v3.public_chat.domain.join_plan_builder import build_join_plan
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
 from orion_mcp_v3.public_chat.domain.memory_catalog import MemoryCatalog, get_memory_catalog
@@ -28,7 +27,7 @@ class MemoryResolveResult:
     join_plan: MemoryJoinPlan | None
     resolved: dict[str, ResolvedMemoryHit]
     gaps: tuple[FactGap, ...]
-    traces: tuple[FactTrace, ...]
+    traces: tuple[ResolutionTrace, ...]
     catalog_hits: tuple[KnowledgeHit, ...]
 
 
@@ -63,7 +62,7 @@ class MemoryResolver:
 
         resolved: dict[str, ResolvedMemoryHit] = {}
         gaps: list[FactGap] = []
-        traces: list[FactTrace] = []
+        traces: list[ResolutionTrace] = []
 
         for requirement in requirements:
             if requirement.semantics.aggregation_rule.value == "derived":
@@ -76,6 +75,7 @@ class MemoryResolver:
                 requirement,
                 vector_hits=vector_hits,
                 catalog_hits=period_filtered,
+                semantics_version=self._catalog.version,
             )
             if result is None:
                 result = self._fallback.resolve_from_hits(
@@ -86,13 +86,7 @@ class MemoryResolver:
                 )
             if result.hit is not None:
                 resolved[requirement.fact_key] = result.hit
-                traces.append(
-                    build_trace_for_resolution(
-                        requirement,
-                        result.hit,
-                        semantics_version=self._catalog.version,
-                    )
-                )
+                traces.append(result.hit.resolution_trace)
             if result.gap is not None:
                 gaps.append(result.gap)
 
@@ -141,24 +135,30 @@ def _resolve_from_source_origin_id(
     *,
     vector_hits: list[KnowledgeHit],
     catalog_hits: list[KnowledgeHit],
+    semantics_version: str,
 ) -> ResolveResult | None:
     if requirement.source_origin_id is None:
         return None
     matched_key = requirement.matched_key
-    for hit in vector_hits:
-        if hit.origin_id == requirement.source_origin_id and (
-            matched_key is None or matched_key in hit.key_metrics
-        ):
-            return ResolveResult(
-                hit=ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL),
-                gap=None,
-            )
-    for hit in catalog_hits:
-        if hit.origin_id == requirement.source_origin_id and (
-            matched_key is None or matched_key in hit.key_metrics
-        ):
-            return ResolveResult(
-                hit=ResolvedMemoryHit(hit=hit, rule=ResolutionRule.CATALOG),
-                gap=None,
-            )
+    rule = ResolutionRule.CATALOG
+    for hits in (vector_hits, catalog_hits):
+        for hit in hits:
+            if hit.origin_id == requirement.source_origin_id and (
+                matched_key is None or matched_key in hit.key_metrics
+            ):
+                trace = build_resolution_trace(
+                    fact_key=requirement.fact_key,
+                    hit_origin_id=hit.origin_id,
+                    hit_context_key=hit.context_key,
+                    rule=rule,
+                    semantics_version=semantics_version,
+                )
+                return ResolveResult(
+                    hit=ResolvedMemoryHit(
+                        hit=hit,
+                        rule=rule,
+                        resolution_trace=trace,
+                    ),
+                    gap=None,
+                )
     return None

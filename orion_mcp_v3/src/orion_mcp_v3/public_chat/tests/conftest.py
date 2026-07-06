@@ -28,3 +28,18 @@ def _isolate_public_chat_pipeline_logs(monkeypatch) -> None:
     shutdown_public_chat_file_logging()
     yield
     shutdown_public_chat_file_logging()
+
+
+def make_resolved_hit(hit, rule, *, fact_key: str, semantics_version: str = "v1"):
+    """Helper de teste: ``ResolvedMemoryHit`` com ``resolution_trace`` montado no branch."""
+    from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import ResolvedMemoryHit
+    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule, build_resolution_trace
+
+    trace = build_resolution_trace(
+        fact_key=fact_key,
+        hit_origin_id=hit.origin_id,
+        hit_context_key=hit.context_key,
+        rule=rule,
+        semantics_version=semantics_version,
+    )
+    return ResolvedMemoryHit(hit=hit, rule=rule, resolution_trace=trace)

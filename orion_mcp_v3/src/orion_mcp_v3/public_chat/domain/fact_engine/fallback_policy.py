@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap, GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
-from orion_mcp_v3.public_chat.domain.fact_engine.trace import FactTrace, ResolutionRule
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule, ResolutionTrace, build_resolution_trace
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.domain.memory_catalog import MemoryCatalog
 from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
@@ -16,6 +16,7 @@ from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
 class ResolvedMemoryHit:
     hit: KnowledgeHit
     rule: ResolutionRule
+    resolution_trace: ResolutionTrace
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,7 @@ class FallbackPolicy:
         if not themes and requirement.semantics.memory_themes:
             themes = requirement.semantics.memory_themes
 
-        picked, rule = _pick_hit_for_themes(
+        picked, rule, attempted_rules = _pick_hit_for_themes(
             requirement=requirement,
             vector_hits=vector_hits,
             catalog_hits=catalog_hits,
@@ -48,9 +49,19 @@ class FallbackPolicy:
             catalog=catalog,
         )
         if picked is not None and rule is not None:
-            return ResolveResult(hit=ResolvedMemoryHit(hit=picked, rule=rule))
+            trace = build_resolution_trace(
+                fact_key=fact_key,
+                hit_origin_id=picked.origin_id,
+                hit_context_key=picked.context_key,
+                rule=rule,
+                semantics_version=catalog.version,
+            )
+            return ResolveResult(
+                hit=ResolvedMemoryHit(hit=picked, rule=rule, resolution_trace=trace),
+            )
 
         attempted = tuple(hit.origin_id for hit in catalog_hits + vector_hits)
+        rule_labels = tuple(rule.value for rule in attempted_rules)
         if attempted:
             return ResolveResult(
                 hit=None,
@@ -59,6 +70,7 @@ class FallbackPolicy:
                     reason=GapReason.MEMORY_EXISTS_BUT_NO_MATCH,
                     detail=f"themes={themes}",
                     origin_ids_attempted=attempted,
+                    attempted_rules=rule_labels,
                 ),
             )
         return ResolveResult(
@@ -98,7 +110,7 @@ def _pick_hit_for_themes(
     catalog_hits: list[KnowledgeHit],
     themes: tuple[str, ...],
     catalog: MemoryCatalog,
-) -> tuple[KnowledgeHit | None, ResolutionRule | None]:
+) -> tuple[KnowledgeHit | None, ResolutionRule | None, tuple[ResolutionRule, ...]]:
     """
     Escolhe o hit mais adequado intersectando elegibilidade (catálogo) com
     relevância semântica (ordem do vector search).
@@ -108,26 +120,34 @@ def _pick_hit_for_themes(
     2. Sem catálogo: primeiro vector hit que casa com o tema.
     3. Fallback: primeiro hit elegível do catálogo (ordem SQL).
     """
+    attempted: list[ResolutionRule] = []
     eligible_catalog = _filter_hits_for_required_keys(
         _filter_hits_for_themes(catalog_hits, themes, catalog),
         requirement,
     )
+    if eligible_catalog:
+        attempted.append(ResolutionRule.CATALOG)
+
     eligible_ids = {hit.origin_id for hit in eligible_catalog}
 
     if eligible_ids:
+        attempted.append(ResolutionRule.VECTOR_RETRIEVAL)
         for hit in vector_hits:
             if hit.origin_id in eligible_ids and _hit_matches_required_keys(hit, requirement):
-                return hit, ResolutionRule.VECTOR_RETRIEVAL
+                return hit, ResolutionRule.VECTOR_RETRIEVAL, tuple(attempted)
 
     if not eligible_catalog:
+        attempted.append(ResolutionRule.VECTOR_RETRIEVAL)
         for hit in vector_hits:
             if _hit_matches_themes(hit, themes, catalog) and _hit_matches_required_keys(hit, requirement):
-                return hit, ResolutionRule.VECTOR_RETRIEVAL
+                return hit, ResolutionRule.VECTOR_RETRIEVAL, tuple(attempted)
 
     if eligible_catalog:
-        return eligible_catalog[0], ResolutionRule.CATALOG
+        picked = eligible_catalog[0]
+        if _hit_matches_required_keys(picked, requirement):
+            return picked, ResolutionRule.CATALOG, tuple(attempted)
 
-    return None, None
+    return None, None, tuple(attempted)
 
 
 def _filter_hits_for_required_keys(
@@ -158,32 +178,3 @@ def _required_key_metrics_keys(requirement: FactRequirement) -> tuple[str, ...]:
         keys.append(requirement.matched_key)
     keys.extend(requirement.semantics.key_metrics_keys)
     return tuple(dict.fromkeys(key for key in keys if key))
-
-
-def build_trace_for_resolution(
-    requirement: FactRequirement,
-    resolved: ResolvedMemoryHit,
-    *,
-    semantics_version: str = "v1",
-) -> FactTrace:
-    hit = resolved.hit
-    return FactTrace(
-        fact_key=requirement.fact_key,
-        resolved_from=(hit.origin_id,),
-        context_keys=(hit.context_key,),
-        rule_applied=resolved.rule,
-        extraction_path=_default_extraction_path(requirement),
-        semantics_version=semantics_version,
-    )
-
-
-def _default_extraction_path(requirement: FactRequirement):
-    from orion_mcp_v3.public_chat.domain.fact_engine.semantics import SourcePriority
-    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath
-
-    priority = requirement.semantics.source_priority
-    if SourcePriority.KEY_METRICS in priority:
-        return ExtractionPath.KEY_METRICS
-    if SourcePriority.STRUCTURED in priority:
-        return ExtractionPath.STRUCTURED_PARSER
-    return ExtractionPath.STRUCTURED_PARSER

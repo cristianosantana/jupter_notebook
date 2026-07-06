@@ -64,6 +64,8 @@ def build_public_chat_runner(
         provider,
         max_tokens=cfg.intent_max_tokens,
         min_confidence=cfg.intent_min_confidence,
+        store=store,
+        use_intent_cache=cfg.use_intent_cache,
     )
     narrator = PublicNarrator(provider, max_tokens=cfg.narrator_max_tokens)
     context_selector = PublicContextSelector(provider, max_tokens=cfg.selector_max_tokens)

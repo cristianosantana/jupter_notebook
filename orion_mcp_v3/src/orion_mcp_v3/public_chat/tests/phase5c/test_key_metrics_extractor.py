@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from orion_mcp_v3.public_chat.domain.fact_engine.requirement_kind import RequirementKind
-from orion_mcp_v3.public_chat.domain.fact_engine.fallback_policy import ResolvedMemoryHit
+from orion_mcp_v3.public_chat.tests.conftest import make_resolved_hit
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import (
     AggregationRule,
@@ -49,7 +49,9 @@ def test_fact_extractor_lookup_pix_from_key_metrics_dynamic() -> None:
     )
     requirement = build_dynamic_requirement(payment, contract=contract)
     resolved = {
-        requirement.fact_key: ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL),
+        requirement.fact_key: make_resolved_hit(
+            hit, ResolutionRule.VECTOR_RETRIEVAL, fact_key=requirement.fact_key
+        ),
     }
 
     result = FactExtractor().extract((requirement,), resolved)
@@ -84,7 +86,9 @@ def test_fact_extractor_lookup_pix_from_key_metrics() -> None:
         semantics=semantics,
     )
     resolved = {
-        "faturamento_forma_pagamento": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL),
+        "faturamento_forma_pagamento": make_resolved_hit(
+            hit, ResolutionRule.VECTOR_RETRIEVAL, fact_key="faturamento_forma_pagamento"
+        ),
     }
 
     result = FactExtractor().extract((requirement,), resolved)
@@ -117,7 +121,9 @@ def test_fact_extractor_ranking_from_key_metrics_array() -> None:
         semantics=semantics,
     )
     resolved = {
-        "ranking_forma_pagamento": ResolvedMemoryHit(hit=hit, rule=ResolutionRule.VECTOR_RETRIEVAL),
+        "ranking_forma_pagamento": make_resolved_hit(
+            hit, ResolutionRule.VECTOR_RETRIEVAL, fact_key="ranking_forma_pagamento"
+        ),
     }
 
     result = FactExtractor().extract((requirement,), resolved)

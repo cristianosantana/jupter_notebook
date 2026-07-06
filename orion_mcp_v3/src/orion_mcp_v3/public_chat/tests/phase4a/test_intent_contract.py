@@ -100,11 +100,35 @@ def test_cartao_credito_5x_enrichment_targets_parcelas_dimension() -> None:
     )
 
     assert contract.dimension == "parcelas"
-    assert contract.entity_filters[-1].as_mapping() == {
+    parcel_filters = [item for item in contract.entity_filters if item.dimension == "parcelas"]
+    assert len(parcel_filters) == 1
+    assert parcel_filters[0].as_mapping() == {
         "dimension": "parcelas",
         "value": "5X",
         "match": "contains",
     }
+    payment_filters = [item for item in contract.entity_filters if item.dimension == "forma_pagamento"]
+    assert len(payment_filters) == 1
+    assert payment_filters[0].value == "cartao de credito"
+
+
+def test_cartao_credito_10x_injects_forma_pagamento_when_llm_omits() -> None:
+    message = "qual o total de vendas com pagamento em cartão de credito em 10x em abril de 2026?"
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="consulta_metrica",
+            metric="faturamento",
+            period="2026-04",
+            dimension="parcelas",
+            entity_filters=(EntityFilter(dimension="parcelas", value="10X", match="contains"),),
+            confidence=0.9,
+        ),
+        message,
+    )
+
+    payment_filters = [item for item in contract.entity_filters if item.dimension == "forma_pagamento"]
+    assert len(payment_filters) == 1
+    assert payment_filters[0].value == "cartao de credito"
 
 
 def test_cartao_credito_5x_splits_forma_pagamento_and_parcelas_filters() -> None:

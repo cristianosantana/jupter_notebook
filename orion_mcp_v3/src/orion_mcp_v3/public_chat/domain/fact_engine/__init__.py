@@ -25,6 +25,9 @@ from orion_mcp_v3.public_chat.domain.fact_engine.trace import (
     ExtractionPath,
     FactTrace,
     ResolutionRule,
+    ResolutionTrace,
+    build_resolution_trace,
+    fact_trace_from_resolution,
 )
 
 __all__ = [
@@ -46,6 +49,9 @@ __all__ = [
     "RemissiveWorkspace",
     "RequirementKind",
     "ResolutionRule",
+    "ResolutionTrace",
     "SourcePriority",
+    "build_resolution_trace",
+    "fact_trace_from_resolution",
     "confidence_for_path",
 ]

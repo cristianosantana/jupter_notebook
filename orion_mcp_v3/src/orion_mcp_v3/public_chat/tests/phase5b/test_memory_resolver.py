@@ -132,4 +132,98 @@ async def test_memory_resolver_prefers_requirement_source_origin_id_over_vector_
 
     resolved = result.resolved["dynamic:faturamento_por_tipo_de_pagamento"]
     assert resolved.hit.origin_id == 33
-    assert result.traces[0].rule_applied == ResolutionRule.VECTOR_RETRIEVAL
+    assert result.traces[0].rule_applied == ResolutionRule.CATALOG
+    trace_payload = result.traces[0].as_mapping()
+    assert "extraction_path" not in trace_payload
+
+
+@pytest.mark.asyncio
+async def test_memory_resolver_trace_is_resolution_only():
+    fixture = load_maio_contract_fixture()
+    faturamento = KnowledgeHit(
+        origin_id=33,
+        context_key="sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Faturamento por forma de pagamento em maio.",
+        key_metrics={
+            "faturamento_por_tipo_de_pagamento": fixture["key_metrics"][
+                "faturamento_por_tipo_de_pagamento"
+            ],
+        },
+        score=0.354322,
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:faturamento_por_tipo_de_pagamento",
+        aggregation_rule=AggregationRule.LOOKUP,
+        comparator=Comparator.NONE,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        memory_themes=("fechamento_gerencial",),
+        key_metrics_keys=("faturamento_por_tipo_de_pagamento",),
+        key_metrics_entity_field="tipo",
+        key_metrics_value_field="valor",
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:faturamento_por_tipo_de_pagamento",
+        metric="faturamento",
+        dimension="forma_pagamento",
+        entity=None,
+        period="2026-05",
+        operation="comparison",
+        matched_key="faturamento_por_tipo_de_pagamento",
+        source_origin_id=33,
+        source_context_key=faturamento.context_key,
+        semantics=semantics,
+    )
+
+    resolver = MemoryResolver(FakeReader(), catalog=get_memory_catalog(), fallback=FallbackPolicy())
+    result = await resolver.resolve((requirement,), ConhecimentoRecuperado(hits=(faturamento,)))
+
+    assert len(result.traces) == 1
+    assert set(result.traces[0].as_mapping().keys()) == {
+        "fact_key",
+        "resolved_from",
+        "context_keys",
+        "rule_applied",
+        "semantics_version",
+    }
+    assert result.traces[0].rule_applied == ResolutionRule.CATALOG
+
+
+@pytest.mark.asyncio
+async def test_memory_resolver_source_origin_id_with_meta_exact_uses_catalog_rule():
+    hit = KnowledgeHit(
+        origin_id=31,
+        context_key="sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-04",
+        category="Fechamento Gerencial",
+        validated_answer="10X parcelas",
+        key_metrics={"parcelamento_de_cartao": {"rows": [], "_meta": {}}},
+        score=None,
+    )
+    semantics = FactSemantics(
+        fact_key="dynamic:parcelamento_de_cartao",
+        aggregation_rule=AggregationRule.LOOKUP,
+        comparator=Comparator.NONE,
+        source_priority=(SourcePriority.KEY_METRICS,),
+        value_kind="currency",
+        key_metrics_keys=("parcelamento_de_cartao",),
+    )
+    requirement = FactRequirement(
+        fact_key="dynamic:parcelamento_de_cartao",
+        metric="faturamento",
+        dimension="parcelas",
+        entity="10X",
+        period="2026-04",
+        operation="summary",
+        matched_key="parcelamento_de_cartao",
+        match_method="meta_exact",
+        source_origin_id=31,
+        source_context_key=hit.context_key,
+        semantics=semantics,
+    )
+
+    resolver = MemoryResolver(FakeReader(), catalog=get_memory_catalog(), fallback=FallbackPolicy())
+    result = await resolver.resolve((requirement,), ConhecimentoRecuperado(hits=(hit,)))
+
+    assert result.traces[0].rule_applied == ResolutionRule.CATALOG
+    assert result.traces[0].as_mapping()["rule_applied"] == "catalog"
