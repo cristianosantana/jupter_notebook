@@ -11,6 +11,7 @@ from orion_mcp_v3.public_chat.domain.direct_answer_parser import _parse_br_curre
 
 _CURRENCY_IN_TEXT_RE = re.compile(r"R\$\s*([\d.]+,\d{2})", re.IGNORECASE)
 _PERCENT_RE = re.compile(r"([\d.,]+)\s*%")
+_MATRIX_DEFAULT_COLUMNS = ("venda normal", "financiamento", "total comissao")
 
 _DEFAULT_ENTITY_FIELDS = ("tipo", "label", "metric", "concessionaria", "departamento", "servico", "produto", "parcelas")
 _DEFAULT_VALUE_FIELDS = ("valor", "value", "faturamento", "valor_comissao", "percentual")
@@ -57,7 +58,8 @@ def normalize_key_metrics_entry(key: str, raw: Any) -> NormalizedKeyMetricsEntry
     if isinstance(raw, dict):
         if "table_rows_sample" in raw:
             sample = raw.get("table_rows_sample")
-            rows = rows_from_table_sample(sample)
+            meta = raw.get("_meta") if isinstance(raw.get("_meta"), dict) else None
+            rows = rows_from_table_sample(sample, meta=meta)
             return NormalizedKeyMetricsEntry(
                 shape="table",
                 rows=rows,
@@ -134,17 +136,26 @@ def rows_from_array(
     return tuple(rows)
 
 
-def rows_from_table_sample(raw: Any) -> tuple[KeyMetricsRow, ...]:
+def rows_from_table_sample(raw: Any, *, meta: Mapping[str, Any] | None = None) -> tuple[KeyMetricsRow, ...]:
     if not isinstance(raw, list):
         return ()
+    subdimension = None
+    if meta is not None:
+        raw_sub = meta.get("subdimension")
+        if isinstance(raw_sub, str) and raw_sub.strip():
+            subdimension = raw_sub.strip()
     rows: list[KeyMetricsRow] = []
     for line in raw:
         if not isinstance(line, str) or not line.strip():
             continue
-        parsed = _parse_table_line(line)
-        if parsed is None:
+        currency_count = len(list(_CURRENCY_IN_TEXT_RE.finditer(line)))
+        if currency_count > 1:
+            parsed_rows = _parse_matrix_table_line(line, subdimension=subdimension)
+            rows.extend(parsed_rows)
             continue
-        rows.append(parsed)
+        parsed = _parse_table_line(line)
+        if parsed is not None:
+            rows.append(parsed)
     return tuple(rows)
 
 
@@ -213,11 +224,81 @@ def _parse_table_line(line: str) -> KeyMetricsRow | None:
     currency_match = _CURRENCY_IN_TEXT_RE.search(text)
     if currency_match:
         value = _parse_br_currency(currency_match.group(1))
+        if value is None:
+            return None
         label = text[: currency_match.start()].strip(" -:\t")
         if not label:
             label = text
         return KeyMetricsRow(label=label, value=value, raw_value=currency_match.group(0))
     return None
+
+
+def _parse_matrix_table_line(
+    line: str,
+    *,
+    subdimension: str | None = None,
+) -> tuple[KeyMetricsRow, ...]:
+    text = line.strip()
+    if not text:
+        return ()
+    matches = list(_CURRENCY_IN_TEXT_RE.finditer(text))
+    if not matches:
+        single = _parse_table_line(text)
+        return (single,) if single is not None else ()
+
+    scope_entity = _matrix_scope_entity(text, matches[0].start())
+    rows: list[KeyMetricsRow] = []
+    for index, match in enumerate(matches):
+        value = _parse_br_currency(match.group(1))
+        if value is None:
+            continue
+        column_label = _matrix_column_label(text, match, index=index, matches=matches)
+        if scope_entity and column_label:
+            label = f"{scope_entity} | {column_label}"
+        elif scope_entity:
+            label = scope_entity
+        elif column_label:
+            label = column_label
+        else:
+            label = text[: match.start()].strip(" -:\t|") or text
+        rows.append(
+            KeyMetricsRow(
+                label=label,
+                value=value,
+                raw_value=match.group(0),
+            )
+        )
+    return tuple(rows)
+
+
+def _matrix_scope_entity(text: str, first_currency_start: int) -> str:
+    prefix = text[:first_currency_start]
+    if "|" in prefix:
+        return prefix.split("|", 1)[0].strip()
+    if " - " in prefix:
+        parts = prefix.rsplit(" - ", 1)
+        if len(parts) == 2:
+            return parts[1].strip(" :-\t")
+    return prefix.strip(" -:\t|")
+
+
+def _matrix_column_label(
+    text: str,
+    match: re.Match[str],
+    *,
+    index: int,
+    matches: list[re.Match[str]],
+) -> str:
+    start = matches[index - 1].end() if index > 0 else 0
+    segment = text[start : match.start()]
+    if "|" in segment:
+        segment = segment.split("|")[-1]
+    label = segment.strip(" -:\t")
+    if label:
+        return label.rstrip(":")
+    if index < len(_MATRIX_DEFAULT_COLUMNS):
+        return _MATRIX_DEFAULT_COLUMNS[index]
+    return f"coluna_{index + 1}"
 
 
 def _parse_percent(raw: str) -> float | None:

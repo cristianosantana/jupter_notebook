@@ -36,6 +36,41 @@ Tipos em `domain/fact_engine/semantics.py`:
 - `Comparator`: ASC, DESC, NONE
 - `SourcePriority`: KEY_METRICS → STRUCTURED → PARSED_TEXT → LLM
 
+### Requirements dinâmicos (`dynamic:*`)
+
+O `FactPlanner` gera `fact_key` compostos quando há múltiplos operandos ou varredura multi-período:
+
+| Padrão | Exemplo | Quando |
+|---|---|---|
+| `dynamic:{index_key}` | `dynamic:faturamento_por_tipo_de_pagamento` | lookup simples, 1 entidade implícita |
+| `dynamic:{index_key}@{entity}` | `dynamic:faturamento_por_tipo_de_pagamento@pix` | comparação multi-entidade no mesmo índice |
+| `dynamic:{index_key}@{entity}@{period}` | `dynamic:...@pix@2026-04` | varredura multi-mês × multi-entidade |
+
+**Classificação de filtros no planner:**
+- **Operando** — dimensão com ≥2 `entity_filters` (ex.: PIX vs Cartão) → 1 requirement por valor
+- **Escopo** — dimensão com 1 valor fora dos operandos (ex.: concessionária GWM BAMAQ) → `scope_entities` no requirement; restringe linha/coluna na extração, não gera requirement próprio
+- A dimensão-alvo do loop do planner **nunca** entra em `scope_entities` (evita duplicar operando e escopo)
+
+**Eixos de escopo schema-aware (fonte única):**
+- Função canónica: `scope_axes_for_entry(entry)` / `scope_axes_from_hit_meta(hit, matched_key)` — derivam eixos válidos de `dimension`, `subdimension` e `entity_field` do `_meta` do índice
+- Só filtros cuja dimensão ∈ eixos válidos são aplicados na extração; os restantes vão para `discarded_scope` com `reason: not_in_schema` (telemetria em `fact.plan` e `FactTrace`, não é gap)
+- `FactSemantics.key_metrics_scope_axes` é **snapshot audit-only** gravado no build — o extrator **recomputa** eixos via `scope_axes_from_hit_meta`, não usa semantics para decidir filtro
+- Exemplo: `parcelamento_de_cartao` só aceita escopo `parcelas`; `forma_pagamento` do intent é descartado, não filtra linhas por substring inexistente no label
+
+**Invariante — zero é fact válido:**
+- Valor numérico zero (`0.0`, `R$ 0,00`) é fact válido em `LOOKUP`; gap só quando a linha/entidade não existe (`None`)
+- Casos de negócio frequentes: financiamento zerado, Cheque/Permuta sem movimento, matriz `tipo_os × concessionaria`
+- Tabelas com `subdimension` expandem N valores monetários por linha física (`table_rows_sample` com múltiplos `R$` por linha)
+- Filtros-predicado (ex. `>0`) nunca viram `entity`; permanecem em `discarded_scope` até suporte a filtro condicional pós-extração
+
+**Resolução de origem no plano:**
+- `source_resolution_mode: index_pinned` quando `source_origin_id` vem do índice
+- `source_resolution_mode: catalog_fallback` + `source_resolution_detail` (ex.: `no_index_entry_for_period:2026-04`) quando o planner delega ao catálogo
+
+**Expansão de período (proibido colapsar):**
+- Se `contract.period` é `null` e o índice traz o mesmo `entry.key` em N meses, o planner **expande** em N requirements (um por período distinto), cada um com `source_origin_id` e `period` explícitos
+- **Proibido:** escolher um `origin_id` arbitrário ou “período mais recente” quando a pergunta não fixa um único mês — isso viola *nunca inventar valor*
+
 Exemplos canónicos:
 
 | fact_key | aggregation | comparator | source_priority |
@@ -68,6 +103,7 @@ Gravado no **exact return** de cada branch do `FallbackPolicy` / `MemoryResolver
 Estende `ResolutionTrace` com:
 
 - `extraction_path`: KEY_METRICS | STRUCTURED_PARSER | RANKING_DERIVED | LLM_EXTRACT | DERIVED_COMPUTE
+- `discarded_scope` (opcional): filtros de escopo rejeitados por não pertencerem ao schema do `matched_key`
 
 Montado **somente** quando o `FactExtractor` extrai valor com sucesso, mergeando
 `resolution_trace` do hit resolvido com o path real do branch vencedor em `source_priority`.

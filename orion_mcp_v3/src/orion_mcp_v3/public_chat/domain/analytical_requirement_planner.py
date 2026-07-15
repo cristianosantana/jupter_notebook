@@ -21,13 +21,19 @@ from orion_mcp_v3.public_chat.domain.key_metrics_introspection import (
     build_dynamic_requirement,
     build_key_metrics_index_from_hits,
     dimensions_from_contract,
+    expand_same_key_period_from_index,
     find_key_metrics_source,
+    period_from_context_key,
+    same_key_only_period_ambiguity,
+    should_include_period_in_fact_key,
 )
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado
 from orion_mcp_v3.public_chat.domain.period_selection import (
-    entity_for_dimension,
+    comparison_operand_dimensions,
+    entities_for_dimension,
     non_period_entity_filters,
     periods_from_contract,
+    scope_entity_tuples,
 )
 from orion_mcp_v3.public_chat.domain.period_utils import period_in_context_key
 from orion_mcp_v3.public_chat.domain.special_requirements import NoOpSpecialCatalog, SpecialRequirementsCatalog
@@ -143,63 +149,64 @@ async def _resolve_lookup_requirements(
             max_tokens=max_tokens,
         )
 
-    for dimension in dims:
-        entity = entity_for_dimension(contract, dimension, message=message)
-        match = find_key_metrics_source(
-            index,
-            dimension=dimension,
-            metric_kind=contract.metric,
-            entity=entity,
-            message=message,
-        )
-        if match.status == HeuristicStatus.RESOLVED and match.entry is not None:
-            requirements.append(
-                build_dynamic_requirement(
-                    match.entry,
-                    contract=contract,
-                    match_method=match.match_method,
-                    message=message,
-                )
-            )
-            continue
+    operands = comparison_operand_dimensions(contract)
+    target_dims = operands if operands else dims
 
-        if match.status == HeuristicStatus.AMBIGUOUS:
-            resolved = await _llm_disambiguate_index(
+    for dimension in target_dims:
+        scope = scope_entity_tuples(
+            contract,
+            operands,
+            exclude_dimensions=(dimension,),
+        )
+        entities = entities_for_dimension(contract, dimension, message=message) or (None,)
+        search_index = index
+        if contract.period:
+            period_index = _index_for_period(index, contract.period)
+            if period_index:
+                search_index = period_index
+
+        for entity in entities:
+            match = find_key_metrics_source(
+                search_index,
+                dimension=dimension,
+                metric_kind=contract.metric,
+                entity=entity,
+                message=message,
+            )
+            entries, gap, llm_used = await _entries_from_match(
                 message,
                 contract=contract,
                 index=index,
-                candidates=match.candidates,
+                dimension=dimension,
+                entity=entity,
+                match=match,
                 llm=llm,
                 max_tokens=max_tokens,
             )
-            if resolved is not None:
+            if llm_used:
                 used_llm = True
+            if gap is not None:
+                gaps.append(gap)
+                continue
+            for entry in entries:
+                period = period_from_context_key(entry.context_key) or contract.period
                 requirements.append(
                     build_dynamic_requirement(
-                        resolved,
+                        entry,
                         contract=contract,
-                        match_method=MatchMethod.LLM,
-                        heuristic_status=HeuristicStatus.RESOLVED,
+                        match_method=MatchMethod.LLM if llm_used else match.match_method,
                         message=message,
+                        entity=entity,
+                        period=period,
+                        scope_entities=scope,
+                        exclude_scope_dimensions=(dimension,),
+                        include_period_in_key=should_include_period_in_fact_key(
+                            contract,
+                            index,
+                            index_key=entry.key,
+                        ),
                     )
                 )
-                continue
-            gaps.append(
-                FactGap(
-                    fact_key=f"dynamic:{dimension}",
-                    reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS,
-                    detail=f"candidates={[entry.key for entry in match.candidates]}",
-                )
-            )
-            continue
-
-        gaps.append(
-            FactGap(
-                fact_key=f"dynamic:{dimension}",
-                reason=GapReason.NOT_FOUND,
-                detail=f"dimension={dimension}",
-            )
-        )
 
     return tuple(requirements), gaps, used_llm
 
@@ -218,6 +225,8 @@ async def _resolve_period_comparison_requirements(
     gaps: list[FactGap] = []
     used_llm = False
     period_dims = dims or ("periodo",)
+    operands = comparison_operand_dimensions(contract)
+    target_dims = operands if operands else period_dims
 
     for period in periods:
         period_index = _index_for_period(index, period)
@@ -227,63 +236,55 @@ async def _resolve_period_comparison_requirements(
             period=period,
             entity_filters=non_period_entity_filters(contract),
         )
-        for dimension in period_dims:
-            entity = entity_for_dimension(period_contract, dimension, message=message)
-            match = find_key_metrics_source(
-                candidate_index,
-                dimension=dimension,
-                metric_kind=period_contract.metric,
-                entity=entity,
-                message=message,
+        for dimension in target_dims:
+            scope = scope_entity_tuples(
+                contract,
+                operands,
+                exclude_dimensions=(dimension,),
             )
-            if match.status == HeuristicStatus.RESOLVED and match.entry is not None:
-                requirement = build_dynamic_requirement(
-                    match.entry,
-                    contract=period_contract,
-                    match_method=match.match_method,
+            entities = entities_for_dimension(period_contract, dimension, message=message) or (None,)
+            for entity in entities:
+                match = find_key_metrics_source(
+                    candidate_index,
+                    dimension=dimension,
+                    metric_kind=period_contract.metric,
+                    entity=entity,
                     message=message,
                 )
-                if not period_index:
-                    requirement = _catalog_resolved_requirement(requirement)
-                requirements.append(_period_specific_requirement(requirement, period))
-                continue
-            if match.status == HeuristicStatus.AMBIGUOUS:
-                resolved = await _llm_disambiguate_index(
+                entries, gap, llm_used = await _entries_from_match(
                     message,
                     contract=period_contract,
                     index=candidate_index,
-                    candidates=match.candidates,
+                    dimension=dimension,
+                    entity=entity,
+                    match=match,
                     llm=llm,
                     max_tokens=max_tokens,
+                    period=period,
                 )
-                if resolved is not None:
+                if llm_used:
                     used_llm = True
+                if gap is not None:
+                    gaps.append(gap)
+                    continue
+                for entry in entries:
                     requirement = build_dynamic_requirement(
-                        resolved,
+                        entry,
                         contract=period_contract,
-                        match_method=MatchMethod.LLM,
-                        heuristic_status=HeuristicStatus.RESOLVED,
+                        match_method=MatchMethod.LLM if llm_used else match.match_method,
                         message=message,
+                        entity=entity,
+                        period=period,
+                        scope_entities=scope,
+                        exclude_scope_dimensions=(dimension,),
+                        include_period_in_key=len(periods) > 1,
                     )
                     if not period_index:
-                        requirement = _catalog_resolved_requirement(requirement)
-                    requirements.append(_period_specific_requirement(requirement, period))
-                    continue
-                gaps.append(
-                    FactGap(
-                        fact_key=f"dynamic:{dimension}:{period}",
-                        reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS,
-                        detail=f"period={period}; candidates={[entry.key for entry in match.candidates]}",
-                    )
-                )
-                continue
-            gaps.append(
-                FactGap(
-                    fact_key=f"dynamic:{dimension}:{period}",
-                    reason=GapReason.NOT_FOUND,
-                    detail=f"dimension={dimension}; period={period}",
-                )
-            )
+                        requirement = _catalog_resolved_requirement(
+                            requirement,
+                            detail=f"no_index_entry_for_period:{period}",
+                        )
+                    requirements.append(requirement)
 
     return tuple(requirements), gaps, used_llm
 
@@ -299,20 +300,65 @@ def _index_for_period(
     )
 
 
-def _period_specific_requirement(requirement: FactRequirement, period: str) -> FactRequirement:
-    fact_key = f"{requirement.fact_key}:{period}"
-    return replace(
-        requirement,
-        fact_key=fact_key,
-        semantics=replace(requirement.semantics, fact_key=fact_key),
-    )
+async def _entries_from_match(
+    message: str,
+    *,
+    contract: IntentContract,
+    index: tuple[KeyMetricsIndexEntry, ...],
+    dimension: str,
+    entity: str | None,
+    match,
+    llm: LLMProvider | None,
+    max_tokens: int,
+    period: str | None = None,
+) -> tuple[tuple[KeyMetricsIndexEntry, ...], FactGap | None, bool]:
+    entity_suffix = f"@{entity}" if entity else ""
+    period_suffix = f"@{period}" if period else ""
+    gap_key = f"dynamic:{dimension}{entity_suffix}{period_suffix}"
+
+    if match.status == HeuristicStatus.RESOLVED and match.entry is not None:
+        return (match.entry,), None, False
+
+    if match.status == HeuristicStatus.AMBIGUOUS:
+        if same_key_only_period_ambiguity(match.candidates):
+            index_key = match.candidates[0].key
+            expanded = expand_same_key_period_from_index(index, index_key=index_key)
+            if expanded:
+                return expanded, None, False
+        resolved = await _llm_disambiguate_index(
+            message,
+            contract=contract,
+            index=index,
+            candidates=match.candidates,
+            llm=llm,
+            max_tokens=max_tokens,
+        )
+        if resolved is not None:
+            return (resolved,), None, True
+        return (), FactGap(
+            fact_key=gap_key,
+            reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS,
+            detail=f"candidates={[entry.key for entry in match.candidates]}",
+        ), False
+
+    return (), FactGap(
+        fact_key=gap_key,
+        reason=GapReason.NOT_FOUND,
+        detail=f"dimension={dimension}",
+    ), False
 
 
-def _catalog_resolved_requirement(requirement: FactRequirement) -> FactRequirement:
+def _catalog_resolved_requirement(
+    requirement: FactRequirement,
+    *,
+    detail: str,
+) -> FactRequirement:
     return replace(
         requirement,
         source_origin_id=None,
         source_context_key=None,
+        source_resolution_mode="catalog_fallback",
+        source_resolution_detail=detail,
     )
 
 

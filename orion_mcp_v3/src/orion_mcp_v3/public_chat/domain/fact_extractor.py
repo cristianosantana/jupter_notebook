@@ -31,6 +31,10 @@ from orion_mcp_v3.public_chat.domain.fact_engine.trace import (
     ResolutionRule,
     fact_trace_from_resolution,
 )
+from orion_mcp_v3.public_chat.domain.key_metrics_introspection import (
+    partition_scope_entities,
+    scope_axes_from_hit_meta,
+)
 from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
     aggregate_row,
     lookup_entity,
@@ -81,6 +85,11 @@ class FactExtractor:
         gaps.extend(derived_gaps)
 
         result = ExtractionResult(facts=tuple(facts), gaps=tuple(gaps))
+        discarded_scope = [
+            item
+            for fact in result.facts
+            for item in fact.trace.discarded_scope
+        ]
         log_public_chat_event(
             etapa="fact.extract",
             fase="post",
@@ -90,6 +99,7 @@ class FactExtractor:
                 "gap_count": len(result.gaps),
                 "facts": [fact.as_mapping() for fact in result.facts],
                 "gaps": [gap.as_mapping() for gap in result.gaps],
+                "discarded_scope": discarded_scope,
             },
         )
         return result
@@ -142,6 +152,15 @@ class FactExtractor:
     ) -> ExtractedFact | None:
         semantics = requirement.semantics
         keys = semantics.key_metrics_keys or ("faturamento_liquido",)
+        axes = scope_axes_from_hit_meta(hit, requirement.matched_key)
+        applicable_scope, extract_discarded = partition_scope_entities(
+            requirement.scope_entities,
+            axes,
+        )
+        discarded_scope = _merge_discarded_scope(
+            requirement.discarded_scope,
+            extract_discarded,
+        )
 
         scalar = scalar_from_key_metrics(hit.key_metrics, keys)
         if scalar is not None and semantics.aggregation_rule == AggregationRule.LOOKUP and not requirement.entity:
@@ -152,6 +171,7 @@ class FactExtractor:
                 resolution_trace,
                 label=key,
                 value=value,
+                discarded_scope=discarded_scope,
             )
 
         entity_fields = (semantics.key_metrics_entity_field, "tipo", "label", "metric")
@@ -165,6 +185,9 @@ class FactExtractor:
             rows = rows_from_key_metrics_entry(key, raw)
             if not rows:
                 continue
+
+            if applicable_scope:
+                rows = _filter_rows_by_scope(rows, applicable_scope)
 
             value_field = semantics.key_metrics_value_field
             if value_field == "percentual":
@@ -184,6 +207,7 @@ class FactExtractor:
                         value=row.value,
                         display_value=display,
                         unit="pct" if value_field == "percentual" else "BRL",
+                        discarded_scope=discarded_scope,
                     )
                 if semantics.fact_key == "faturamento_total_periodo":
                     total = sum_row_values(rows)
@@ -194,6 +218,7 @@ class FactExtractor:
                             resolution_trace,
                             label=key,
                             value=total,
+                            discarded_scope=discarded_scope,
                         )
                 continue
 
@@ -211,6 +236,7 @@ class FactExtractor:
                     value=row.value,
                     display_value=display,
                     unit="pct" if value_field == "percentual" else "BRL",
+                    discarded_scope=discarded_scope,
                 )
 
         return None
@@ -225,6 +251,7 @@ class FactExtractor:
         value: float,
         display_value: str | None = None,
         unit: str = "BRL",
+        discarded_scope: tuple[dict[str, str], ...] = (),
     ) -> ExtractedFact | None:
         confidence = confidence_for_path(ExtractionPath.KEY_METRICS)
         if confidence < MIN_FACT_CONFIDENCE:
@@ -238,7 +265,11 @@ class FactExtractor:
             confidence=confidence,
             origin_id=hit.origin_id,
             context_key=hit.context_key,
-            trace=fact_trace_from_resolution(resolution_trace, ExtractionPath.KEY_METRICS),
+            trace=fact_trace_from_resolution(
+                resolution_trace,
+                ExtractionPath.KEY_METRICS,
+                discarded_scope=discarded_scope,
+            ),
         )
 
     def _from_parsed_text(
@@ -367,6 +398,38 @@ class FactExtractor:
         text = fact.value.replace("R$", "").replace("%", "").strip()
         text = text.replace(".", "").replace(",", ".")
         return float(text)
+
+
+def _merge_discarded_scope(
+    *groups: tuple[dict[str, str], ...],
+) -> tuple[dict[str, str], ...]:
+    merged: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for group in groups:
+        for item in group:
+            key = (item.get("dimension", ""), item.get("value", ""), item.get("reason", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return tuple(merged)
+
+
+def _filter_rows_by_scope(
+    rows: tuple,
+    scope_entities: tuple[tuple[str, str], ...],
+) -> tuple:
+    from orion_mcp_v3.public_chat.domain.key_metrics_reader import KeyMetricsRow
+
+    filtered = rows
+    for _dimension, value in scope_entities:
+        needle = value.lower()
+        filtered = tuple(
+            row
+            for row in filtered
+            if isinstance(row, KeyMetricsRow) and needle in row.label.lower()
+        )
+    return filtered
 
 
 def _rows_with_percentual_values(rows: tuple) -> tuple:

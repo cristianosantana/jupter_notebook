@@ -41,6 +41,8 @@ class FactSemantics:
     key_metrics_keys: tuple[str, ...] = ()
     key_metrics_entity_field: str = "tipo"
     key_metrics_value_field: str = "valor"
+    # Snapshot audit-only derivado de scope_axes_for_entry no build; não usar para filtrar no extrator.
+    key_metrics_scope_axes: tuple[str, ...] = ()
 
     def as_mapping(self) -> dict[str, object]:
         return {
@@ -55,4 +57,5 @@ class FactSemantics:
             "key_metrics_keys": list(self.key_metrics_keys),
             "key_metrics_entity_field": self.key_metrics_entity_field,
             "key_metrics_value_field": self.key_metrics_value_field,
+            "key_metrics_scope_axes": list(self.key_metrics_scope_axes),
         }

@@ -27,6 +27,10 @@ class FactRequirement:
     heuristic_status: str | None = None
     source_origin_id: int | None = None
     source_context_key: str | None = None
+    source_resolution_mode: str | None = None
+    source_resolution_detail: str | None = None
+    scope_entities: tuple[tuple[str, str], ...] = ()
+    discarded_scope: tuple[dict[str, str], ...] = ()
 
     def as_mapping(self) -> dict[str, object]:
         return {
@@ -42,6 +46,13 @@ class FactRequirement:
             "heuristic_status": self.heuristic_status,
             "source_origin_id": self.source_origin_id,
             "source_context_key": self.source_context_key,
+            "source_resolution_mode": self.source_resolution_mode,
+            "source_resolution_detail": self.source_resolution_detail,
+            "scope_entities": [
+                {"dimension": dimension, "value": value}
+                for dimension, value in self.scope_entities
+            ],
+            "discarded_scope": list(self.discarded_scope),
             "semantics": self.semantics.as_mapping(),
         }
 

@@ -31,9 +31,11 @@ from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.domain.period_selection import (
     contract_has_parcel_filter,
     entity_for_dimension,
+    is_predicate_filter_value,
     message_has_parcel_count,
     non_period_entity_filters,
 )
+from orion_mcp_v3.public_chat.domain.period_utils import normalize_period_key
 
 _DYNAMIC_PREFIX = "dynamic:"
 _MIN_ACCEPT_SCORE = 3.0
@@ -149,10 +151,11 @@ def dimensions_from_contract(contract: IntentContract, message: str = "") -> tup
         dims.append(_normalize_dimension(contract.dimension))
 
     for filt in non_period_entity_filters(contract):
-        if filt.dimension:
-            normalized = _normalize_dimension(filt.dimension)
-            if normalized not in dims:
-                dims.append(normalized)
+        if not filt.dimension or is_predicate_filter_value(filt.value or ""):
+            continue
+        normalized = _normalize_dimension(filt.dimension)
+        if normalized in DIMENSION_ALIASES and normalized not in dims:
+            dims.append(normalized)
 
     keyword_map = (
         ("servico", ("servico", "serviço", "servicos", "serviços")),
@@ -233,6 +236,76 @@ def find_key_metrics_source(
     )
 
 
+def scope_axes_for_entry(entry: KeyMetricsIndexEntry) -> frozenset[str]:
+    return scope_axes_from_meta_fields(
+        dimension=entry.dimension,
+        entity_field=entry.entity_field,
+        subdimension=entry.subdimension,
+    )
+
+
+def scope_axes_from_meta(meta: Mapping[str, Any]) -> frozenset[str]:
+    return scope_axes_from_meta_fields(
+        dimension=str(meta.get("dimension") or ""),
+        entity_field=str(meta.get("entity_field") or ""),
+        subdimension=str(meta["subdimension"]) if meta.get("subdimension") else None,
+    )
+
+
+def scope_axes_from_meta_fields(
+    *,
+    dimension: str,
+    entity_field: str,
+    subdimension: str | None,
+) -> frozenset[str]:
+    axes: set[str] = set()
+    if dimension:
+        axes.add(_normalize_dimension(dimension))
+    if subdimension:
+        axes.add(_normalize_dimension(subdimension))
+    mapped = _dimension_for_entity_field(entity_field)
+    if mapped:
+        axes.add(mapped)
+    return frozenset(axes)
+
+
+def scope_axes_from_hit_meta(hit: KnowledgeHit, matched_key: str | None) -> frozenset[str]:
+    if not matched_key:
+        return frozenset()
+    raw = hit.key_metrics.get(matched_key)
+    if raw is None:
+        return frozenset()
+    meta = extract_meta(matched_key, raw)
+    if meta is None:
+        return frozenset()
+    return scope_axes_from_meta(meta)
+
+
+def partition_scope_entities(
+    scope_entities: tuple[tuple[str, str], ...],
+    axes: frozenset[str],
+    *,
+    exclude_dimensions: tuple[str, ...] = (),
+) -> tuple[tuple[tuple[str, str], ...], tuple[dict[str, str], ...]]:
+    excluded = {_normalize_dimension(dimension) for dimension in exclude_dimensions}
+    applicable: list[tuple[str, str]] = []
+    discarded: list[dict[str, str]] = []
+    for dimension, value in scope_entities:
+        dim_norm = _normalize_dimension(dimension)
+        if dim_norm in excluded:
+            discarded.append(
+                {"dimension": dimension, "value": value, "reason": "excluded_loop_dim"},
+            )
+            continue
+        if dim_norm in axes:
+            applicable.append((dimension, value))
+            continue
+        discarded.append(
+            {"dimension": dimension, "value": value, "reason": "not_in_schema"},
+        )
+    return tuple(applicable), tuple(discarded)
+
+
 def build_dynamic_requirement(
     entry: KeyMetricsIndexEntry,
     *,
@@ -240,17 +313,38 @@ def build_dynamic_requirement(
     match_method: MatchMethod | None = None,
     heuristic_status: HeuristicStatus = HeuristicStatus.RESOLVED,
     message: str = "",
+    entity: str | None = None,
+    period: str | None = None,
+    scope_entities: tuple[tuple[str, str], ...] = (),
+    include_period_in_key: bool = False,
+    exclude_scope_dimensions: tuple[str, ...] = (),
 ) -> FactRequirement:
     aggregation, comparator = _aggregation_for_contract(contract, entry)
     value_field = _value_field_for_contract(contract, entry)
-    entity = _entity_from_contract(contract, entry_dimension=entry.dimension, message=message)
-    fact_key = f"{_DYNAMIC_PREFIX}{entry.key}"
+    resolved_entity = (
+        entity
+        if entity is not None
+        else _entity_from_contract(contract, entry_dimension=entry.dimension, message=message)
+    )
+    resolved_period = period if period is not None else contract.period
+    axes = scope_axes_for_entry(entry)
+    applicable_scope, discarded_scope = partition_scope_entities(
+        scope_entities,
+        axes,
+        exclude_dimensions=exclude_scope_dimensions,
+    )
+    resolved_entity = _sanitize_entity_against_discarded(resolved_entity, discarded_scope)
+    fact_key = entity_scoped_fact_key(entry.key, resolved_entity)
+    if include_period_in_key and resolved_period:
+        fact_key = period_scoped_fact_key(fact_key, resolved_period)
+    scope_axes_snapshot = tuple(sorted(axes))
+    source_resolution_mode = "index_pinned" if entry.origin_id is not None else None
     return FactRequirement(
         fact_key=fact_key,
         metric=contract.metric,
         dimension=entry.dimension,
-        entity=entity,
-        period=contract.period,
+        entity=resolved_entity,
+        period=resolved_period,
         operation=contract.operation,
         requirement_kind=RequirementKind.LOOKUP,
         matched_key=entry.key,
@@ -258,6 +352,9 @@ def build_dynamic_requirement(
         heuristic_status=heuristic_status.value,
         source_origin_id=entry.origin_id,
         source_context_key=entry.context_key,
+        source_resolution_mode=source_resolution_mode,
+        scope_entities=applicable_scope,
+        discarded_scope=discarded_scope,
         semantics=FactSemantics(
             fact_key=fact_key,
             aggregation_rule=aggregation,
@@ -269,8 +366,93 @@ def build_dynamic_requirement(
             key_metrics_keys=(entry.key,),
             key_metrics_entity_field=entry.entity_field,
             key_metrics_value_field=value_field,
+            key_metrics_scope_axes=scope_axes_snapshot,
         ),
     )
+
+
+def _sanitize_entity_against_discarded(
+    entity: str | None,
+    discarded_scope: tuple[dict[str, str], ...],
+) -> str | None:
+    if entity is None or entity == "":
+        return None
+    for item in discarded_scope:
+        if item.get("value") == entity and item.get("reason") == "not_in_schema":
+            return None
+    return entity
+
+
+def entity_slug(value: str) -> str:
+    normalized = _normalize_text(value)
+    return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+
+
+def entity_scoped_fact_key(index_key: str, entity: str | None) -> str:
+    base = f"{_DYNAMIC_PREFIX}{index_key}"
+    if not entity:
+        return base
+    return f"{base}@{entity_slug(entity)}"
+
+
+def period_scoped_fact_key(base_key: str, period: str | None) -> str:
+    if not period:
+        return base_key
+    return f"{base_key}@{period}"
+
+
+def period_from_context_key(context_key: str | None) -> str | None:
+    if not context_key:
+        return None
+    return normalize_period_key(context_key)
+
+
+def periods_from_index_entries(
+    entries: tuple[KeyMetricsIndexEntry, ...],
+) -> tuple[str, ...]:
+    periods: list[str] = []
+    for entry in entries:
+        period = period_from_context_key(entry.context_key)
+        if period:
+            periods.append(period)
+    return tuple(dict.fromkeys(periods))
+
+
+def same_key_only_period_ambiguity(
+    candidates: tuple[KeyMetricsIndexEntry, ...],
+) -> bool:
+    if len(candidates) < 2:
+        return False
+    keys = {entry.key for entry in candidates}
+    if len(keys) != 1:
+        return False
+    return len(periods_from_index_entries(candidates)) >= 2
+
+
+def expand_same_key_period_from_index(
+    index: tuple[KeyMetricsIndexEntry, ...],
+    *,
+    index_key: str,
+) -> tuple[KeyMetricsIndexEntry, ...]:
+    by_period: dict[str, KeyMetricsIndexEntry] = {}
+    for entry in index:
+        if entry.key != index_key:
+            continue
+        period = period_from_context_key(entry.context_key)
+        if period and period not in by_period:
+            by_period[period] = entry
+    return tuple(by_period[period] for period in sorted(by_period))
+
+
+def should_include_period_in_fact_key(
+    contract: IntentContract,
+    index: tuple[KeyMetricsIndexEntry, ...],
+    *,
+    index_key: str,
+) -> bool:
+    if contract.period:
+        return False
+    return len(expand_same_key_period_from_index(index, index_key=index_key)) > 1
 
 
 def dynamic_fact_key(index_key: str) -> str:
@@ -278,9 +460,14 @@ def dynamic_fact_key(index_key: str) -> str:
 
 
 def index_key_from_dynamic(fact_key: str) -> str | None:
-    if fact_key.startswith(_DYNAMIC_PREFIX):
-        return fact_key[len(_DYNAMIC_PREFIX) :]
-    return None
+    if not fact_key.startswith(_DYNAMIC_PREFIX):
+        return None
+    rest = fact_key[len(_DYNAMIC_PREFIX) :]
+    if "@" in rest:
+        rest = rest.split("@", 1)[0]
+    if ":" in rest:
+        rest = rest.split(":", 1)[0]
+    return rest or None
 
 
 def available_key_metrics_payload(index: tuple[KeyMetricsIndexEntry, ...]) -> list[dict[str, object]]:
@@ -459,9 +646,12 @@ def _entity_from_contract(
 ) -> str | None:
     if entry_dimension:
         entity = entity_for_dimension(contract, entry_dimension, message=message)
-        if entity:
+        if entity is not None and entity != "":
             return entity
-    return entity_for_dimension(contract, contract.dimension or "", message=message)
+    entity = entity_for_dimension(contract, contract.dimension or "", message=message)
+    if entity is not None and entity != "":
+        return entity
+    return None
 
 
 def _mentions_revenue(contract: IntentContract, message: str) -> bool:
@@ -471,6 +661,17 @@ def _mentions_revenue(contract: IntentContract, message: str) -> bool:
         needle in metric or needle in text
         for needle in ("faturamento", "faturamos", "receita", "recebemos")
     )
+
+
+def _dimension_for_entity_field(entity_field: str) -> str | None:
+    field_norm = _normalize_dimension(entity_field)
+    if not field_norm:
+        return None
+    for canonical, aliases in DIMENSION_ALIASES.items():
+        alias_norms = {_normalize_dimension(alias) for alias in aliases}
+        if field_norm == canonical or field_norm in alias_norms:
+            return canonical
+    return field_norm
 
 
 def _normalize_dimension(value: str | None) -> str:

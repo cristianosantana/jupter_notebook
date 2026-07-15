@@ -42,9 +42,10 @@ class ResolutionTrace:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class FactTrace(ResolutionTrace):
     extraction_path: ExtractionPath
+    discarded_scope: tuple[dict[str, str], ...] = ()
 
     def as_mapping(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "fact_key": self.fact_key,
             "resolved_from": list(self.resolved_from),
             "context_keys": list(self.context_keys),
@@ -52,6 +53,9 @@ class FactTrace(ResolutionTrace):
             "semantics_version": self.semantics_version,
             "extraction_path": self.extraction_path.value,
         }
+        if self.discarded_scope:
+            payload["discarded_scope"] = list(self.discarded_scope)
+        return payload
 
 
 def build_resolution_trace(
@@ -74,6 +78,8 @@ def build_resolution_trace(
 def fact_trace_from_resolution(
     resolution: ResolutionTrace,
     extraction_path: ExtractionPath,
+    *,
+    discarded_scope: tuple[dict[str, str], ...] = (),
 ) -> FactTrace:
     return FactTrace(
         fact_key=resolution.fact_key,
@@ -82,4 +88,5 @@ def fact_trace_from_resolution(
         rule_applied=resolution.rule_applied,
         semantics_version=resolution.semantics_version,
         extraction_path=extraction_path,
+        discarded_scope=discarded_scope,
     )

@@ -184,4 +184,5 @@ def test_build_dynamic_requirement_uses_percentual_for_share_metric() -> None:
     requirement = build_dynamic_requirement(payment, contract=contract)
 
     assert requirement.semantics.key_metrics_value_field == "percentual"
-    assert requirement.fact_key == "dynamic:faturamento_por_tipo_de_pagamento"
+    assert requirement.fact_key == "dynamic:faturamento_por_tipo_de_pagamento@pix"
+    assert requirement.entity == "PIX"
