@@ -38,15 +38,15 @@ def mount_public_chat(
     if log_path is not None:
         _LOG.info("Public chat pipeline JSONL: %s", log_path)
 
-    log_public_chat_event(
-        etapa="integration.mount",
-        fase="post",
-        dados={
-            "enabled": settings.enabled,
-            "runtime_ready": settings.runtime_ready,
-            "pipeline_log_file": str(current_log_file_path()) if log_path else None,
-        },
-    )
+    # log_public_chat_event(
+    #     etapa="integration.mount",
+    #     fase="post",
+    #     dados={
+    #         "enabled": settings.enabled,
+    #         "runtime_ready": settings.runtime_ready,
+    #         "pipeline_log_file": str(current_log_file_path()) if log_path else None,
+    #     },
+    # )
 
     async def _ensure_runner() -> ConsultaTurnRunner | None:
         cached = shared_state.get("public_chat_runner")
@@ -65,11 +65,11 @@ def mount_public_chat(
         provider = shared_state.get("public_chat_llm_provider")
         runner = build_public_chat_runner(pool=pool, settings=cfg, llm_provider=provider)
         shared_state["public_chat_runner"] = runner
-        log_public_chat_event(
-            etapa="integration.runner_init",
-            fase="post",
-            dados={"pool_shared": shared_state.get("postgres_pool") is pool},
-        )
+        # log_public_chat_event(
+        #     etapa="integration.runner_init",
+        #     fase="post",
+        #     dados={"pool_shared": shared_state.get("postgres_pool") is pool},
+        # )
         _LOG.info("Public chat runner initialized")
         return runner
 
