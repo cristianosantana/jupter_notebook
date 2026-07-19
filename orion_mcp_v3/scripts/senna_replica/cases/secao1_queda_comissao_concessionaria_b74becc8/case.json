@@ -1,0 +1,23 @@
+{
+  "status": "known_bug",
+  "secao": 1,
+  "bug_summary": "Queda comissão jan→mai: janeiro existe (id=4) mas runtime devolveu lookup maio GWM BAMAQ; memory completa 01..05 sem truncamento; B=BAMAQ - OFICINA ~-61.19%.",
+  "trace_id": "b74becc8-8c9e-4a15-a587-889efce8f0eb",
+  "question": "Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?",
+  "memory_json": "./memory.json",
+  "trace_jsonl": "./trace.jsonl",
+  "intent": {
+    "operation": "period_decline",
+    "dimension": "concessionaria",
+    "periods": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"],
+    "index_key": "faturamento_e_comissao_por_concessionaria",
+    "scope_filters": []
+  },
+  "runtime_verdict": {
+    "label": "GWM BAMAQ",
+    "value": 43584.46,
+    "unit": "BRL",
+    "confidence": 0.95,
+    "note": "lookup maio único; narrador alegou jan ausente apesar de origin_id=4 no DB"
+  }
+}

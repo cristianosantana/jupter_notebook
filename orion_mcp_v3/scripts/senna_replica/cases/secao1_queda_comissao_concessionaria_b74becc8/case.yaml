@@ -1,0 +1,31 @@
+status: known_bug
+secao: 1
+bug_summary: |
+  Queda de comissão jan→mai 2026: janeiro EXISTE em memory_curta (origin_id=4),
+  mas o runtime falhou complete_period / resolve (no_index_entry_for_period)
+  e entregou lookup de maio (GWM BAMAQ R$ 43.584) em vez do ranking de maior
+  queda. memory.json reconstrói a lista COMPLETA (sem truncated_head_tail) de
+  todos os meses do intervalo (2026-01..2026-05) a partir de validated_answer.
+  Veredito B esperado: BAMAQ - OFICINA ~−61,19% (jan→mai).
+
+trace_id: "b74becc8-8c9e-4a15-a587-889efce8f0eb"
+question: |
+  Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?
+
+memory_json: "./memory.json"
+trace_jsonl: "./trace.jsonl"
+
+intent:
+  operation: period_decline
+  dimension: concessionaria
+  # Intervalo pedido na pergunta; Veredito B compara extremos (01→05).
+  periods: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"]
+  index_key: faturamento_e_comissao_por_concessionaria
+  scope_filters: []
+
+runtime_verdict:
+  label: "GWM BAMAQ"
+  value: 43584.46
+  unit: BRL
+  confidence: 0.95
+  note: "lookup maio único; narrador alegou jan ausente apesar de origin_id=4 no DB"
