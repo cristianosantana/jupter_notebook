@@ -14,6 +14,8 @@ EXTRACTION_CONFIDENCE: dict[ExtractionPath, float] = {
 
 MIN_FACT_CONFIDENCE = 0.65
 MIN_DERIVE_CONFIDENCE = 0.80
+# Persistência de cache: exige fatos + confiança útil; gaps sozinhos não bloqueiam.
+MIN_CACHE_STORE_CONFIDENCE = 0.80
 
 
 def confidence_for_path(path: ExtractionPath) -> float:

@@ -11,7 +11,10 @@ from orion_mcp_v3.public_chat.application.context_pipeline import prepare_select
 from orion_mcp_v3.public_chat.application.context_window import load_context_window
 from orion_mcp_v3.public_chat.application.workspace_pipeline import build_remissive_workspace
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
-from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_FACT_CONFIDENCE
+from orion_mcp_v3.public_chat.domain.fact_engine.confidence import (
+    MIN_CACHE_STORE_CONFIDENCE,
+    MIN_FACT_CONFIDENCE,
+)
 from orion_mcp_v3.public_chat.domain.fact_engine.models import RemissiveWorkspace
 from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
@@ -64,16 +67,23 @@ def should_store_resolution_cache(
     *,
     presentation: str | None = None,
 ) -> bool:
-    """Não persiste cache quando o workspace não tem fatos validados suficientes."""
+    """Persiste cache quando há fatos úteis com confiança suficiente.
+
+    Gaps (ex.: dimensão extra não resolvida) não bloqueiam sozinhos — uma
+    resposta parcial com fact_count > 0 e confidence alta ainda é reutilizável.
+    """
     if presentation is not None and is_no_facts_fallback(presentation):
         return False
     if workspace is None:
         return True
-    return (
-        not workspace.gaps
-        and bool(workspace.facts)
-        and workspace.workspace_confidence >= MIN_FACT_CONFIDENCE
-    )
+    return bool(workspace.facts) and workspace.workspace_confidence >= MIN_CACHE_STORE_CONFIDENCE
+
+
+def workspace_cache_partial(workspace: RemissiveWorkspace | None) -> bool:
+    """True quando o workspace tem fatos mas também gaps (resposta parcial)."""
+    if workspace is None:
+        return False
+    return bool(workspace.facts) and bool(workspace.gaps)
 
 
 class ConsultaTurnRunner:
@@ -448,7 +458,16 @@ class ConsultaTurnRunner:
         presentation = "".join(presentation_parts)
         workspace = workspace_holder[0] if workspace_holder else None
 
-        answer_payload = build_answer_payload(knowledge)
+        partial = workspace_cache_partial(workspace)
+        missing_fact_keys = (
+            tuple(gap.fact_key for gap in workspace.gaps) if workspace else ()
+        )
+        answer_payload = build_answer_payload(
+            knowledge,
+            partial=partial,
+            gap_count=len(workspace.gaps) if workspace else 0,
+            missing_fact_keys=missing_fact_keys,
+        )
         knowledge_fingerprint = build_knowledge_fingerprint_from_knowledge(knowledge)
         store_cache = should_store_resolution_cache(workspace, presentation=presentation)
         if store_cache:
@@ -477,6 +496,20 @@ class ConsultaTurnRunner:
                 presentation_chars=len(presentation),
                 stored_snapshot=snapshot is not None,
             )
+            if partial:
+                log_public_chat_event(
+                    etapa="runner.cache_stored_partial",
+                    fase="post",
+                    dados={
+                        "response_id": str(response_id),
+                        "gap_count": answer_payload.gap_count,
+                        "missing_fact_keys": list(answer_payload.missing_fact_keys),
+                        "workspace_confidence": (
+                            workspace.workspace_confidence if workspace else None
+                        ),
+                        "fact_count": len(workspace.facts) if workspace else 0,
+                    },
+                )
         else:
             response_id = question_id
             log_public_chat_event(
@@ -489,6 +522,7 @@ class ConsultaTurnRunner:
                     "gap_count": len(workspace.gaps) if workspace else 0,
                     "fact_count": len(workspace.facts) if workspace else 0,
                     "workspace_confidence": workspace.workspace_confidence if workspace else None,
+                    "min_cache_store_confidence": MIN_CACHE_STORE_CONFIDENCE,
                     "min_fact_confidence": MIN_FACT_CONFIDENCE,
                 },
             )

@@ -13,6 +13,7 @@ from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap, GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.requirement_kind import RequirementKind
 from orion_mcp_v3.public_chat.domain.intent_contract import IntentContract
+from orion_mcp_v3.public_chat.domain.intent_heuristics import sanitize_ranking_entity_filters
 from orion_mcp_v3.public_chat.domain.key_metrics_introspection import (
     HeuristicStatus,
     KeyMetricsIndexEntry,
@@ -64,6 +65,7 @@ async def plan_analytical_requirements(
     t0 = time.monotonic()
     special = special_catalog or NoOpSpecialCatalog()
     composition = composition_planner or NoOpCompositionPlanner()
+    contract = sanitize_ranking_entity_filters(contract)
 
     index = build_key_metrics_index_from_hits(knowledge.hits)
     if not index:

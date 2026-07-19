@@ -63,29 +63,55 @@ class AnswerPayload:
     context_keys: tuple[str, ...]
     knowledge_ids: tuple[int, ...]
     essence_themes: tuple[str, ...]
+    partial: bool = False
+    gap_count: int = 0
+    missing_fact_keys: tuple[str, ...] = ()
 
     def as_mapping(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "context_keys": list(self.context_keys),
             "knowledge_ids": list(self.knowledge_ids),
             "essence_themes": list(self.essence_themes),
         }
+        if self.partial or self.gap_count or self.missing_fact_keys:
+            payload["partial"] = self.partial
+            payload["gap_count"] = self.gap_count
+            payload["missing_fact_keys"] = list(self.missing_fact_keys)
+        return payload
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> AnswerPayload:
         context_keys = tuple(str(item) for item in (data.get("context_keys") or []))
         knowledge_ids = tuple(int(item) for item in (data.get("knowledge_ids") or []))
         essence_themes = tuple(str(item) for item in (data.get("essence_themes") or []))
+        missing_raw = data.get("missing_fact_keys") or []
+        missing_fact_keys = tuple(str(item) for item in missing_raw)
+        try:
+            gap_count = int(data.get("gap_count") or 0)
+        except (TypeError, ValueError):
+            gap_count = 0
         return cls(
             context_keys=context_keys,
             knowledge_ids=knowledge_ids,
             essence_themes=essence_themes,
+            partial=bool(data.get("partial")),
+            gap_count=max(0, gap_count),
+            missing_fact_keys=missing_fact_keys,
         )
 
 
-def build_answer_payload(knowledge: ConhecimentoRecuperado) -> AnswerPayload:
+def build_answer_payload(
+    knowledge: ConhecimentoRecuperado,
+    *,
+    partial: bool = False,
+    gap_count: int = 0,
+    missing_fact_keys: tuple[str, ...] = (),
+) -> AnswerPayload:
     return AnswerPayload(
         context_keys=tuple(hit.context_key for hit in knowledge.hits),
         knowledge_ids=tuple(hit.origin_id for hit in knowledge.hits),
         essence_themes=tuple(item.theme for item in knowledge.essence),
+        partial=partial,
+        gap_count=gap_count,
+        missing_fact_keys=missing_fact_keys,
     )

@@ -141,6 +141,11 @@ def entities_for_dimension(
     grouped = group_entity_filters_by_dimension(contract)
     if target in grouped and grouped[target]:
         return grouped[target]
+    # Ranking no eixo inteiro: não inventar entidade a partir do texto da mensagem
+    # (ex.: "1x a 10x" → primeiro match "1X").
+    operation = (contract.operation or "").strip().lower()
+    if operation in {"ranking_asc", "ranking_desc", "min", "max"}:
+        return ()
     entity = _single_entity_for_dimension(contract, dimension, message=message)
     return (entity,) if entity else ()
 

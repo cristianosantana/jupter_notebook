@@ -19,14 +19,39 @@ Rodada sobre 23 turnos de `public_chat_pipeline` e 8 turnos de `analytics_pipeli
 
 ---
 
-## Seção 1 (mais crítico, novo) — Interpretação de expressões de intervalo/lista como filtro literal único
+## Seção 1 (mais crítico) — Ranking/comparação não colapsa em filtro único
 
-- **O que é:** o `intent.interpret` pode transformar uma expressão que descreve um **universo de valores a comparar** (ex.: "qual parcela, de 1x a 10x, teve maior crescimento") em um `entity_filter` de **valor único** (ex.: `parcelas=1X`), fazendo o `fact.plan` gerar apenas uma `fact_key` em vez de um conjunto para ranking.
-- **Por que é o mais crítico de todos:** é o único item, entre tudo discutido até agora, com evidência direta de produzir uma **resposta factualmente incompleta entregue com confiança alta (0.9)** a uma pergunta real. O sistema chega a mencionar a própria limitação dentro do texto da resposta ("é o único registro disponível"), mas embutida como se fosse parte natural do resultado de um ranking — não como um alerta. Um usuário lendo rápido sai convencido de que houve uma comparação real entre 10 opções.
-- **Diferença em relação ao bug histórico já corrigido:** a correção anterior tratava múltiplos `entity_filters` sendo descartados. Aqui o problema é anterior a isso — um único `entity_filter` malformado, construído a partir da má leitura de uma expressão de intervalo. É uma causa raiz nova dentro da mesma família de sintoma (perda silenciosa de abrangência).
-- **Dependências:** nenhuma das seções abaixo depende deste item, mas ele deveria ser corrigido antes de qualquer trabalho em cima do `intent.interpret` para as Seções 2 e 3, para não misturar causas na mesma revisão.
-- **Ação recomendada:** revisar como `intent.interpret` reconhece e representa expressões de intervalo/enumeração (ex.: "de 1x a 10x", "entre X e Y", "qualquer uma das formas de pagamento") — decidir se a saída correta é: (a) uma operação de tipo `ranking` sem `entity_filter` fixo, deixando o `fact.plan` expandir para todas as entidades daquele eixo, ou (b) um novo tipo de `entity_filter` que representa um **conjunto** de valores, não um valor único. Em paralelo, tratar como regra de segurança imediata: sempre que uma resposta de ranking for baseada em `n=1` registro, a confiança relatada deve refletir isso — não deveria sair como 0.9 nesse cenário, independentemente da causa raiz ser corrigida ou não.
-- **Critério de conclusão:** uma pergunta de ranking sobre um eixo com múltiplos valores possíveis gera `fact_keys` cobrindo todos os valores relevantes do eixo (ou, quando isso não for viável, a resposta declara explicitamente e com destaque — não como nota de rodapé — que a comparação foi parcial, com confiança ajustada para refletir isso.
+- **O que é:** o pipeline pode transformar uma pergunta de ranking/comparação
+  sobre um eixo (ex.: "qual parcela, de 1x a 10x, teve maior crescimento") em
+  um `entity_filter` de **valor único** na mesma dimensão-alvo, e em seguida
+  fragmentar o dado gerando `dynamic:` `fact_key` por entidade (`@1x`) em vez
+  de consumir o `ranked_list` já persistido por período.
+- **Por que é o mais crítico:** evidência direta de resposta factualmente
+  incompleta com confiança alta (0.9) no turno auditado — o sistema embutiu
+  "único registro disponível" como se fosse vitória de ranking completo.
+- **Evidência de dados:** cada entrada `memory_curta` de
+  `parcelamento_de_cartao` já traz um `ranked_list` com todas as parcelas do
+  período; `total_original_rows` varia (8–10) — domínio estático 1X–10X seria
+  incorreto. O mesmo formato vale para outras dimensões abertas
+  (`forma_pagamento`, `tipo_de_venda`, etc.).
+- **Correção em 4 camadas genéricas (sem domínio estático por dimensão):**
+  1. **Sanitização estrutural** — se a operação é `ranking_*` e existe
+     `entity_filter` na mesma dimensão-alvo, descartar o filtro antes do
+     planner (contradição lógica, independente do texto).
+  2. **Preferir `ranked_list`** — ranking/comparação sem entidade fixada
+     consome o(s) `ranked_list`(s) do(s) período(s); não gera N `dynamic:`
+     por entidade. Entre períodos, compara a **interseção** de linhas
+     (ausência num mês ≠ gap a reclamar).
+  3. **Aggregation/scope** — filtro de escopo em outra dimensão não força
+     LOOKUP; só filtro/entidade no eixo do índice.
+  4. **Gate de confiança** — interseção com 1 linha ou
+     `truncated_head_tail: true` → confidence reduzida + narrador declara
+     parcial em destaque.
+- **Critério de conclusão:** ranking cobre o eixo via `ranked_list` (ou
+  declara parcial com confiança ajustada); nenhuma constante de domínio
+  estático por dimensão no runtime. O script Prolog
+  `ranking_parcelas_senna_pattern.pl` permanece apenas como oracle de
+  auditoria.
 
 ---
 

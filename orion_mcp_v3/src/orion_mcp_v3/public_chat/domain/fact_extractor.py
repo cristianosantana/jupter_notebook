@@ -47,11 +47,18 @@ from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
 from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event
 
+PARTIAL_RANKING_CONFIDENCE = 0.4
+_RANKING_OPERATIONS = frozenset(
+    {"ranking_asc", "ranking_desc", "min", "max"},
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ExtractionResult:
     facts: tuple[ExtractedFact, ...]
     gaps: tuple[FactGap, ...]
+    ranking_base_rows: int | None = None
+    source_truncated: bool = False
 
 
 class FactExtractor:
@@ -66,25 +73,60 @@ class FactExtractor:
         facts: list[ExtractedFact] = []
         gaps: list[FactGap] = []
         extracted_by_key: dict[str, ExtractedFact] = {}
+        ranking_base_rows: int | None = None
+        source_truncated = False
 
+        cross_period_keys = _cross_period_ranking_fact_keys(requirements, resolved)
         for requirement in requirements:
             if requirement.semantics.aggregation_rule == AggregationRule.DERIVED:
+                continue
+            if requirement.fact_key in cross_period_keys:
                 continue
             resolved_hit = resolved.get(requirement.fact_key)
             if resolved_hit is None:
                 continue
-            fact, gap = self._extract_one(requirement, resolved_hit, semantics_version=semantics_version)
+            if _key_metrics_truncated(resolved_hit.hit, requirement):
+                source_truncated = True
+            fact, gap, base_rows = self._extract_one(
+                requirement,
+                resolved_hit,
+                semantics_version=semantics_version,
+            )
             if fact is not None:
                 facts.append(fact)
                 extracted_by_key[fact.fact_key] = fact
+                if base_rows is not None:
+                    ranking_base_rows = (
+                        base_rows
+                        if ranking_base_rows is None
+                        else min(ranking_base_rows, base_rows)
+                    )
             if gap is not None:
                 gaps.append(gap)
+
+        growth_facts, growth_gaps, growth_rows, growth_truncated = self._compute_cross_period_ranking(
+            requirements,
+            resolved,
+            semantics_version=semantics_version,
+            skip_keys=cross_period_keys,
+        )
+        facts.extend(growth_facts)
+        gaps.extend(growth_gaps)
+        if growth_rows is not None:
+            ranking_base_rows = growth_rows if ranking_base_rows is None else min(ranking_base_rows, growth_rows)
+        if growth_truncated:
+            source_truncated = True
 
         derived_facts, derived_gaps = self._compute_derived(requirements, extracted_by_key, semantics_version)
         facts.extend(derived_facts)
         gaps.extend(derived_gaps)
 
-        result = ExtractionResult(facts=tuple(facts), gaps=tuple(gaps))
+        result = ExtractionResult(
+            facts=tuple(facts),
+            gaps=tuple(gaps),
+            ranking_base_rows=ranking_base_rows,
+            source_truncated=source_truncated,
+        )
         discarded_scope = [
             item
             for fact in result.facts
@@ -97,6 +139,8 @@ class FactExtractor:
                 "latency_ms": round((time.monotonic() - t0) * 1000.0, 2),
                 "fact_count": len(result.facts),
                 "gap_count": len(result.gaps),
+                "ranking_base_rows": result.ranking_base_rows,
+                "source_truncated": result.source_truncated,
                 "facts": [fact.as_mapping() for fact in result.facts],
                 "gaps": [gap.as_mapping() for gap in result.gaps],
                 "discarded_scope": discarded_scope,
@@ -110,7 +154,7 @@ class FactExtractor:
         resolved_hit: ResolvedMemoryHit,
         *,
         semantics_version: str,
-    ) -> tuple[ExtractedFact | None, FactGap | None]:
+    ) -> tuple[ExtractedFact | None, FactGap | None, int | None]:
         hit = resolved_hit.hit
         resolution_trace = resolved_hit.resolution_trace
         semantics = requirement.semantics
@@ -123,17 +167,17 @@ class FactExtractor:
                 origin_ids_attempted=(hit.origin_id,),
                 attempted_rules=(resolution_trace.rule_applied.value,),
                 resolution_trace=resolution_trace,
-            )
+            ), None
 
         for source in semantics.source_priority:
             if source == SourcePriority.KEY_METRICS:
-                fact = self._from_key_metrics(requirement, hit, resolution_trace)
+                fact, base_rows = self._from_key_metrics(requirement, hit, resolution_trace)
                 if fact is not None:
-                    return fact, None
+                    return fact, None, base_rows
             elif source in (SourcePriority.STRUCTURED, SourcePriority.PARSED_TEXT):
                 fact = self._from_parsed_text(requirement, hit, resolution_trace)
                 if fact is not None:
-                    return fact, None
+                    return fact, None, 1 if requirement.entity else None
 
         return None, FactGap(
             fact_key=requirement.fact_key,
@@ -142,14 +186,14 @@ class FactExtractor:
             origin_ids_attempted=(hit.origin_id,),
             attempted_rules=(resolution_trace.rule_applied.value,),
             resolution_trace=resolution_trace,
-        )
+        ), None
 
     def _from_key_metrics(
         self,
         requirement: FactRequirement,
         hit: KnowledgeHit,
         resolution_trace,
-    ) -> ExtractedFact | None:
+    ) -> tuple[ExtractedFact | None, int | None]:
         semantics = requirement.semantics
         keys = semantics.key_metrics_keys or ("faturamento_liquido",)
         axes = scope_axes_from_hit_meta(hit, requirement.matched_key)
@@ -172,11 +216,7 @@ class FactExtractor:
                 label=key,
                 value=value,
                 discarded_scope=discarded_scope,
-            )
-
-        entity_fields = (semantics.key_metrics_entity_field, "tipo", "label", "metric")
-        value_fields = (semantics.key_metrics_value_field, "valor", "value")
-        _ = (entity_fields, value_fields)
+            ), 1
 
         for key in keys:
             raw = hit.key_metrics.get(key)
@@ -208,7 +248,7 @@ class FactExtractor:
                         display_value=display,
                         unit="pct" if value_field == "percentual" else "BRL",
                         discarded_scope=discarded_scope,
-                    )
+                    ), 1
                 if semantics.fact_key == "faturamento_total_periodo":
                     total = sum_row_values(rows)
                     if total is not None:
@@ -219,7 +259,7 @@ class FactExtractor:
                             label=key,
                             value=total,
                             discarded_scope=discarded_scope,
-                        )
+                        ), len(rows)
                 continue
 
             if semantics.aggregation_rule in (AggregationRule.MIN, AggregationRule.MAX):
@@ -237,9 +277,92 @@ class FactExtractor:
                     display_value=display,
                     unit="pct" if value_field == "percentual" else "BRL",
                     discarded_scope=discarded_scope,
-                )
+                ), len(rows)
 
-        return None
+        return None, None
+
+    def _compute_cross_period_ranking(
+        self,
+        requirements: tuple[FactRequirement, ...],
+        resolved: dict[str, ResolvedMemoryHit],
+        *,
+        semantics_version: str,
+        skip_keys: frozenset[str],
+    ) -> tuple[list[ExtractedFact], list[FactGap], int | None, bool]:
+        if not skip_keys:
+            return [], [], None, False
+        groups: dict[str, list[FactRequirement]] = {}
+        for requirement in requirements:
+            if requirement.fact_key not in skip_keys:
+                continue
+            key = requirement.matched_key or ""
+            groups.setdefault(key, []).append(requirement)
+
+        facts: list[ExtractedFact] = []
+        gaps: list[FactGap] = []
+        comparable_rows: int | None = None
+        truncated = False
+        for matched_key, group in groups.items():
+            if len(group) < 2 or not matched_key:
+                continue
+            period_rows: list[tuple[FactRequirement, ResolvedMemoryHit, tuple]] = []
+            for requirement in group:
+                resolved_hit = resolved.get(requirement.fact_key)
+                if resolved_hit is None:
+                    continue
+                if _key_metrics_truncated(resolved_hit.hit, requirement):
+                    truncated = True
+                rows = _rows_for_requirement(requirement, resolved_hit.hit)
+                if rows:
+                    period_rows.append((requirement, resolved_hit, rows))
+            if len(period_rows) < 2:
+                continue
+            # Ordena por período para crescimento = final - inicial
+            period_rows.sort(key=lambda item: item[0].period or "")
+            first_req, first_hit, first_rows = period_rows[0]
+            last_req, last_hit, last_rows = period_rows[-1]
+            growth = _growth_by_label(first_rows, last_rows)
+            if not growth:
+                gaps.append(
+                    FactGap(
+                        fact_key=f"dynamic:{matched_key}@growth",
+                        reason=GapReason.EXTRACTION_FAILED,
+                        detail="no intersecting entities across periods for ranking growth",
+                    )
+                )
+                continue
+            ascending = (first_req.operation or "").lower() in (
+                "ranking_asc",
+                "min",
+            )
+            ranked = sorted(growth.items(), key=lambda item: item[1], reverse=not ascending)
+            winner_label, winner_pct = ranked[0]
+            comparable_rows = len(growth) if comparable_rows is None else min(comparable_rows, len(growth))
+            confidence = confidence_for_path(ExtractionPath.RANKING_DERIVED)
+            if comparable_rows <= 1 or truncated:
+                confidence = min(confidence, PARTIAL_RANKING_CONFIDENCE)
+            fact_key = f"dynamic:{matched_key}@growth:{first_req.period or ''}:{last_req.period or ''}"
+            facts.append(
+                ExtractedFact(
+                    fact_key=fact_key,
+                    label=winner_label,
+                    value=f"{winner_pct:.2f}%",
+                    unit="pct",
+                    fact_type=FactType.DERIVED,
+                    confidence=confidence,
+                    origin_id=last_hit.hit.origin_id,
+                    context_key=last_hit.hit.context_key,
+                    trace=FactTrace(
+                        fact_key=fact_key,
+                        resolved_from=(first_hit.hit.origin_id, last_hit.hit.origin_id),
+                        context_keys=(first_hit.hit.context_key, last_hit.hit.context_key),
+                        rule_applied=ResolutionRule.JOIN_PLAN,
+                        extraction_path=ExtractionPath.RANKING_DERIVED,
+                        semantics_version=semantics_version,
+                    ),
+                )
+            )
+        return facts, gaps, comparable_rows, truncated
 
     def _build_key_metrics_fact(
         self,
@@ -449,3 +572,73 @@ def _rows_with_percentual_values(rows: tuple) -> tuple:
                     )
                 )
     return tuple(converted) if converted else rows
+
+
+def _cross_period_ranking_fact_keys(
+    requirements: tuple[FactRequirement, ...],
+    resolved: dict[str, ResolvedMemoryHit],
+) -> frozenset[str]:
+    """Requirements de ranking sem entidade, mesmo matched_key, ≥2 períodos."""
+    buckets: dict[str, list[FactRequirement]] = {}
+    for requirement in requirements:
+        operation = (requirement.operation or "").lower()
+        if operation not in _RANKING_OPERATIONS:
+            continue
+        if requirement.entity:
+            continue
+        if requirement.fact_key not in resolved:
+            continue
+        matched = requirement.matched_key or ""
+        if not matched:
+            continue
+        buckets.setdefault(matched, []).append(requirement)
+    keys: set[str] = set()
+    for group in buckets.values():
+        periods = {req.period for req in group if req.period}
+        if len(periods) < 2:
+            continue
+        for req in group:
+            keys.add(req.fact_key)
+    return frozenset(keys)
+
+
+def _rows_for_requirement(requirement: FactRequirement, hit: KnowledgeHit) -> tuple:
+    keys = requirement.semantics.key_metrics_keys or ()
+    for key in keys:
+        raw = hit.key_metrics.get(key)
+        if raw is None:
+            continue
+        rows = rows_from_key_metrics_entry(key, raw)
+        if rows:
+            return rows
+    return ()
+
+
+def _normalize_row_label(label: str) -> str:
+    return "".join(ch for ch in label.lower().strip() if ch.isalnum())
+
+
+def _growth_by_label(first_rows: tuple, last_rows: tuple) -> dict[str, float]:
+    first_map = {_normalize_row_label(row.label): row for row in first_rows if row.label}
+    last_map = {_normalize_row_label(row.label): row for row in last_rows if row.label}
+    growth: dict[str, float] = {}
+    for key, first_row in first_map.items():
+        last_row = last_map.get(key)
+        if last_row is None:
+            continue
+        if first_row.value == 0:
+            continue
+        pct = ((last_row.value - first_row.value) / first_row.value) * 100.0
+        growth[first_row.label] = pct
+    return growth
+
+
+def _key_metrics_truncated(hit: KnowledgeHit, requirement: FactRequirement) -> bool:
+    for key in requirement.semantics.key_metrics_keys or ():
+        raw = hit.key_metrics.get(key)
+        if not isinstance(raw, dict):
+            continue
+        meta = raw.get("_meta")
+        if isinstance(meta, dict) and meta.get("truncated_head_tail") is True:
+            return True
+    return False

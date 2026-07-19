@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
 from orion_mcp_v3.public_chat.domain.intent_parser import (
@@ -13,6 +14,17 @@ from orion_mcp_v3.public_chat.domain.intent_parser import (
 from orion_mcp_v3.public_chat.domain.period_selection import (
     extract_parcel_count_entity,
     normalize_parcel_entity,
+)
+
+_RANKING_OPERATIONS = frozenset(
+    {
+        PublicOperationType.RANKING_ASC.value,
+        PublicOperationType.RANKING_DESC.value,
+        "ranking_asc",
+        "ranking_desc",
+        "min",
+        "max",
+    }
 )
 
 _OPERATION_ASC = (
@@ -118,7 +130,9 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     entity_filters = _apply_payment_method_filter(entity_filters, message)
     dimension = _dimension_for_cortesia_group(dimension, entity_filters)
     entity_filters = _entity_filters_for_dimension(entity_filters, dimension)
-    return IntentContract(
+    if dimension == "parcelamento":
+        dimension = "parcelas"
+    enriched = IntentContract(
         intent=contract.intent,
         metric=metric,
         period=period,
@@ -129,6 +143,62 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
         dimension=dimension,
         sort_direction=sort_direction,
     )
+    return sanitize_ranking_entity_filters(enriched)
+
+
+def sanitize_ranking_entity_filters(contract: IntentContract) -> IntentContract:
+    """Descarta entity_filter na dimensão-alvo quando a operação é ranking.
+
+    Pedir ranking/comparação no eixo X e fixar X num valor único são
+    mutuamente exclusivos. Filtros de escopo em outras dimensões permanecem.
+    Comparação multi-entidade (2+ valores no mesmo eixo) não passa por aqui —
+    só ranking_asc/ranking_desc.
+    """
+    operation = (contract.operation or "").strip().lower()
+    if operation not in _RANKING_OPERATIONS:
+        return contract
+    target = _normalize_ranking_dimension(contract.dimension)
+    if not target:
+        return contract
+    kept: list[EntityFilter] = []
+    for filt in contract.entity_filters:
+        dim = _normalize_ranking_dimension(filt.dimension)
+        if dim == "periodo":
+            kept.append(filt)
+            continue
+        if dim == target:
+            continue
+        kept.append(filt)
+    if len(kept) == len(contract.entity_filters):
+        return contract
+    return IntentContract(
+        intent=contract.intent,
+        metric=contract.metric,
+        period=contract.period,
+        domain=contract.domain,
+        entity_filters=tuple(kept),
+        confidence=contract.confidence,
+        operation=contract.operation,
+        dimension=contract.dimension,
+        sort_direction=contract.sort_direction,
+    )
+
+
+def _normalize_ranking_dimension(value: str | None) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"\s+", "_", ascii_text).strip("_")
+    aliases = {
+        "parcelas": ("parcelas", "parcelamento", "parcela"),
+        "forma_pagamento": ("forma_pagamento", "pagamento", "tipo_de_pagamento"),
+        "tipo_de_venda": ("tipo_de_venda", "tipo_venda", "venda"),
+    }
+    for canonical, options in aliases.items():
+        if slug in options:
+            return canonical
+    return slug
 
 
 def _sort_direction_from_operation(operation: str | None) -> str | None:

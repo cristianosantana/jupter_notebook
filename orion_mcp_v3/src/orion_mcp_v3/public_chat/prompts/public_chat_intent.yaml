@@ -28,8 +28,11 @@ system: |
   - "pior", "menor", "mínimo" → operation: ranking_asc
   - "melhor", "maior", "top", "dominante" → operation: ranking_desc
   - "forma de pagamento" / "PIX" / "cartão de crédito" (sem parcelas) → dimension: forma_pagamento
-  - "5x", "10x", "parcelas", "parcelamento" → dimension: parcelas; entity_filters com value normalizado (ex.: 5X)
-  - "cartão de crédito em 5x" → dimension: parcelas (não forma_pagamento); entity_filters: [{dimension: parcelas, value: 5X}]
+  - "5x", "10x" como valor único pedido → dimension: parcelas; entity_filters com value normalizado (ex.: 5X)
+  - "cartão de crédito em 5x" (consulta de valor único) → dimension: parcelas; entity_filters: [{dimension: parcelas, value: 5X}]
+  - ranking/comparação sobre um eixo (ex.: "qual parcela", "qual forma de pagamento", "de 1x a 10x",
+    "entre as opções") → operation ranking_* + dimension do eixo; NÃO filtre por um único valor
+    da mesma dimensão que está sendo comparada
   - comparacao = dois períodos/entidades; ranking_* = extremo numa dimensão
 
   Use heuristic_signals do prompt como reforço, não como resposta final isolada.
