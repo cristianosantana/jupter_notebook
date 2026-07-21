@@ -1,0 +1,60 @@
+[
+  {
+    "origin_id": 8,
+    "context_key": "sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-01",
+    "key_metrics": {
+      "parcelamento_de_cartao": {
+        "rows": [
+          {"parcelas": "10X", "valor": 681772.80},
+          {"parcelas": "1X", "valor": 157701.01},
+          {"parcelas": "6X", "valor": 103233.90},
+          {"parcelas": "5X", "valor": 69004.00},
+          {"parcelas": "3X", "valor": 49109.00},
+          {"parcelas": "2X", "valor": 38927.00},
+          {"parcelas": "4X", "valor": 36559.00},
+          {"parcelas": "9X", "valor": 6100.00},
+          {"parcelas": "8X", "valor": 2350.00},
+          {"parcelas": "7X", "valor": 1500.00}
+        ],
+        "_meta": {
+          "schema": "ranked_list",
+          "dimension": "parcelas",
+          "metric_kind": "revenue",
+          "value_field": "valor",
+          "entity_field": "parcelas",
+          "total_original_rows": 10,
+          "truncated_head_tail": false
+        }
+      }
+    }
+  },
+  {
+    "origin_id": 49,
+    "context_key": "sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-06",
+    "key_metrics": {
+      "parcelamento_de_cartao": {
+        "rows": [
+          {"parcelas": "10X", "valor": 767384.20},
+          {"parcelas": "6X", "valor": 139341.10},
+          {"parcelas": "1X", "valor": 101027.22},
+          {"parcelas": "3X", "valor": 70383.04},
+          {"parcelas": "4X", "valor": 44150.19},
+          {"parcelas": "5X", "valor": 30526.80},
+          {"parcelas": "2X", "valor": 20199.20},
+          {"parcelas": "9X", "valor": 5000.00},
+          {"parcelas": "8X", "valor": 1900.00},
+          {"parcelas": "7X", "valor": 1200.00}
+        ],
+        "_meta": {
+          "schema": "ranked_list",
+          "dimension": "parcelas",
+          "metric_kind": "revenue",
+          "value_field": "valor",
+          "entity_field": "parcelas",
+          "total_original_rows": 10,
+          "truncated_head_tail": false
+        }
+      }
+    }
+  }
+]

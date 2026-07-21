@@ -2,6 +2,7 @@
 
 from orion_mcp_v3.public_chat.domain.fact_engine.confidence import (
     EXTRACTION_CONFIDENCE,
+    MIN_CACHE_STORE_CONFIDENCE,
     MIN_DERIVE_CONFIDENCE,
     MIN_FACT_CONFIDENCE,
     confidence_for_path,
@@ -42,6 +43,7 @@ __all__ = [
     "FactTrace",
     "FactType",
     "GapReason",
+    "MIN_CACHE_STORE_CONFIDENCE",
     "MIN_DERIVE_CONFIDENCE",
     "MIN_FACT_CONFIDENCE",
     "MemoryJoinPlan",

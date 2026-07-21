@@ -12,9 +12,11 @@ from orion_mcp_v3.public_chat.application.consulta_turn_runner import (
     should_store_resolution_cache,
 )
 from orion_mcp_v3.public_chat.config.settings import PublicChatSettings
-from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_FACT_CONFIDENCE
+from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_CACHE_STORE_CONFIDENCE
+from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap, GapReason
-from orion_mcp_v3.public_chat.domain.fact_engine.models import RemissiveWorkspace
+from orion_mcp_v3.public_chat.domain.fact_engine.models import ExtractedFact, RemissiveWorkspace
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace, ResolutionRule
 from orion_mcp_v3.public_chat.domain.knowledge import (
     ConhecimentoRecuperado,
     KnowledgeHit,
@@ -367,14 +369,38 @@ async def test_runner_full_hit_then_miss() -> None:
     retriever.retrieve.assert_awaited_once()
 
 
+def _fact(fact_key: str = "dynamic:parcelamento_de_cartao@growth") -> ExtractedFact:
+    return ExtractedFact(
+        fact_key=fact_key,
+        label="3X",
+        value="43.32%",
+        unit="pct",
+        fact_type=FactType.DERIVED,
+        confidence=0.85,
+        origin_id=49,
+        context_key="sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-06",
+        trace=FactTrace(
+            fact_key=fact_key,
+            resolved_from=(8, 49),
+            context_keys=(
+                "sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-01",
+                "sistema_background:fechamento_gerencial:parcelamento_cartao:periodo-2026-06",
+            ),
+            rule_applied=ResolutionRule.JOIN_PLAN,
+            extraction_path=ExtractionPath.RANKING_DERIVED,
+        ),
+    )
+
+
 def _weak_workspace(*, gap_count: int = 1, fact_count: int = 0, confidence: float = 0.0) -> RemissiveWorkspace:
     gaps = tuple(
         FactGap(fact_key=f"dynamic:periodo-{index}", reason=GapReason.KEY_METRICS_INDEX_AMBIGUOUS)
         for index in range(gap_count)
     )
+    facts = tuple(_fact(f"dynamic:fact-{index}") for index in range(fact_count))
     return RemissiveWorkspace(
         period="2026-02",
-        facts=(),
+        facts=facts,
         gaps=gaps if gap_count else (),
         requirements=(),
         join_plan=None,
@@ -395,10 +421,19 @@ def test_should_store_resolution_cache_rejects_weak_workspace() -> None:
     assert should_store_resolution_cache(_weak_workspace(gap_count=0, fact_count=0, confidence=0.9)) is False
     assert (
         should_store_resolution_cache(
-            _weak_workspace(gap_count=0, fact_count=0, confidence=MIN_FACT_CONFIDENCE - 0.01)
+            _weak_workspace(gap_count=0, fact_count=1, confidence=MIN_CACHE_STORE_CONFIDENCE - 0.01)
         )
         is False
     )
+
+
+def test_should_store_resolution_cache_allows_partial_with_facts_and_high_confidence() -> None:
+    workspace = _weak_workspace(gap_count=2, fact_count=1, confidence=0.85)
+    assert workspace.gaps
+    assert should_store_resolution_cache(workspace) is True
+    assert should_store_resolution_cache(
+        _weak_workspace(gap_count=0, fact_count=1, confidence=MIN_CACHE_STORE_CONFIDENCE)
+    ) is True
 
 
 @pytest.mark.asyncio

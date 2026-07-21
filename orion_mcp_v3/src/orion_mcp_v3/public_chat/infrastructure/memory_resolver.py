@@ -57,7 +57,7 @@ class MemoryResolver:
                 dados=join_plan.as_mapping(),
             )
 
-        catalog_hits = await self._load_catalog_hits(join_plan)
+        catalog_hits = await self._load_catalog_hits(join_plan, requirements)
         vector_hits = list(knowledge.hits)
 
         resolved: dict[str, ResolvedMemoryHit] = {}
@@ -110,18 +110,58 @@ class MemoryResolver:
         )
         return resolve_result
 
-    async def _load_catalog_hits(self, join_plan: MemoryJoinPlan | None) -> list[KnowledgeHit]:
-        if join_plan is None:
-            return []
-        patterns: list[str] = []
-        for source in join_plan.required_sources:
-            entry = self._catalog.theme_entry(source.theme_slug)
-            if entry is not None:
-                patterns.extend(entry.category_patterns)
-        if not patterns:
-            return []
-        hits = await self._reader.load_hits_by_theme_patterns(patterns)
+    async def _load_catalog_hits(
+        self,
+        join_plan: MemoryJoinPlan | None,
+        requirements: tuple[FactRequirement, ...] = (),
+    ) -> list[KnowledgeHit]:
+        hits: list[KnowledgeHit] = []
+        if join_plan is not None:
+            patterns: list[str] = []
+            for source in join_plan.required_sources:
+                entry = self._catalog.theme_entry(source.theme_slug)
+                if entry is not None:
+                    patterns.extend(entry.category_patterns)
+            if patterns:
+                hits = await self._reader.load_hits_by_theme_patterns(patterns)
+
+        # Rede de segurança: period + matched_key via context_key (não depende de LIMIT 20 do tema).
+        period_patterns = _period_key_patterns(requirements)
+        if period_patterns and hasattr(self._reader, "load_hits_by_context_key_patterns"):
+            extra = await self._reader.load_hits_by_context_key_patterns(period_patterns)
+            if isinstance(extra, list) and extra:
+                hits = _merge_knowledge_hits(hits, extra)
         return hits
+
+
+def _period_key_patterns(requirements: tuple[FactRequirement, ...]) -> list[str]:
+    from orion_mcp_v3.public_chat.infrastructure.remissive_retriever import (
+        _context_key_token_for_metric_key,
+    )
+
+    patterns: list[str] = []
+    for requirement in requirements:
+        period = (requirement.period or "").strip()
+        matched = (requirement.matched_key or "").strip()
+        if not period or not matched:
+            continue
+        token = _context_key_token_for_metric_key(matched)
+        patterns.append(f"%{token}%{period}%")
+    return list(dict.fromkeys(patterns))
+
+
+def _merge_knowledge_hits(
+    existing: list[KnowledgeHit],
+    extra: list[KnowledgeHit],
+) -> list[KnowledgeHit]:
+    merged = list(existing)
+    seen = {hit.origin_id for hit in merged}
+    for hit in extra:
+        if hit.origin_id in seen:
+            continue
+        seen.add(hit.origin_id)
+        merged.append(hit)
+    return merged
 
 
 def _filter_by_period(hits: list[KnowledgeHit], period: str | None) -> list[KnowledgeHit]:

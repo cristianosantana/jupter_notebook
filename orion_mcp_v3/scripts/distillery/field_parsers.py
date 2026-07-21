@@ -144,19 +144,56 @@ def _is_truncated_value(value: Any) -> bool:
     if isinstance(value, str):
         return bool(_TRUNCATION_VALUE_RE.search(value))
     return False
- 
- 
+
+
+def format_composite_metric_value(payload: dict[str, Any]) -> str:
+    """
+    Serializa sub-campos de linha composta de forma determinística.
+
+    Nunca usa ``str(dict)`` — saída estável: ``campo: valor | campo: valor``.
+    """
+    parts: list[str] = []
+    for field in sorted(payload.keys()):
+        raw = payload[field]
+        if raw is None:
+            continue
+        if isinstance(raw, dict):
+            raise ValueError(
+                f"key_metrics: valor estruturado nao serializado em subcampo {field!r}: {raw!r}"
+            )
+        text = raw.strip() if isinstance(raw, str) else str(raw)
+        if text:
+            parts.append(f"{field}: {text}")
+    return " | ".join(parts)
+
+
+def _normalize_metric_value(value: Any) -> Any:
+    """Garante que o valor de uma métrica nunca seja um dict aninhado cru."""
+    if isinstance(value, dict):
+        return format_composite_metric_value(value)
+    return value
+
+
 def _parse_list_item(item: Any, index: int, result: dict[str, Any]) -> None:
     if isinstance(item, dict):
         metric = item.get("metric") or item.get("name") or item.get("label")
+        payload = {k: v for k, v in item.items() if k not in {"metric", "name", "label"}}
         if isinstance(metric, str) and metric.strip():
-            entry_key = _metric_dict_key(metric, index)
-            payload = {k: v for k, v in item.items() if k not in {"metric", "name", "label"}}
-            result[entry_key] = (
-                payload["value"]
-                if (len(payload) == 1 and "value" in payload)
-                else (payload or dict(item))
-            )
+            if len(payload) == 1 and "value" in payload:
+                # linha simples: slug → valor escalar (compatível com testes legados)
+                result[_metric_dict_key(metric, index)] = payload["value"]
+                return
+            if not payload:
+                result[_metric_dict_key(metric, index)] = dict(item)
+                return
+            # linha composta (2+ eixos): mesma chave slug da linha simples
+            result[_metric_dict_key(metric, index)] = format_composite_metric_value(payload)
+            return
+        # sem label: se parecer row tipada, acumula em rows; senão item_N
+        if payload and "value" not in payload and any(
+            isinstance(v, (str, int, float)) for v in payload.values()
+        ):
+            result.setdefault("rows", []).append(dict(item))
             return
         result[f"item_{index}"] = dict(item)
         return
@@ -169,22 +206,29 @@ def _parse_list_item(item: Any, index: int, result: dict[str, Any]) -> None:
             result[_metric_dict_key(text, index)] = text
         return
     result[f"item_{index}"] = item
- 
- 
+
+
+_PRESERVED_CONTROL_KEYS = frozenset({"_meta"})
+
+
 def mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
     """
     Extrai dict de métricas com higienização de formato.
- 
+
     Aceita: dict direto ou lista de objetos/strings com label:valor.
- 
+
     Remove chaves espúrias de metadado inseridas pelo LLM (mais_21_linhas,
     observacao, chaves de truncagem textual, etc.). Truncagem estrutural
     cabeça/cauda ocorre em ``enrich_key_metrics``.
+
+    Dimensões compostas: valores dict aninhados são serializados de forma
+    determinística — nunca passam adiante como ``dict`` Python cru.
+    ``_meta`` e ``rows`` do schema canônico de tabela são preservados.
     """
     value = data.get(key, {})
     if value is None:
         return {}
- 
+
     raw: dict[str, Any] = {}
     if isinstance(value, dict):
         raw = dict(value)
@@ -193,21 +237,24 @@ def mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
             _parse_list_item(item, index, raw)
     else:
         raise ValueError(f"Campo deve ser objeto JSON: {key}")
- 
+
     clean: dict[str, Any] = {}
     for k, v in raw.items():
-        if k.startswith("_"):
+        if k.startswith("_") and k not in _PRESERVED_CONTROL_KEYS:
             logger.debug("key_metrics: chave de controle removida: %r", k)
             continue
-        if _is_spurious_key(k):
+        if k not in _PRESERVED_CONTROL_KEYS and k != "rows" and _is_spurious_key(k):
             logger.debug("key_metrics: chave espuria removida: %r", k)
+            continue
+        if k in _PRESERVED_CONTROL_KEYS or (k == "rows" and isinstance(v, list)):
+            clean[k] = v
             continue
         if _is_truncated_value(v):
             logger.warning(
                 "key_metrics: valor de truncagem na chave %r removido — dados incompletos.", k,
             )
             continue
-        clean[k] = v
+        clean[k] = _normalize_metric_value(v)
 
     return clean
 

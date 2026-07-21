@@ -39,6 +39,7 @@ from distillery.field_parsers import (
     required_str_any,
     string_tuple_any,
 )
+from distillery.schema_fingerprint import default_fingerprint_store
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,11 @@ def _parse_knowledge_item(item: dict[str, Any]) -> RemissiveKnowledgeItem | None
         metric_kind=metric_kind,
         dimension=dimension,
         theme=theme,
+    )
+    default_fingerprint_store().check_and_update(
+        theme=theme,
+        dimension=dimension,
+        key_metrics=normalized_metrics,
     )
 
     return RemissiveKnowledgeItem(

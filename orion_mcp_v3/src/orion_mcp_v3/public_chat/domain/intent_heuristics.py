@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
 from orion_mcp_v3.public_chat.domain.intent_parser import (
@@ -13,6 +14,17 @@ from orion_mcp_v3.public_chat.domain.intent_parser import (
 from orion_mcp_v3.public_chat.domain.period_selection import (
     extract_parcel_count_entity,
     normalize_parcel_entity,
+)
+
+_RANKING_OPERATIONS = frozenset(
+    {
+        PublicOperationType.RANKING_ASC.value,
+        PublicOperationType.RANKING_DESC.value,
+        "ranking_asc",
+        "ranking_desc",
+        "min",
+        "max",
+    }
 )
 
 _OPERATION_ASC = (
@@ -39,6 +51,34 @@ _OPERATION_DESC = (
     "dominantes",
     "principal",
     "principais",
+)
+
+# Coligações: "maior queda" não pode virar ranking_desc por causa de "maior" sozinho.
+_DECLINE_NEEDLES = (
+    "queda",
+    "quedas",
+    "declinio",
+    "declínio",
+    "reducao",
+    "redução",
+    "baixa",
+)
+_GROWTH_NEEDLES = (
+    "crescimento",
+    "alta",
+    "aumento",
+    "variacao positiva",
+    "variação positiva",
+)
+_EXTREME_NEEDLES = ("maior", "maiores", "maximo", "máximo", "maxima", "máxima")
+
+# Superlativo de liderança/volume: "mais vendido" + "manteve líder" ≠ comparison agregada.
+_SUPERLATIVE_RANKING_DESC_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bmais\s+vendid[oa]s?\b"),
+    re.compile(r"\bmais\s+produzid[oa]s?\b"),
+    re.compile(r"\bmais\s+faturad[oa]s?\b"),
+    re.compile(r"\bl[ií]der(?:es|ança|anca)?\b"),
+    re.compile(r"\bcampe[aã]o(?:es|ãs|as)?\b"),
 )
 
 _DIMENSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -69,17 +109,42 @@ def _coalesce_period(period: str | None) -> str | None:
     return None
 
 
+def _ranking_operation_from_collocation(text: str) -> str | None:
+    """Detecta 'maior queda' / 'maior crescimento' antes dos unigramas genéricos."""
+    has_extreme = _contains_needle(text, _EXTREME_NEEDLES)
+    if not has_extreme:
+        return None
+    if _contains_needle(text, _DECLINE_NEEDLES):
+        return PublicOperationType.RANKING_ASC.value
+    if _contains_needle(text, _GROWTH_NEEDLES):
+        return PublicOperationType.RANKING_DESC.value
+    return None
+
+
+def _ranking_operation_from_superlative(text: str) -> str | None:
+    """Detecta superlativo de liderança/volume (mais vendido, líder, campeão)."""
+    if any(pattern.search(text) for pattern in _SUPERLATIVE_RANKING_DESC_PATTERNS):
+        return PublicOperationType.RANKING_DESC.value
+    return None
+
+
+def _ranking_operation_override(text: str) -> str | None:
+    """Sinais que sobrescrevem operation do LLM (coligações / superlativos)."""
+    return _ranking_operation_from_collocation(text) or _ranking_operation_from_superlative(text)
+
+
 def extract_heuristic_signals(message: str) -> dict[str, str | None]:
     """Extrai operation/dimension/period candidatos da mensagem."""
     text = (message or "").strip().lower()
     if not text:
         return {"operation": None, "dimension": None, "period": None}
 
-    operation: str | None = None
-    if _contains_needle(text, _OPERATION_ASC):
-        operation = PublicOperationType.RANKING_ASC.value
-    elif _contains_needle(text, _OPERATION_DESC):
-        operation = PublicOperationType.RANKING_DESC.value
+    operation: str | None = _ranking_operation_override(text)
+    if operation is None:
+        if _contains_needle(text, _OPERATION_ASC):
+            operation = PublicOperationType.RANKING_ASC.value
+        elif _contains_needle(text, _OPERATION_DESC):
+            operation = PublicOperationType.RANKING_DESC.value
 
     dimension: str | None = None
     for slug, needles in _DIMENSIONS:
@@ -94,7 +159,10 @@ def extract_heuristic_signals(message: str) -> dict[str, str | None]:
 def apply_heuristic_enrichment(contract: IntentContract, message: str) -> IntentContract:
     """Preenche lacunas do contrato LLM com sinais heurísticos."""
     signals = extract_heuristic_signals(message)
-    operation = contract.operation or signals["operation"]
+    text = (message or "").strip().lower()
+    ranking_override = _ranking_operation_override(text)
+    # Override sobrescreve operation do LLM (ex.: "maior queda"; "mais vendido" ≠ comparison).
+    operation = ranking_override or contract.operation or signals["operation"]
     dimension = contract.dimension or signals["dimension"]
     mentioned_periods = extract_mentioned_periods(message)
     period = (
@@ -102,10 +170,16 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
         or signals["period"]
         or (mentioned_periods[0] if mentioned_periods else None)
     )
-    sort_direction = contract.sort_direction or _sort_direction_from_operation(operation)
+    sort_direction = (
+        _sort_direction_from_operation(ranking_override)
+        if ranking_override
+        else (contract.sort_direction or _sort_direction_from_operation(operation))
+    )
     metric = contract.metric
     if dimension == "forma_pagamento" and not metric:
         metric = "faturamento"
+    if dimension in {"concessionaria", "concessionária"} and not metric:
+        metric = "comissao"
     entity_filters = _merge_period_filters(
         contract.entity_filters,
         primary_period=period,
@@ -118,7 +192,9 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     entity_filters = _apply_payment_method_filter(entity_filters, message)
     dimension = _dimension_for_cortesia_group(dimension, entity_filters)
     entity_filters = _entity_filters_for_dimension(entity_filters, dimension)
-    return IntentContract(
+    if dimension == "parcelamento":
+        dimension = "parcelas"
+    enriched = IntentContract(
         intent=contract.intent,
         metric=metric,
         period=period,
@@ -129,6 +205,62 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
         dimension=dimension,
         sort_direction=sort_direction,
     )
+    return sanitize_ranking_entity_filters(enriched)
+
+
+def sanitize_ranking_entity_filters(contract: IntentContract) -> IntentContract:
+    """Descarta entity_filter na dimensão-alvo quando a operação é ranking.
+
+    Pedir ranking/comparação no eixo X e fixar X num valor único são
+    mutuamente exclusivos. Filtros de escopo em outras dimensões permanecem.
+    Comparação multi-entidade (2+ valores no mesmo eixo) não passa por aqui —
+    só ranking_asc/ranking_desc.
+    """
+    operation = (contract.operation or "").strip().lower()
+    if operation not in _RANKING_OPERATIONS:
+        return contract
+    target = _normalize_ranking_dimension(contract.dimension)
+    if not target:
+        return contract
+    kept: list[EntityFilter] = []
+    for filt in contract.entity_filters:
+        dim = _normalize_ranking_dimension(filt.dimension)
+        if dim == "periodo":
+            kept.append(filt)
+            continue
+        if dim == target:
+            continue
+        kept.append(filt)
+    if len(kept) == len(contract.entity_filters):
+        return contract
+    return IntentContract(
+        intent=contract.intent,
+        metric=contract.metric,
+        period=contract.period,
+        domain=contract.domain,
+        entity_filters=tuple(kept),
+        confidence=contract.confidence,
+        operation=contract.operation,
+        dimension=contract.dimension,
+        sort_direction=contract.sort_direction,
+    )
+
+
+def _normalize_ranking_dimension(value: str | None) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"\s+", "_", ascii_text).strip("_")
+    aliases = {
+        "parcelas": ("parcelas", "parcelamento", "parcela"),
+        "forma_pagamento": ("forma_pagamento", "pagamento", "tipo_de_pagamento"),
+        "tipo_de_venda": ("tipo_de_venda", "tipo_venda", "venda"),
+    }
+    for canonical, options in aliases.items():
+        if slug in options:
+            return canonical
+    return slug
 
 
 def _sort_direction_from_operation(operation: str | None) -> str | None:

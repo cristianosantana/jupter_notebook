@@ -323,6 +323,83 @@ def test_extractor_financiamento_zero_with_scope():
     assert "Financiamento" in result.facts[0].label
 
 
+def _commission_structured_rows_hit(*, origin_id: int = 28) -> KnowledgeHit:
+    """Payload pós-schema: rows tipadas com chaves slugificadas (venda_normal)."""
+    return KnowledgeHit(
+        origin_id=origin_id,
+        context_key="sistema_background:fechamento_gerencial:comissao_tipo_os:periodo-2026-01",
+        category="Fechamento Gerencial",
+        validated_answer="Comissão por tipo de OS e concessionária em janeiro.",
+        key_metrics={
+            "comissao_por_tipo_de_os_por_concessionaria": {
+                "_meta": {
+                    "dimension": "tipo_os",
+                    "entity_field": "concessionaria",
+                    "value_field": "valor_comissao",
+                    "metric_kind": "commission",
+                    "schema": "table",
+                    "subdimension": "concessionaria",
+                },
+                "rows": [
+                    {
+                        "concessionaria": "GWM BAMAQ",
+                        "venda_normal": "R$ 30.660,52",
+                        "financiamento": "R$ 0,00",
+                        "total_comissao": "R$ 30.660,52",
+                    },
+                ],
+                "table_rows_sample": [
+                    "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 30.660,52 | venda_normal: R$ 30.660,52",
+                ],
+            },
+        },
+        score=0.42,
+    )
+
+
+def test_extractor_venda_normal_structured_slug_columns():
+    """Entidade composta (Venda Normal) deve achar coluna venda_normal no schema tipado."""
+    hit = _commission_structured_rows_hit()
+    extractor = FactExtractor()
+    cases = (
+        ("Venda Normal", "venda_normal", "R$ 30.660,52"),
+        ("Financiamento", "financiamento", "R$ 0,00"),
+    )
+
+    for entity, slug, expected in cases:
+        requirement = FactRequirement(
+            fact_key=f"dynamic:comissao_por_tipo_de_os_por_concessionaria@{slug}@2026-01",
+            metric="commission",
+            dimension="tipo_os",
+            entity=entity,
+            period="2026-01",
+            operation="summary",
+            matched_key="comissao_por_tipo_de_os_por_concessionaria",
+            scope_entities=(("concessionaria", "GWM BAMAQ"),),
+            semantics=FactSemantics(
+                fact_key=f"dynamic:comissao_por_tipo_de_os_por_concessionaria@{slug}@2026-01",
+                aggregation_rule=AggregationRule.LOOKUP,
+                comparator=Comparator.NONE,
+                source_priority=(SourcePriority.KEY_METRICS, SourcePriority.PARSED_TEXT),
+                value_kind="currency",
+                key_metrics_keys=("comissao_por_tipo_de_os_por_concessionaria",),
+                key_metrics_entity_field="tipo_os",
+                key_metrics_value_field="valor_comissao",
+            ),
+        )
+        resolved = {
+            requirement.fact_key: make_resolved_hit(
+                hit,
+                ResolutionRule.CATALOG,
+                fact_key=requirement.fact_key,
+            ),
+        }
+        result = extractor.extract((requirement,), resolved)
+        assert result.gaps == (), f"gaps for {entity}: {result.gaps}"
+        assert len(result.facts) == 1
+        assert result.facts[0].value == expected
+
+
 @pytest.mark.asyncio
 async def test_planner_ticket_medio_no_entity_from_predicate_filter():
     planner = FactPlanner(provider=None)

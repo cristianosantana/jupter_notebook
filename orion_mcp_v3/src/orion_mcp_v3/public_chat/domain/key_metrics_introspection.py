@@ -23,6 +23,7 @@ from orion_mcp_v3.public_chat.domain.key_metrics_contract import (
     extract_meta,
 )
 from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
+    entity_slug,
     normalize_key_metrics_entry,
     rows_from_key_metrics_entry,
     sample_labels_from_entry,
@@ -321,10 +322,11 @@ def build_dynamic_requirement(
 ) -> FactRequirement:
     aggregation, comparator = _aggregation_for_contract(contract, entry)
     value_field = _value_field_for_contract(contract, entry)
-    resolved_entity = (
-        entity
-        if entity is not None
-        else _entity_from_contract(contract, entry_dimension=entry.dimension, message=message)
+    resolved_entity = _resolve_requirement_entity(
+        contract,
+        entry=entry,
+        entity=entity,
+        message=message,
     )
     resolved_period = period if period is not None else contract.period
     axes = scope_axes_for_entry(entry)
@@ -381,11 +383,6 @@ def _sanitize_entity_against_discarded(
         if item.get("value") == entity and item.get("reason") == "not_in_schema":
             return None
     return entity
-
-
-def entity_slug(value: str) -> str:
-    normalized = _normalize_text(value)
-    return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
 
 
 def entity_scoped_fact_key(index_key: str, entity: str | None) -> str:
@@ -615,7 +612,13 @@ def _aggregation_for_contract(
     entry: KeyMetricsIndexEntry,
 ) -> tuple[AggregationRule, Comparator]:
     operation = (contract.operation or "").lower()
-    if non_period_entity_filters(contract) or _entity_from_contract(contract):
+    # LOOKUP só quando há entidade/filtro na dimensão do próprio índice.
+    # Filtros de escopo em outra dimensão (ex.: forma_pagamento=cartao numa
+    # pergunta de ranking de parcelas) não abandonam o ranking.
+    if _entity_from_contract(contract, entry_dimension=entry.dimension) or _has_filter_on_entry_dimension(
+        contract,
+        entry.dimension,
+    ):
         return AggregationRule.LOOKUP, Comparator.NONE
     if operation in (PublicOperationType.RANKING_ASC.value, "ranking_asc", "min"):
         return AggregationRule.MIN, Comparator.ASC
@@ -628,6 +631,43 @@ def _aggregation_for_contract(
         return AggregationRule.MIN, Comparator.ASC
     return AggregationRule.LOOKUP, Comparator.NONE
 
+
+def _has_filter_on_entry_dimension(contract: IntentContract, entry_dimension: str | None) -> bool:
+    target = _normalize_dimension(entry_dimension)
+    if not target:
+        return False
+    for filt in non_period_entity_filters(contract):
+        if _normalize_dimension(filt.dimension or "") == target and filt.value:
+            return True
+    return False
+
+
+def _resolve_requirement_entity(
+    contract: IntentContract,
+    *,
+    entry: KeyMetricsIndexEntry,
+    entity: str | None,
+    message: str,
+) -> str | None:
+    """Resolve entidade do requirement.
+
+    Em ranking sem filtro no eixo do índice, `entity=None` do planner significa
+    eixo inteiro (ranked_list) — não extrair valor do texto da mensagem.
+    """
+    if entity is not None and entity != "":
+        return entity
+    operation = (contract.operation or "").lower()
+    ranking_ops = {
+        PublicOperationType.RANKING_ASC.value,
+        PublicOperationType.RANKING_DESC.value,
+        "ranking_asc",
+        "ranking_desc",
+        "min",
+        "max",
+    }
+    if operation in ranking_ops and not _has_filter_on_entry_dimension(contract, entry.dimension):
+        return None
+    return _entity_from_contract(contract, entry_dimension=entry.dimension, message=message)
 
 def _value_field_for_contract(contract: IntentContract, entry: KeyMetricsIndexEntry) -> str:
     metric = _normalize_metric_kind(contract.metric)

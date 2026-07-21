@@ -194,6 +194,47 @@ async def test_complete_period_evidence_adds_targeted_single_period_revenue_hit(
 
 
 @pytest.mark.asyncio
+async def test_complete_period_evidence_adds_comissao_janeiro_for_queda_query() -> None:
+    """Token context_key mapeia faturamento_e_comissao_* → comissao_por_concessionaria."""
+    maio = KnowledgeHit(
+        origin_id=37,
+        context_key="sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-05",
+        category="Fechamento Gerencial",
+        validated_answer="Maio.",
+        key_metrics={"faturamento_e_comissao_por_concessionaria": {"rows": [], "_meta": {}}},
+    )
+    janeiro = KnowledgeHit(
+        origin_id=4,
+        context_key="sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-01",
+        category="Fechamento Gerencial",
+        validated_answer="Janeiro.",
+        key_metrics={"faturamento_e_comissao_por_concessionaria": {"rows": [], "_meta": {}}},
+    )
+    reader = AsyncMock()
+    reader.load_hits_by_context_key_patterns.return_value = [janeiro]
+    reader.load_hits_by_theme_patterns.return_value = []
+    contract = IntentContract(
+        intent="consulta_metrica",
+        metric="comissao",
+        period="2026-01",
+        operation="ranking_asc",
+        dimension="concessionaria",
+        entity_filters=(EntityFilter(dimension="periodo", value="2026-05", match="exact"),),
+        confidence=0.75,
+    )
+
+    retriever = RemissiveRetriever(reader)
+    enriched = await retriever.complete_period_evidence(
+        knowledge=ConhecimentoRecuperado(hits=(maio,)),
+        contract=contract,
+    )
+
+    assert {hit.origin_id for hit in enriched.hits} == {37, 4}
+    patterns = reader.load_hits_by_context_key_patterns.await_args.args[0]
+    assert any("comissao_por_concessionaria" in p and "2026-01" in p for p in patterns)
+
+
+@pytest.mark.asyncio
 async def test_complete_period_evidence_adds_parcelamento_for_parcelas_query() -> None:
     faturamento = KnowledgeHit(
         origin_id=25,

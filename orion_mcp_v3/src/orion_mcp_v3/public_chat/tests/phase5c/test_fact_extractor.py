@@ -248,3 +248,96 @@ def test_fact_extractor_gap_includes_attempted_rules_from_resolution_trace():
     assert gap.attempted_rules == ("catalog",)
     assert gap.resolution_trace is not None
     assert gap.resolution_trace.rule_applied == ResolutionRule.CATALOG
+
+
+def test_fact_extractor_cross_period_decline_reconstructs_truncated_rows() -> None:
+    """Maior queda: rows truncadas + validated_answer completo → BAMAQ - OFICINA ~−61%."""
+    jan_answer = (
+        "Comissões por concessionária em PERIODO_2026-01: "
+        "SAITAMA - HONDA: R$ 33.828,00 (10,95%); GWM BAMAQ: R$ 30.660,52 (9,92%); "
+        "BAMAQ - OFICINA: R$ 1.503,60 (0,49%); XTREME CAR DETAIL: R$ 0,00 (0,00%)."
+    )
+    mai_answer = (
+        "Comissões por concessionária em PERIODO_2026-05: "
+        "GWM BAMAQ: R$ 43.584,46 (11,61%); SAITAMA - HONDA: R$ 36.398,90 (9,69%); "
+        "BAMAQ - OFICINA: R$ 583,52 (0,16%); XTREME CAR DETAIL: R$ 0,00 (0,00%)."
+    )
+    # key_metrics truncado: só topo (sem BAMAQ - OFICINA)
+    jan_hit = KnowledgeHit(
+        origin_id=4,
+        context_key="sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-01",
+        category="Fechamento Gerencial",
+        validated_answer=jan_answer,
+        key_metrics={
+            "faturamento_e_comissao_por_concessionaria": {
+                "rows": [
+                    {"concessionaria": "SAITAMA - HONDA", "valor_comissao": "R$ 33.828,00 (10,95%)"},
+                    {"concessionaria": "GWM BAMAQ", "valor_comissao": "R$ 30.660,52 (9,92%)"},
+                ],
+                "_meta": {
+                    "entity_field": "concessionaria",
+                    "value_field": "valor_comissao",
+                    "total_original_rows": 4,
+                    "truncated_head_tail": True,
+                },
+            }
+        },
+    )
+    mai_hit = KnowledgeHit(
+        origin_id=37,
+        context_key="sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-05",
+        category="Fechamento Gerencial",
+        validated_answer=mai_answer,
+        key_metrics={
+            "faturamento_e_comissao_por_concessionaria": {
+                "rows": [
+                    {"concessionaria": "GWM BAMAQ", "valor_comissao": "R$ 43.584,46 (11,61%)"},
+                    {"concessionaria": "SAITAMA - HONDA", "valor_comissao": "R$ 36.398,90 (9,69%)"},
+                ],
+                "_meta": {
+                    "entity_field": "concessionaria",
+                    "value_field": "valor_comissao",
+                    "total_original_rows": 4,
+                    "truncated_head_tail": True,
+                },
+            }
+        },
+    )
+
+    def _req(period: str, origin_id: int) -> FactRequirement:
+        key = f"dynamic:faturamento_e_comissao_por_concessionaria@{period}"
+        return FactRequirement(
+            fact_key=key,
+            metric="comissao",
+            dimension="concessionaria",
+            entity=None,
+            period=period,
+            operation="ranking_asc",
+            matched_key="faturamento_e_comissao_por_concessionaria",
+            source_origin_id=origin_id,
+            semantics=FactSemantics(
+                fact_key=key,
+                aggregation_rule=AggregationRule.MIN,
+                comparator=Comparator.ASC,
+                source_priority=(SourcePriority.KEY_METRICS,),
+                value_kind="currency",
+                allows_multiple_values=True,
+                key_metrics_keys=("faturamento_e_comissao_por_concessionaria",),
+            ),
+        )
+
+    req_jan = _req("2026-01", 4)
+    req_mai = _req("2026-05", 37)
+    resolved = {
+        req_jan.fact_key: make_resolved_hit(jan_hit, ResolutionRule.CATALOG, fact_key=req_jan.fact_key),
+        req_mai.fact_key: make_resolved_hit(mai_hit, ResolutionRule.CATALOG, fact_key=req_mai.fact_key),
+    }
+    result = FactExtractor().extract((req_jan, req_mai), resolved)
+    assert len(result.facts) == 1
+    fact = result.facts[0]
+    assert fact.label == "BAMAQ - OFICINA"
+    assert fact.unit == "pct"
+    assert "61" in fact.value
+    assert fact.trace.extraction_path.value == "ranking_derived"
+    assert result.source_truncated is False
+
