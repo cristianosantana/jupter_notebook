@@ -53,6 +53,34 @@ _OPERATION_DESC = (
     "principais",
 )
 
+# Coligações: "maior queda" não pode virar ranking_desc por causa de "maior" sozinho.
+_DECLINE_NEEDLES = (
+    "queda",
+    "quedas",
+    "declinio",
+    "declínio",
+    "reducao",
+    "redução",
+    "baixa",
+)
+_GROWTH_NEEDLES = (
+    "crescimento",
+    "alta",
+    "aumento",
+    "variacao positiva",
+    "variação positiva",
+)
+_EXTREME_NEEDLES = ("maior", "maiores", "maximo", "máximo", "maxima", "máxima")
+
+# Superlativo de liderança/volume: "mais vendido" + "manteve líder" ≠ comparison agregada.
+_SUPERLATIVE_RANKING_DESC_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bmais\s+vendid[oa]s?\b"),
+    re.compile(r"\bmais\s+produzid[oa]s?\b"),
+    re.compile(r"\bmais\s+faturad[oa]s?\b"),
+    re.compile(r"\bl[ií]der(?:es|ança|anca)?\b"),
+    re.compile(r"\bcampe[aã]o(?:es|ãs|as)?\b"),
+)
+
 _DIMENSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("forma_pagamento", ("forma de pagamento", "formas de pagamento", "meio de pagamento", "pagamento")),
     ("tipo_venda", ("tipo de venda", "tipos de venda", "tipo de vendas", "tipos de vendas")),
@@ -81,17 +109,42 @@ def _coalesce_period(period: str | None) -> str | None:
     return None
 
 
+def _ranking_operation_from_collocation(text: str) -> str | None:
+    """Detecta 'maior queda' / 'maior crescimento' antes dos unigramas genéricos."""
+    has_extreme = _contains_needle(text, _EXTREME_NEEDLES)
+    if not has_extreme:
+        return None
+    if _contains_needle(text, _DECLINE_NEEDLES):
+        return PublicOperationType.RANKING_ASC.value
+    if _contains_needle(text, _GROWTH_NEEDLES):
+        return PublicOperationType.RANKING_DESC.value
+    return None
+
+
+def _ranking_operation_from_superlative(text: str) -> str | None:
+    """Detecta superlativo de liderança/volume (mais vendido, líder, campeão)."""
+    if any(pattern.search(text) for pattern in _SUPERLATIVE_RANKING_DESC_PATTERNS):
+        return PublicOperationType.RANKING_DESC.value
+    return None
+
+
+def _ranking_operation_override(text: str) -> str | None:
+    """Sinais que sobrescrevem operation do LLM (coligações / superlativos)."""
+    return _ranking_operation_from_collocation(text) or _ranking_operation_from_superlative(text)
+
+
 def extract_heuristic_signals(message: str) -> dict[str, str | None]:
     """Extrai operation/dimension/period candidatos da mensagem."""
     text = (message or "").strip().lower()
     if not text:
         return {"operation": None, "dimension": None, "period": None}
 
-    operation: str | None = None
-    if _contains_needle(text, _OPERATION_ASC):
-        operation = PublicOperationType.RANKING_ASC.value
-    elif _contains_needle(text, _OPERATION_DESC):
-        operation = PublicOperationType.RANKING_DESC.value
+    operation: str | None = _ranking_operation_override(text)
+    if operation is None:
+        if _contains_needle(text, _OPERATION_ASC):
+            operation = PublicOperationType.RANKING_ASC.value
+        elif _contains_needle(text, _OPERATION_DESC):
+            operation = PublicOperationType.RANKING_DESC.value
 
     dimension: str | None = None
     for slug, needles in _DIMENSIONS:
@@ -106,7 +159,10 @@ def extract_heuristic_signals(message: str) -> dict[str, str | None]:
 def apply_heuristic_enrichment(contract: IntentContract, message: str) -> IntentContract:
     """Preenche lacunas do contrato LLM com sinais heurísticos."""
     signals = extract_heuristic_signals(message)
-    operation = contract.operation or signals["operation"]
+    text = (message or "").strip().lower()
+    ranking_override = _ranking_operation_override(text)
+    # Override sobrescreve operation do LLM (ex.: "maior queda"; "mais vendido" ≠ comparison).
+    operation = ranking_override or contract.operation or signals["operation"]
     dimension = contract.dimension or signals["dimension"]
     mentioned_periods = extract_mentioned_periods(message)
     period = (
@@ -114,10 +170,16 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
         or signals["period"]
         or (mentioned_periods[0] if mentioned_periods else None)
     )
-    sort_direction = contract.sort_direction or _sort_direction_from_operation(operation)
+    sort_direction = (
+        _sort_direction_from_operation(ranking_override)
+        if ranking_override
+        else (contract.sort_direction or _sort_direction_from_operation(operation))
+    )
     metric = contract.metric
     if dimension == "forma_pagamento" and not metric:
         metric = "faturamento"
+    if dimension in {"concessionaria", "concessionária"} and not metric:
+        metric = "comissao"
     entity_filters = _merge_period_filters(
         contract.entity_filters,
         primary_period=period,

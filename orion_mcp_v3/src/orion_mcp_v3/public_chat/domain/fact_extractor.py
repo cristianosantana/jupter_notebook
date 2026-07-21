@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -608,10 +609,67 @@ def _rows_for_requirement(requirement: FactRequirement, hit: KnowledgeHit) -> tu
         raw = hit.key_metrics.get(key)
         if raw is None:
             continue
+        meta = raw.get("_meta") if isinstance(raw, dict) else None
+        truncated = isinstance(meta, dict) and meta.get("truncated_head_tail") is True
+        if truncated and hit.validated_answer:
+            rebuilt = _rows_from_validated_answer(hit.validated_answer)
+            total = meta.get("total_original_rows") if isinstance(meta, dict) else None
+            if rebuilt and _reconstruction_covers_total(rebuilt, total):
+                return rebuilt
         rows = rows_from_key_metrics_entry(key, raw)
         if rows:
             return rows
+    if hit.validated_answer:
+        rebuilt = _rows_from_validated_answer(hit.validated_answer)
+        if rebuilt:
+            return rebuilt
     return ()
+
+
+def _reconstruction_covers_total(rows: tuple, total: object) -> bool:
+    if total is None:
+        return len(rows) > 1
+    try:
+        return len(rows) >= int(total)
+    except (TypeError, ValueError):
+        return len(rows) > 1
+
+
+def _rows_from_validated_answer(text: str) -> tuple:
+    """Reconstrói ranked_list a partir do texto completo (evita truncated_head_tail)."""
+    from orion_mcp_v3.public_chat.domain.key_metrics_reader import KeyMetricsRow, parse_metric_value
+
+    pattern = re.compile(
+        r"(?:(?<=^)|(?<=\n)|(?<=\s))(?:\d+\.\s*)?"
+        r"(?P<name>[A-Za-zÀ-ÿ][^:\n]{0,80}?):\s*"
+        r"(?P<raw>R\$\s*[\d.]+,\d{2}(?:\s*\([\d.,]+%\))?)",
+        re.MULTILINE,
+    )
+    rows: list[KeyMetricsRow] = []
+    seen: set[str] = set()
+    for match in pattern.finditer(text or ""):
+        name = match.group("name").strip()
+        if name.upper().startswith("COMISS") or "PERIODO" in name.upper():
+            continue
+        raw = match.group("raw")
+        value = parse_metric_value(raw)
+        if value is None or not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        pct_match = re.search(r"\(([\d.,]+)%\)", raw)
+        percentual = f"{pct_match.group(1)}%" if pct_match else None
+        rows.append(
+            KeyMetricsRow(
+                label=name,
+                value=value,
+                raw_value=raw,
+                percentual=percentual,
+            )
+        )
+    return tuple(rows)
 
 
 def _normalize_row_label(label: str) -> str:
@@ -639,6 +697,12 @@ def _key_metrics_truncated(hit: KnowledgeHit, requirement: FactRequirement) -> b
         if not isinstance(raw, dict):
             continue
         meta = raw.get("_meta")
-        if isinstance(meta, dict) and meta.get("truncated_head_tail") is True:
-            return True
+        if not (isinstance(meta, dict) and meta.get("truncated_head_tail") is True):
+            continue
+        # Reconstrução completa a partir de validated_answer anula o truncamento.
+        if hit.validated_answer:
+            rebuilt = _rows_from_validated_answer(hit.validated_answer)
+            if rebuilt and _reconstruction_covers_total(rebuilt, meta.get("total_original_rows")):
+                continue
+        return True
     return False

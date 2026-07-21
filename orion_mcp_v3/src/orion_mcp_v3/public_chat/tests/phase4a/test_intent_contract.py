@@ -19,6 +19,61 @@ def test_heuristics_pior_maps_ranking_asc() -> None:
     assert signals["period"] == "2026-03"
 
 
+def test_heuristics_maior_queda_maps_ranking_asc_not_desc() -> None:
+    message = "Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?"
+    signals = extract_heuristic_signals(message)
+    assert signals["operation"] == PublicOperationType.RANKING_ASC.value
+    assert signals["dimension"] == "concessionaria"
+
+    # Coligação sobrescreve LLM que errou para ranking_desc
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="consulta_metrica",
+            metric="comissao",
+            period="2026-01",
+            operation="ranking_desc",
+            dimension="concessionaria",
+            sort_direction="desc",
+            confidence=0.75,
+        ),
+        message,
+    )
+    assert contract.operation == PublicOperationType.RANKING_ASC.value
+    assert contract.sort_direction == "asc"
+
+
+def test_heuristics_maior_crescimento_keeps_ranking_desc() -> None:
+    signals = extract_heuristic_signals(
+        "qual parcela teve o maior crescimento percentual até junho?"
+    )
+    assert signals["operation"] == PublicOperationType.RANKING_DESC.value
+
+
+def test_heuristics_mais_vendido_manteve_lider_is_ranking_desc_not_comparison() -> None:
+    message = "Qual foi o serviço mais vendido em maio, e se manteve líder em junho?"
+    signals = extract_heuristic_signals(message)
+    assert signals["operation"] == PublicOperationType.RANKING_DESC.value
+    assert signals["dimension"] == "servico"
+
+    # Superlativo sobrescreve LLM que errou para comparison agregada
+    contract = apply_heuristic_enrichment(
+        IntentContract(
+            intent="comparacao",
+            metric="producao",
+            period="2026-05",
+            operation="comparison",
+            dimension=None,
+            entity_filters=(),
+            confidence=0.8,
+        ),
+        message,
+    )
+    assert contract.operation == PublicOperationType.RANKING_DESC.value
+    assert contract.sort_direction == "desc"
+    assert contract.dimension == "servico"
+    assert contract.operation != "comparison"
+
+
 def test_intent_ranking_asc_pior() -> None:
     contract = parse_public_intent_payload(
         {

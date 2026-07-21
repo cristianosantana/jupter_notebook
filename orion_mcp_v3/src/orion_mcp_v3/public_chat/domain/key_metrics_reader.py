@@ -159,12 +159,35 @@ def rows_from_table_sample(raw: Any, *, meta: Mapping[str, Any] | None = None) -
     return tuple(rows)
 
 
+def entity_slug(value: str) -> str:
+    """Normaliza rótulo de entidade para chave de coluna (ex: ``Venda Normal`` → ``venda_normal``)."""
+    normalized = _normalize_text(value)
+    return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+
+
 def lookup_entity(rows: tuple[KeyMetricsRow, ...], entity: str) -> KeyMetricsRow | None:
-    needle = entity.lower()
+    needle = entity.lower().strip()
+    slug = entity_slug(entity)
     for row in rows:
-        if needle in row.label.lower():
+        label_lower = row.label.lower()
+        if needle and needle in label_lower:
+            return row
+        # Schema estruturado: chaves tipadas usam underscore (venda_normal);
+        # o requirement ainda traz o rótulo humano ("Venda Normal").
+        if slug and slug in _label_slugs(row.label):
             return row
     return None
+
+
+def _label_slugs(label: str) -> frozenset[str]:
+    """Slugs dos segmentos de um label (escopo | coluna, etc.)."""
+    parts = re.split(r"[|:/]+", label)
+    slugs = {entity_slug(part) for part in parts if part.strip()}
+    # Também o label inteiro (ex: "Venda Normal - GWM BAMAQ" sem pipes).
+    whole = entity_slug(label)
+    if whole:
+        slugs.add(whole)
+    return frozenset(s for s in slugs if s)
 
 
 def lookup_entity_group(rows: tuple[KeyMetricsRow, ...], entity: str) -> KeyMetricsRow | None:

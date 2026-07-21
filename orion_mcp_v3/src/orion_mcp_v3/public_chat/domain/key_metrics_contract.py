@@ -124,7 +124,8 @@ METRIC_KIND_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 # Padrão para detectar chaves que são nomes de entidades (nomes próprios, empresas, etc.)
-_ENTITY_KEY_PATTERN = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-\.\(\)|]+$")
+# Inclui underscore para chaves já normalizadas via ``_metric_dict_key`` (ex: gwm_bamaq).
+_ENTITY_KEY_PATTERN = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-_\.\(\)|]+$")
 _PLACEHOLDER_KEY_RX = re.compile(
     r"mais\s+\d+\s+linha|Omitidas\s+\d+\s+linha|Exibindo os 10 piores",
     re.IGNORECASE,
@@ -296,6 +297,118 @@ def _meta_for_index(
     return meta
 
 
+def _format_row_value(value: Any) -> str:
+    """
+    Formata valor de linha para ``table_rows_sample``.
+
+    Strings passam intactas. Dict aninhado NÃO é serializado via ``str(dict)`` —
+    levanta erro para forçar correção na origem (parser/prompt).
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        raise ValueError(
+            f"key_metrics: valor estruturado nao serializado: {value!r}"
+        )
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _rows_to_table_sample(
+    rows: list[dict[str, Any]],
+    *,
+    entity_field: str,
+) -> list[str]:
+    """Converte rows tipadas em linhas de ``table_rows_sample`` determinísticas."""
+    sample: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        entity = row.get(entity_field)
+        if not isinstance(entity, str) or not entity.strip():
+            for candidate in ("concessionaria", "tipo", "label", "entidade"):
+                raw = row.get(candidate)
+                if isinstance(raw, str) and raw.strip():
+                    entity = raw
+                    break
+        if not isinstance(entity, str) or not entity.strip():
+            continue
+        cells: list[str] = []
+        for field in sorted(row.keys()):
+            if field == entity_field or field.startswith("_"):
+                continue
+            if field in {"concessionaria", "tipo", "label", "entidade"} and row.get(field) == entity:
+                continue
+            raw = row[field]
+            if raw is None or isinstance(raw, dict):
+                continue
+            text = raw.strip() if isinstance(raw, str) else str(raw)
+            if text:
+                cells.append(f"{field}: {text}")
+        sample.append(f"{entity.strip()} | {' | '.join(cells)}" if cells else entity.strip())
+    return sample
+
+
+def _is_canonical_table_payload(data: dict[str, Any]) -> bool:
+    """Detecta ``{_meta?, rows}`` ou ``{_meta?, table_rows_sample}`` na raiz."""
+    structural = {"_meta", "rows", "table_rows_sample"}
+    other = [
+        k for k in data
+        if k not in structural and not str(k).startswith("_")
+    ]
+    if other:
+        return False
+    if "rows" in data and isinstance(data["rows"], list):
+        return True
+    if "table_rows_sample" in data and isinstance(data["table_rows_sample"], list):
+        return True
+    return False
+
+
+def _wrap_canonical_table_payload(
+    data: dict[str, Any],
+    *,
+    index_key: str,
+    metric_kind: str | None = None,
+    dimension: str | None = None,
+) -> dict[str, Any]:
+    meta = _meta_for_index(
+        index_key,
+        producer_metric=metric_kind,
+        producer_dimension=dimension,
+    )
+    embedded = data.get("_meta")
+    if isinstance(embedded, dict):
+        for field, value in embedded.items():
+            meta.setdefault(str(field), value)
+    meta["schema"] = SCHEMA_TABLE
+
+    entity_field = str(meta.get("entity_field") or "entidade")
+    payload: dict[str, Any] = {"_meta": meta}
+
+    rows = data.get("rows")
+    if isinstance(rows, list):
+        typed_rows = [dict(r) for r in rows if isinstance(r, dict)]
+        payload["rows"] = typed_rows
+        sample = _rows_to_table_sample(typed_rows, entity_field=entity_field)
+        if sample:
+            payload["table_rows_sample"] = sample
+            meta["total_original_rows"] = len(typed_rows)
+            meta["truncated_head_tail"] = False
+
+    sample_raw = data.get("table_rows_sample")
+    if isinstance(sample_raw, list) and "table_rows_sample" not in payload:
+        payload["table_rows_sample"] = [str(item) for item in sample_raw if item is not None]
+
+    logger.info(
+        "key_metrics embrulhado (canonical table): index=%s, rows=%s",
+        index_key,
+        len(payload.get("rows") or payload.get("table_rows_sample") or []),
+    )
+    return {index_key: payload}
+
+
 def _wrap_flat_entity_map(
     data: dict[str, Any],
     *,
@@ -322,7 +435,7 @@ def _wrap_flat_entity_map(
 
     if meta.get("schema") == SCHEMA_TABLE:
         sample = [
-            f"{entity} | {value}" if isinstance(value, str) else f"{entity} | {value!s}"
+            f"{entity} | {_format_row_value(value)}"
             for entity, value in selected_entries
         ]
         logger.info(
@@ -386,6 +499,18 @@ def enrich_key_metrics(
         return {}
 
     data = dict(key_metrics)
+
+    # Schema canônico de tabela na raiz ({_meta, rows} / table_rows_sample)
+    if _is_canonical_table_payload(data):
+        index_key = _resolve_index_key(dimension=dimension, theme=theme)
+        if index_key:
+            return _wrap_canonical_table_payload(
+                data,
+                index_key=index_key,
+                metric_kind=metric_kind,
+                dimension=dimension,
+            )
+
     if _is_flat_entity_map(data):
         filtered = _filter_flat_map(data)
         index_key = _resolve_index_key(dimension=dimension, theme=theme)
@@ -412,6 +537,19 @@ def enrich_key_metrics(
                 for field, value in canonical.items():
                     meta.setdefault(field, value)
             payload = {k: v for k, v in raw.items() if k != "_meta"}
+            # Se schema table com rows tipadas e sem sample, gera sample determinístico
+            if (
+                meta.get("schema") == SCHEMA_TABLE
+                and isinstance(payload.get("rows"), list)
+                and "table_rows_sample" not in payload
+            ):
+                entity_field = str(meta.get("entity_field") or "entidade")
+                sample = _rows_to_table_sample(
+                    [r for r in payload["rows"] if isinstance(r, dict)],
+                    entity_field=entity_field,
+                )
+                if sample:
+                    payload = {**payload, "table_rows_sample": sample}
             enriched[key] = {"_meta": meta, **payload}
             continue
         

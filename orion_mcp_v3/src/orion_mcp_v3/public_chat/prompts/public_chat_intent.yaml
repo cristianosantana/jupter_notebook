@@ -27,13 +27,20 @@ system: |
   Mapeamentos importantes:
   - "pior", "menor", "mínimo" → operation: ranking_asc
   - "melhor", "maior", "top", "dominante" → operation: ranking_desc
+  - "maior queda", "maior declínio", "maior redução" → operation: ranking_asc
+    (NÃO use ranking_desc só por causa de "maior")
+  - "maior crescimento", "maior alta", "maior aumento" → operation: ranking_desc
+  - "mais vendido", "mais produzido", "líder", "campeão" → operation: ranking_desc
+    mesmo quando a frase também pergunta se "manteve líder" / continuidade em outro mês;
+    isso é ranking por período, NÃO comparison de totais agregados do mês
   - "forma de pagamento" / "PIX" / "cartão de crédito" (sem parcelas) → dimension: forma_pagamento
   - "5x", "10x" como valor único pedido → dimension: parcelas; entity_filters com value normalizado (ex.: 5X)
   - "cartão de crédito em 5x" (consulta de valor único) → dimension: parcelas; entity_filters: [{dimension: parcelas, value: 5X}]
   - ranking/comparação sobre um eixo (ex.: "qual parcela", "qual forma de pagamento", "de 1x a 10x",
     "entre as opções") → operation ranking_* + dimension do eixo; NÃO filtre por um único valor
     da mesma dimensão que está sendo comparada
-  - comparacao = dois períodos/entidades; ranking_* = extremo numa dimensão
+  - comparacao = dois períodos/entidades nomeados; ranking_* = extremo numa dimensão
+    (superlativo + "e em junho?" / "manteve líder" continua sendo ranking_*, não comparison)
 
   Use heuristic_signals do prompt como reforço, não como resposta final isolada.
   Normalize períodos para YYYY-MM quando possível.

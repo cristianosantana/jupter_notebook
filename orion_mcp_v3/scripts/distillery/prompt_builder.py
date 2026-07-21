@@ -53,7 +53,7 @@ def build_distillation_prompt(
         '  "periodo": "YYYY-MM (ex: PERIODO_YYYY_MM) ou null",\n'
         '  "validated_answer": "resposta direta e completa ao theme (minimo 50 chars)",\n'
         '  "recent_questions": ["1 a 5 perguntas ESPECIFICAS ao theme que os dados respondem"],\n'
-        '  "key_metrics": {"chave": "valor — somente dados analiticos, sem metadados"},\n'
+        '  "key_metrics": {"chave": "valor"}  // 1 eixo; ver schema table para 2 eixos,\n'
         '  "index_questions": ["minimo 4 perguntas especificas a este theme"],\n'
         '  "confidence": "high | medium"\n'
         "}\n\n"
@@ -108,6 +108,22 @@ def build_distillation_prompt(
         "Inclua todos os membros da dimensao — sem limitar a top 3 ou top 10.\n"
         "PROIBIDO incluir chaves de metadado como 'observacao', 'nota', 'truncado',\n"
         "'resumo', 'total_linhas' dentro de key_metrics.\n"
+        "Dimensao SIMPLES (1 eixo, ex: por_forma_pagamento): mapa plano\n"
+        '  {"chave": "valor — somente dados analiticos, sem metadados"}.\n'
+        "Quando o theme tiver DUAS dimensoes (ex: concessionaria + tipo_os),\n"
+        "key_metrics DEVE seguir este schema fixo, sem excecao:\n"
+        "{\n"
+        '  "_meta": {"schema": "table", "entity_field": "concessionaria",\n'
+        '            "columns": ["venda_normal", "financiamento", "total_comissao"]},\n'
+        '  "rows": [\n'
+        '    {"concessionaria": "GWM BAMAQ", "venda_normal": "R$ 43.584,46",\n'
+        '     "financiamento": "R$ 0,00", "total_comissao": "R$ 43.584,46"}\n'
+        "  ]\n"
+        "}\n"
+        "Aplica-se a dimension='por_concessionaria_tipo_os' e qualquer dimensao matricial.\n"
+        "PROIBIDO: embutir sub-valores como texto livre dentro de uma unica string\n"
+        "('Label: R$X | Label: R$Y'). PROIBIDO: linhas posicionais sem nome de campo.\n"
+        "SEMPRE um objeto JSON por linha, com as MESMAS chaves em toda linha do mesmo theme.\n"
         "\n"
 
          # ── recent_questions ──────────────────────────────────────────────────

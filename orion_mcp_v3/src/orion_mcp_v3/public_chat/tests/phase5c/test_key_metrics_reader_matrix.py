@@ -65,6 +65,34 @@ def test_simple_table_without_subdimension_unchanged():
     assert cheque.value == 0.0
 
 
+def test_lookup_entity_matches_underscored_column_from_structured_keys():
+    """Chaves tipadas (venda_normal) devem bater com rótulo humano (Venda Normal)."""
+    raw = {
+        "_meta": {
+            "dimension": "tipo_os",
+            "entity_field": "concessionaria",
+            "value_field": "valor_comissao",
+            "metric_kind": "commission",
+            "schema": "table",
+            "subdimension": "concessionaria",
+        },
+        # Sample gerado a partir de rows tipadas — field names viram rótulos.
+        "table_rows_sample": [
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 30.660,52 | venda_normal: R$ 30.660,52",
+        ],
+    }
+    rows = rows_from_key_metrics_entry("comissao_por_tipo_de_os_por_concessionaria", raw)
+
+    fin = lookup_entity(rows, "Financiamento")
+    assert fin is not None
+    assert fin.value == 0.0
+
+    vn = lookup_entity(rows, "Venda Normal")
+    assert vn is not None
+    assert vn.value == 30660.52
+    assert "gwm bamaq" in vn.label.lower()
+
+
 def test_normalize_entry_matrix_shape():
     raw = {
         "_meta": {"subdimension": "concessionaria", "schema": "table"},

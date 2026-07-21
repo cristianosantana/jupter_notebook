@@ -23,6 +23,7 @@ from orion_mcp_v3.public_chat.domain.key_metrics_contract import (
     extract_meta,
 )
 from orion_mcp_v3.public_chat.domain.key_metrics_reader import (
+    entity_slug,
     normalize_key_metrics_entry,
     rows_from_key_metrics_entry,
     sample_labels_from_entry,
@@ -382,11 +383,6 @@ def _sanitize_entity_against_discarded(
         if item.get("value") == entity and item.get("reason") == "not_in_schema":
             return None
     return entity
-
-
-def entity_slug(value: str) -> str:
-    normalized = _normalize_text(value)
-    return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
 
 
 def entity_scoped_fact_key(index_key: str, entity: str | None) -> str:

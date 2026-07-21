@@ -197,6 +197,20 @@ def _target_key_metrics_keys(
             "faturamento_por_tipo_de_venda",
             "faturamento_por_tipo_de_pagamento",
         )
+    if metric in {"comissao", "comissão", "comissoes", "comissões"} and dimension in {
+        "concessionaria",
+        "concessionária",
+    }:
+        return ("faturamento_e_comissao_por_concessionaria",)
+    if dimension in {"concessionaria", "concessionária"} and metric in {
+        "comissao",
+        "comissão",
+        "comissoes",
+        "comissões",
+        "vendas",
+        "",
+    }:
+        return ("faturamento_e_comissao_por_concessionaria",)
     return _key_metrics_keys_from_knowledge(knowledge)
 
 
@@ -205,6 +219,7 @@ def _context_key_token_for_metric_key(key: str) -> str:
         "faturamento_por_tipo_de_venda": "faturamento_por_tipo_venda",
         "faturamento_por_tipo_de_pagamento": "faturamento_por_forma_pagamento",
         "parcelamento_de_cartao": "parcelamento_cartao",
+        "faturamento_e_comissao_por_concessionaria": "comissao_por_concessionaria",
     }
     return mapping.get(key, key)
 

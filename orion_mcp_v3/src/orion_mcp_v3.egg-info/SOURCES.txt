@@ -153,7 +153,9 @@ src/orion_mcp_v3/public_chat/domain/knowledge_fingerprint.py
 src/orion_mcp_v3/public_chat/domain/knowledge_scoper.py
 src/orion_mcp_v3/public_chat/domain/memory_catalog.py
 src/orion_mcp_v3/public_chat/domain/models.py
+src/orion_mcp_v3/public_chat/domain/period_selection.py
 src/orion_mcp_v3/public_chat/domain/period_utils.py
+src/orion_mcp_v3/public_chat/domain/query_normalizer.py
 src/orion_mcp_v3/public_chat/domain/section_parser.py
 src/orion_mcp_v3/public_chat/domain/selected_context.py
 src/orion_mcp_v3/public_chat/domain/semantic_hash.py
@@ -191,6 +193,8 @@ src/orion_mcp_v3/public_chat/infrastructure/postgres/__init__.py
 src/orion_mcp_v3/public_chat/infrastructure/postgres/migrate.py
 src/orion_mcp_v3/public_chat/infrastructure/postgres/pool.py
 src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/001_public_chat_schema.sql
+src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/002_query_normalized.sql
+src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/003_topic_varchar256.sql
 src/orion_mcp_v3/public_chat/infrastructure/postgres/migrations/README.md
 src/orion_mcp_v3/public_chat/integration/__init__.py
 src/orion_mcp_v3/public_chat/integration/fastapi.py
@@ -216,6 +220,7 @@ src/orion_mcp_v3/public_chat/tests/phase1/test_knowledge_fingerprint.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_migration_schema.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_postgres_migrate.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_prompts.py
+src/orion_mcp_v3/public_chat/tests/phase1/test_query_normalizer.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_response_store.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_semantic_hash_and_topic.py
 src/orion_mcp_v3/public_chat/tests/phase1/test_settings.py
@@ -230,6 +235,7 @@ src/orion_mcp_v3/public_chat/tests/phase2/test_response_store_cache.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_api_sse.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_consulta_turn_runner_v2.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_guardrails_phase3.py
+src/orion_mcp_v3/public_chat/tests/phase3/test_intent_cache.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_pipeline_snapshots.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_pipeline_trace.py
 src/orion_mcp_v3/public_chat/tests/phase3/test_settings_phase3.py
@@ -237,14 +243,19 @@ src/orion_mcp_v3/public_chat/tests/phase4/fixtures.py
 src/orion_mcp_v3/public_chat/tests/phase4/helpers.py
 src/orion_mcp_v3/public_chat/tests/phase4a/test_intent_contract.py
 src/orion_mcp_v3/public_chat/tests/phase4b/test_document_preparation.py
+src/orion_mcp_v3/public_chat/tests/phase4b/test_period_utils.py
 src/orion_mcp_v3/public_chat/tests/phase4c/test_context_selector.py
 src/orion_mcp_v3/public_chat/tests/phase4d/test_focused_response.py
 src/orion_mcp_v3/public_chat/tests/phase5a/test_fact_planner.py
+src/orion_mcp_v3/public_chat/tests/phase5a/test_multi_entity_requirements.py
+src/orion_mcp_v3/public_chat/tests/phase5a/test_section1_ranked_list_ranking.py
 src/orion_mcp_v3/public_chat/tests/phase5b/test_memory_catalog.py
 src/orion_mcp_v3/public_chat/tests/phase5b/test_memory_resolver.py
 src/orion_mcp_v3/public_chat/tests/phase5c/test_fact_extractor.py
 src/orion_mcp_v3/public_chat/tests/phase5c/test_key_metrics_extractor.py
 src/orion_mcp_v3/public_chat/tests/phase5c/test_key_metrics_introspection.py
+src/orion_mcp_v3/public_chat/tests/phase5c/test_key_metrics_reader_matrix.py
+src/orion_mcp_v3/public_chat/tests/phase5c/test_scope_axes.py
 src/orion_mcp_v3/public_chat/tests/phase5d/test_workspace_pipeline.py
 src/orion_mcp_v3/runtime/__init__.py
 src/orion_mcp_v3/runtime/analytical_context_policy.py
