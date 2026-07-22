@@ -1,0 +1,1240 @@
+{
+  "hits": [
+    {
+      "origin_id": 5,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria_tipo_os:periodo-2026-01",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "SAITAMA - HONDA | R$ 27.729,00 | R$ 6.099,00 | R$ 33.828,00\nGWM BAMAQ | R$ 30.660,52 | R$ 0,00 | R$ 30.660,52\nGWM BAMAQ PAMPULHA | R$ 22.504,00 | R$ 1.516,00 | R$ 24.020,00\nSTRADA JEEP | R$ 16.732,17 | R$ 3.030,30 | R$ 19.762,47\nPORSCHE | R$ 14.895,60 | R$ 4.097,60 | R$ 18.993,20\nBamaq Automóveis Mercedes-Benz | R$ 18.535,20 | R$ 0,00 | R$ 18.535,20\nBANZAI | R$ 18.012,33 | R$ 207,90 | R$ 18.220,23\nCARBEL | R$ 16.969,05 | R$ 0,00 | R$ 16.969,05\nAUDI CARBEL | R$ 16.187,60 | R$ 0,00 | R$ 16.187,60\nSTRADA | R$ 11.058,60 | R$ 2.984,10 | R$ 14.042,70\nCARBEL BYD SAVASSI | R$ 12.070,17 | R$ 0,00 | R$ 12.070,17\nBANZAI PAMPULHA | R$ 9.668,97 | R$ 1.400,70 | R$ 11.069,67\nSTRADA JEEP - PAMPULHA | R$ 8.410,50 | R$ 1.801,80 | R$ 10.212,30\nGARRA | R$ 10.127,04 | R$ 0,00 | R$ 10.127,04\nSTRADA LINHA VERDE | R$ 9.483,18 | R$ 182,70 | R$ 9.665,88\nCARBEL OMODA | R$ 8.567,58 | R$ 0,00 | R$ 8.567,58\nCARBEL KOREA | R$ 4.208,40 | R$ 1.852,20 | R$ 6.060,60\nCARBEL BYD CATALÃO | R$ 5.860,89 | R$ 0,00 | R$ 5.860,89\nGWM BAMAQ CONTAGEM | R$ 5.828,40 | R$ 0,00 | R$ 5.828,40\nVIA JAP COMERCIO DE VEICULOS LTDA | R$ 3.863,65 | R$ 1.440,00 | R$ 5.303,65\nCARBEL BYD CONTAGEM | R$ 4.263,00 | R$ 0,00 | R$ 4.263,00\nCARBEL JAPÃO CONTORNO | R$ 3.750,60 | R$ 0,00 | R$ 3.750,60\nCARBEL JAPÃO BARÃO | R$ 2.816,10 | R$ 0,00 | R$ 2.816,10\nBAMAQ - OFICINA | R$ 1.503,60 | R$ 0,00 | R$ 1.503,60\nOSAKA | R$ 420,00 | R$ 0,00 | R$ 420,00\nSTRADA LEAPMOTOR | R$ 291,90 | R$ 0,00 | R$ 291,90\nARVAL BRASIL LTDA | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS CONTAGEM | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS CRISTIANO MACHADO | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS PAMPULHA | R$ 0,00 | R$ 0,00 | R$ 0,00\nXTREME CAR DETAIL | R$ 0,00 | R$ 0,00 | R$ 0,00",
+      "key_metrics": {
+        "comissao_por_tipo_de_os_por_concessionaria": {
+          "rows": [
+            {
+              "venda_normal": "R$ 27.729,00",
+              "financiamento": "R$ 6.099,00",
+              "concessionaria": "SAITAMA - HONDA",
+              "total_comissao": "R$ 33.828,00"
+            },
+            {
+              "venda_normal": "R$ 30.660,52",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ",
+              "total_comissao": "R$ 30.660,52"
+            },
+            {
+              "venda_normal": "R$ 22.504,00",
+              "financiamento": "R$ 1.516,00",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "total_comissao": "R$ 24.020,00"
+            },
+            {
+              "venda_normal": "R$ 16.732,17",
+              "financiamento": "R$ 3.030,30",
+              "concessionaria": "STRADA JEEP",
+              "total_comissao": "R$ 19.762,47"
+            },
+            {
+              "venda_normal": "R$ 14.895,60",
+              "financiamento": "R$ 4.097,60",
+              "concessionaria": "PORSCHE",
+              "total_comissao": "R$ 18.993,20"
+            },
+            {
+              "venda_normal": "R$ 18.535,20",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "total_comissao": "R$ 18.535,20"
+            },
+            {
+              "venda_normal": "R$ 18.012,33",
+              "financiamento": "R$ 207,90",
+              "concessionaria": "BANZAI",
+              "total_comissao": "R$ 18.220,23"
+            },
+            {
+              "venda_normal": "R$ 16.969,05",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL",
+              "total_comissao": "R$ 16.969,05"
+            },
+            {
+              "venda_normal": "R$ 16.187,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "AUDI CARBEL",
+              "total_comissao": "R$ 16.187,60"
+            },
+            {
+              "venda_normal": "R$ 11.058,60",
+              "financiamento": "R$ 2.984,10",
+              "concessionaria": "STRADA",
+              "total_comissao": "R$ 14.042,70"
+            },
+            {
+              "venda_normal": "R$ 12.070,17",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "total_comissao": "R$ 12.070,17"
+            },
+            {
+              "venda_normal": "R$ 9.668,97",
+              "financiamento": "R$ 1.400,70",
+              "concessionaria": "BANZAI PAMPULHA",
+              "total_comissao": "R$ 11.069,67"
+            },
+            {
+              "venda_normal": "R$ 8.410,50",
+              "financiamento": "R$ 1.801,80",
+              "concessionaria": "STRADA JEEP - PAMPULHA",
+              "total_comissao": "R$ 10.212,30"
+            },
+            {
+              "venda_normal": "R$ 10.127,04",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GARRA",
+              "total_comissao": "R$ 10.127,04"
+            },
+            {
+              "venda_normal": "R$ 9.483,18",
+              "financiamento": "R$ 182,70",
+              "concessionaria": "STRADA LINHA VERDE",
+              "total_comissao": "R$ 9.665,88"
+            },
+            {
+              "venda_normal": "R$ 8.567,58",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA",
+              "total_comissao": "R$ 8.567,58"
+            },
+            {
+              "venda_normal": "R$ 4.208,40",
+              "financiamento": "R$ 1.852,20",
+              "concessionaria": "CARBEL KOREA",
+              "total_comissao": "R$ 6.060,60"
+            },
+            {
+              "venda_normal": "R$ 5.860,89",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "total_comissao": "R$ 5.860,89"
+            },
+            {
+              "venda_normal": "R$ 5.828,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ CONTAGEM",
+              "total_comissao": "R$ 5.828,40"
+            },
+            {
+              "venda_normal": "R$ 3.863,65",
+              "financiamento": "R$ 1.440,00",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "total_comissao": "R$ 5.303,65"
+            },
+            {
+              "venda_normal": "R$ 4.263,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "total_comissao": "R$ 4.263,00"
+            },
+            {
+              "venda_normal": "R$ 3.750,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "total_comissao": "R$ 3.750,60"
+            },
+            {
+              "venda_normal": "R$ 2.816,10",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "total_comissao": "R$ 2.816,10"
+            },
+            {
+              "venda_normal": "R$ 1.503,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BAMAQ - OFICINA",
+              "total_comissao": "R$ 1.503,60"
+            },
+            {
+              "venda_normal": "R$ 420,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "OSAKA",
+              "total_comissao": "R$ 420,00"
+            },
+            {
+              "venda_normal": "R$ 291,90",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "total_comissao": "R$ 291,90"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CRISTIANO MACHADO",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "XTREME CAR DETAIL",
+              "total_comissao": "R$ 0,00"
+            }
+          ],
+          "_meta": {
+            "schema": "table",
+            "columns": [
+              "venda_normal",
+              "financiamento",
+              "total_comissao"
+            ],
+            "dimension": "tipo_os",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "tipo_os",
+            "subdimension": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": false
+          },
+          "table_rows_sample": [
+            "SAITAMA - HONDA | financiamento: R$ 6.099,00 | total_comissao: R$ 33.828,00 | venda_normal: R$ 27.729,00",
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 30.660,52 | venda_normal: R$ 30.660,52",
+            "GWM BAMAQ PAMPULHA | financiamento: R$ 1.516,00 | total_comissao: R$ 24.020,00 | venda_normal: R$ 22.504,00",
+            "STRADA JEEP | financiamento: R$ 3.030,30 | total_comissao: R$ 19.762,47 | venda_normal: R$ 16.732,17",
+            "PORSCHE | financiamento: R$ 4.097,60 | total_comissao: R$ 18.993,20 | venda_normal: R$ 14.895,60",
+            "Bamaq Automóveis Mercedes-Benz | financiamento: R$ 0,00 | total_comissao: R$ 18.535,20 | venda_normal: R$ 18.535,20",
+            "BANZAI | financiamento: R$ 207,90 | total_comissao: R$ 18.220,23 | venda_normal: R$ 18.012,33",
+            "CARBEL | financiamento: R$ 0,00 | total_comissao: R$ 16.969,05 | venda_normal: R$ 16.969,05",
+            "AUDI CARBEL | financiamento: R$ 0,00 | total_comissao: R$ 16.187,60 | venda_normal: R$ 16.187,60",
+            "STRADA | financiamento: R$ 2.984,10 | total_comissao: R$ 14.042,70 | venda_normal: R$ 11.058,60",
+            "CARBEL BYD SAVASSI | financiamento: R$ 0,00 | total_comissao: R$ 12.070,17 | venda_normal: R$ 12.070,17",
+            "BANZAI PAMPULHA | financiamento: R$ 1.400,70 | total_comissao: R$ 11.069,67 | venda_normal: R$ 9.668,97",
+            "STRADA JEEP - PAMPULHA | financiamento: R$ 1.801,80 | total_comissao: R$ 10.212,30 | venda_normal: R$ 8.410,50",
+            "GARRA | financiamento: R$ 0,00 | total_comissao: R$ 10.127,04 | venda_normal: R$ 10.127,04",
+            "STRADA LINHA VERDE | financiamento: R$ 182,70 | total_comissao: R$ 9.665,88 | venda_normal: R$ 9.483,18",
+            "CARBEL OMODA | financiamento: R$ 0,00 | total_comissao: R$ 8.567,58 | venda_normal: R$ 8.567,58",
+            "CARBEL KOREA | financiamento: R$ 1.852,20 | total_comissao: R$ 6.060,60 | venda_normal: R$ 4.208,40",
+            "CARBEL BYD CATALÃO | financiamento: R$ 0,00 | total_comissao: R$ 5.860,89 | venda_normal: R$ 5.860,89",
+            "GWM BAMAQ CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 5.828,40 | venda_normal: R$ 5.828,40",
+            "VIA JAP COMERCIO DE VEICULOS LTDA | financiamento: R$ 1.440,00 | total_comissao: R$ 5.303,65 | venda_normal: R$ 3.863,65",
+            "CARBEL BYD CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 4.263,00 | venda_normal: R$ 4.263,00",
+            "CARBEL JAPÃO CONTORNO | financiamento: R$ 0,00 | total_comissao: R$ 3.750,60 | venda_normal: R$ 3.750,60",
+            "CARBEL JAPÃO BARÃO | financiamento: R$ 0,00 | total_comissao: R$ 2.816,10 | venda_normal: R$ 2.816,10",
+            "BAMAQ - OFICINA | financiamento: R$ 0,00 | total_comissao: R$ 1.503,60 | venda_normal: R$ 1.503,60",
+            "OSAKA | financiamento: R$ 0,00 | total_comissao: R$ 420,00 | venda_normal: R$ 420,00",
+            "STRADA LEAPMOTOR | financiamento: R$ 0,00 | total_comissao: R$ 291,90 | venda_normal: R$ 291,90",
+            "ARVAL BRASIL LTDA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS CRISTIANO MACHADO | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "XTREME CAR DETAIL | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00"
+          ]
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 13,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria_tipo_os:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "concessionaria | venda normal | financiamento | total comissão\nPORSCHE | R$ 26.599,20 | R$ 5.414,40 | R$ 32.013,60\nGWM BAMAQ | R$ 31.520,80 | R$ 0,00 | R$ 31.520,80\nSAITAMA - HONDA | R$ 22.729,00 | R$ 6.465,60 | R$ 29.194,60\nGWM BAMAQ PAMPULHA | R$ 21.972,08 | R$ 0,00 | R$ 21.972,08\nSTRADA JEEP | R$ 19.620,30 | R$ 2.215,50 | R$ 21.835,80\nBANZAI | R$ 16.396,38 | R$ 312,90 | R$ 16.709,28\nSTRADA | R$ 10.088,40 | R$ 2.429,70 | R$ 12.518,10\nCARBEL OMODA | R$ 12.037,20 | R$ 0,00 | R$ 12.037,20\nCARBEL BYD SAVASSI | R$ 10.906,56 | R$ 81,90 | R$ 10.988,46\nCARBEL | R$ 9.737,28 | R$ 0,00 | R$ 9.737,28\nBANZAI PAMPULHA | R$ 8.574,70 | R$ 0,00 | R$ 8.574,70\nSTRADA JEEP - PAMPULHA | R$ 6.076,35 | R$ 2.347,80 | R$ 8.424,15\nSTRADA LINHA VERDE | R$ 7.992,39 | R$ 0,00 | R$ 7.992,39\nBamaq Automóveis Mercedes-Benz | R$ 7.892,00 | R$ 0,00 | R$ 7.892,00\nVIA JAP COMERCIO DE VEICULOS LTDA | R$ 7.286,50 | R$ 420,00 | R$ 7.706,50\nCARBEL BYD CATALÃO | R$ 7.125,30 | R$ 0,00 | R$ 7.125,30\nGARRA | R$ 6.232,59 | R$ 0,00 | R$ 6.232,59\nGWM BAMAQ CONTAGEM | R$ 4.830,40 | R$ 0,00 | R$ 4.830,40\nCARBEL BYD CONTAGEM | R$ 4.806,69 | R$ 0,00 | R$ 4.806,69\nBAMAQ - OFICINA | R$ 3.757,60 | R$ 0,00 | R$ 3.757,60\nCARBEL KOREA | R$ 2.242,80 | R$ 1.448,37 | R$ 3.691,17\nAUDI CARBEL | R$ 2.926,00 | R$ 0,00 | R$ 2.926,00\nCARBEL JAPÃO CONTORNO | R$ 1.993,01 | R$ 0,00 | R$ 1.993,01\nCARBEL JAPÃO BARÃO | R$ 783,30 | R$ 0,00 | R$ 783,30\nSTRADA LEAPMOTOR | R$ 272,79 | R$ 0,00 | R$ 272,79\nBYD NOVA LIMA | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS CONTAGEM | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS PAMPULHA | R$ 0,00 | R$ 0,00 | R$ 0,00\nXTREME CAR DETAIL | R$ 0,00 | R$ 0,00 | R$ 0,00",
+      "key_metrics": {
+        "comissao_por_tipo_de_os_por_concessionaria": {
+          "rows": [
+            {
+              "venda_normal": "R$ 26.599,20",
+              "financiamento": "R$ 5.414,40",
+              "concessionaria": "PORSCHE",
+              "total_comissao": "R$ 32.013,60"
+            },
+            {
+              "venda_normal": "R$ 31.520,80",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ",
+              "total_comissao": "R$ 31.520,80"
+            },
+            {
+              "venda_normal": "R$ 22.729,00",
+              "financiamento": "R$ 6.465,60",
+              "concessionaria": "SAITAMA - HONDA",
+              "total_comissao": "R$ 29.194,60"
+            },
+            {
+              "venda_normal": "R$ 21.972,08",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "total_comissao": "R$ 21.972,08"
+            },
+            {
+              "venda_normal": "R$ 19.620,30",
+              "financiamento": "R$ 2.215,50",
+              "concessionaria": "STRADA JEEP",
+              "total_comissao": "R$ 21.835,80"
+            },
+            {
+              "venda_normal": "R$ 16.396,38",
+              "financiamento": "R$ 312,90",
+              "concessionaria": "BANZAI",
+              "total_comissao": "R$ 16.709,28"
+            },
+            {
+              "venda_normal": "R$ 10.088,40",
+              "financiamento": "R$ 2.429,70",
+              "concessionaria": "STRADA",
+              "total_comissao": "R$ 12.518,10"
+            },
+            {
+              "venda_normal": "R$ 12.037,20",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA",
+              "total_comissao": "R$ 12.037,20"
+            },
+            {
+              "venda_normal": "R$ 10.906,56",
+              "financiamento": "R$ 81,90",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "total_comissao": "R$ 10.988,46"
+            },
+            {
+              "venda_normal": "R$ 9.737,28",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL",
+              "total_comissao": "R$ 9.737,28"
+            },
+            {
+              "venda_normal": "R$ 8.574,70",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BANZAI PAMPULHA",
+              "total_comissao": "R$ 8.574,70"
+            },
+            {
+              "venda_normal": "R$ 6.076,35",
+              "financiamento": "R$ 2.347,80",
+              "concessionaria": "STRADA JEEP - PAMPULHA",
+              "total_comissao": "R$ 8.424,15"
+            },
+            {
+              "venda_normal": "R$ 7.992,39",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "STRADA LINHA VERDE",
+              "total_comissao": "R$ 7.992,39"
+            },
+            {
+              "venda_normal": "R$ 7.892,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "total_comissao": "R$ 7.892,00"
+            },
+            {
+              "venda_normal": "R$ 7.286,50",
+              "financiamento": "R$ 420,00",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "total_comissao": "R$ 7.706,50"
+            },
+            {
+              "venda_normal": "R$ 7.125,30",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "total_comissao": "R$ 7.125,30"
+            },
+            {
+              "venda_normal": "R$ 6.232,59",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GARRA",
+              "total_comissao": "R$ 6.232,59"
+            },
+            {
+              "venda_normal": "R$ 4.830,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ CONTAGEM",
+              "total_comissao": "R$ 4.830,40"
+            },
+            {
+              "venda_normal": "R$ 4.806,69",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "total_comissao": "R$ 4.806,69"
+            },
+            {
+              "venda_normal": "R$ 3.757,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BAMAQ - OFICINA",
+              "total_comissao": "R$ 3.757,60"
+            },
+            {
+              "venda_normal": "R$ 2.242,80",
+              "financiamento": "R$ 1.448,37",
+              "concessionaria": "CARBEL KOREA",
+              "total_comissao": "R$ 3.691,17"
+            },
+            {
+              "venda_normal": "R$ 2.926,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "AUDI CARBEL",
+              "total_comissao": "R$ 2.926,00"
+            },
+            {
+              "venda_normal": "R$ 1.993,01",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "total_comissao": "R$ 1.993,01"
+            },
+            {
+              "venda_normal": "R$ 783,30",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "total_comissao": "R$ 783,30"
+            },
+            {
+              "venda_normal": "R$ 272,79",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "total_comissao": "R$ 272,79"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BYD NOVA LIMA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "XTREME CAR DETAIL",
+              "total_comissao": "R$ 0,00"
+            }
+          ],
+          "_meta": {
+            "schema": "table",
+            "columns": [
+              "venda_normal",
+              "financiamento",
+              "total_comissao"
+            ],
+            "dimension": "tipo_os",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "tipo_os",
+            "subdimension": "concessionaria",
+            "total_original_rows": 29,
+            "truncated_head_tail": false
+          },
+          "table_rows_sample": [
+            "PORSCHE | financiamento: R$ 5.414,40 | total_comissao: R$ 32.013,60 | venda_normal: R$ 26.599,20",
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 31.520,80 | venda_normal: R$ 31.520,80",
+            "SAITAMA - HONDA | financiamento: R$ 6.465,60 | total_comissao: R$ 29.194,60 | venda_normal: R$ 22.729,00",
+            "GWM BAMAQ PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 21.972,08 | venda_normal: R$ 21.972,08",
+            "STRADA JEEP | financiamento: R$ 2.215,50 | total_comissao: R$ 21.835,80 | venda_normal: R$ 19.620,30",
+            "BANZAI | financiamento: R$ 312,90 | total_comissao: R$ 16.709,28 | venda_normal: R$ 16.396,38",
+            "STRADA | financiamento: R$ 2.429,70 | total_comissao: R$ 12.518,10 | venda_normal: R$ 10.088,40",
+            "CARBEL OMODA | financiamento: R$ 0,00 | total_comissao: R$ 12.037,20 | venda_normal: R$ 12.037,20",
+            "CARBEL BYD SAVASSI | financiamento: R$ 81,90 | total_comissao: R$ 10.988,46 | venda_normal: R$ 10.906,56",
+            "CARBEL | financiamento: R$ 0,00 | total_comissao: R$ 9.737,28 | venda_normal: R$ 9.737,28",
+            "BANZAI PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 8.574,70 | venda_normal: R$ 8.574,70",
+            "STRADA JEEP - PAMPULHA | financiamento: R$ 2.347,80 | total_comissao: R$ 8.424,15 | venda_normal: R$ 6.076,35",
+            "STRADA LINHA VERDE | financiamento: R$ 0,00 | total_comissao: R$ 7.992,39 | venda_normal: R$ 7.992,39",
+            "Bamaq Automóveis Mercedes-Benz | financiamento: R$ 0,00 | total_comissao: R$ 7.892,00 | venda_normal: R$ 7.892,00",
+            "VIA JAP COMERCIO DE VEICULOS LTDA | financiamento: R$ 420,00 | total_comissao: R$ 7.706,50 | venda_normal: R$ 7.286,50",
+            "CARBEL BYD CATALÃO | financiamento: R$ 0,00 | total_comissao: R$ 7.125,30 | venda_normal: R$ 7.125,30",
+            "GARRA | financiamento: R$ 0,00 | total_comissao: R$ 6.232,59 | venda_normal: R$ 6.232,59",
+            "GWM BAMAQ CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 4.830,40 | venda_normal: R$ 4.830,40",
+            "CARBEL BYD CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 4.806,69 | venda_normal: R$ 4.806,69",
+            "BAMAQ - OFICINA | financiamento: R$ 0,00 | total_comissao: R$ 3.757,60 | venda_normal: R$ 3.757,60",
+            "CARBEL KOREA | financiamento: R$ 1.448,37 | total_comissao: R$ 3.691,17 | venda_normal: R$ 2.242,80",
+            "AUDI CARBEL | financiamento: R$ 0,00 | total_comissao: R$ 2.926,00 | venda_normal: R$ 2.926,00",
+            "CARBEL JAPÃO CONTORNO | financiamento: R$ 0,00 | total_comissao: R$ 1.993,01 | venda_normal: R$ 1.993,01",
+            "CARBEL JAPÃO BARÃO | financiamento: R$ 0,00 | total_comissao: R$ 783,30 | venda_normal: R$ 783,30",
+            "STRADA LEAPMOTOR | financiamento: R$ 0,00 | total_comissao: R$ 272,79 | venda_normal: R$ 272,79",
+            "BYD NOVA LIMA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "XTREME CAR DETAIL | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00"
+          ]
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 21,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria_tipo_os:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Tabela de comissão por concessionária desagregada por tipo de O.S.: colunas venda_normal, financiamento, total_comissao conforme linhas registradas para cada concessionária.",
+      "key_metrics": {
+        "comissao_por_tipo_de_os_por_concessionaria": {
+          "rows": [
+            {
+              "venda_normal": "R$ 36.825,60",
+              "financiamento": "R$ 4.369,60",
+              "concessionaria": "PORSCHE",
+              "total_comissao": "R$ 41.195,20"
+            },
+            {
+              "venda_normal": "R$ 39.416,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ",
+              "total_comissao": "R$ 39.416,00"
+            },
+            {
+              "venda_normal": "R$ 28.815,10",
+              "financiamento": "R$ 5.664,00",
+              "concessionaria": "SAITAMA - HONDA",
+              "total_comissao": "R$ 34.479,10"
+            },
+            {
+              "venda_normal": "R$ 21.068,88",
+              "financiamento": "R$ 2.895,90",
+              "concessionaria": "STRADA JEEP",
+              "total_comissao": "R$ 23.964,78"
+            },
+            {
+              "venda_normal": "R$ 21.946,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "total_comissao": "R$ 21.946,40"
+            },
+            {
+              "venda_normal": "R$ 18.096,75",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "total_comissao": "R$ 18.096,75"
+            },
+            {
+              "venda_normal": "R$ 14.868,00",
+              "financiamento": "R$ 1.602,30",
+              "concessionaria": "STRADA",
+              "total_comissao": "R$ 16.470,30"
+            },
+            {
+              "venda_normal": "R$ 16.158,24",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL",
+              "total_comissao": "R$ 16.158,24"
+            },
+            {
+              "venda_normal": "R$ 11.505,61",
+              "financiamento": "R$ 2.364,70",
+              "concessionaria": "AUDI CARBEL",
+              "total_comissao": "R$ 13.870,31"
+            },
+            {
+              "venda_normal": "R$ 13.307,91",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "total_comissao": "R$ 13.307,91"
+            },
+            {
+              "venda_normal": "R$ 10.147,60",
+              "financiamento": "R$ 2.733,99",
+              "concessionaria": "BANZAI PAMPULHA",
+              "total_comissao": "R$ 12.881,59"
+            },
+            {
+              "venda_normal": "R$ 11.047,57",
+              "financiamento": "R$ 1.533,00",
+              "concessionaria": "STRADA JEEP - PAMPULHA",
+              "total_comissao": "R$ 12.580,57"
+            },
+            {
+              "venda_normal": "R$ 11.269,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BAMAQ - OFICINA",
+              "total_comissao": "R$ 11.269,60"
+            },
+            {
+              "venda_normal": "R$ 10.460,10",
+              "financiamento": "R$ 432,60",
+              "concessionaria": "BANZAI",
+              "total_comissao": "R$ 10.892,70"
+            },
+            {
+              "venda_normal": "R$ 9.737,70",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA",
+              "total_comissao": "R$ 9.737,70"
+            },
+            {
+              "venda_normal": "R$ 8.905,68",
+              "financiamento": "R$ 504,00",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "total_comissao": "R$ 9.409,68"
+            },
+            {
+              "venda_normal": "R$ 9.339,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ CONTAGEM",
+              "total_comissao": "R$ 9.339,60"
+            },
+            {
+              "venda_normal": "R$ 7.181,94",
+              "financiamento": "R$ 1.256,50",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "total_comissao": "R$ 8.438,44"
+            },
+            {
+              "venda_normal": "R$ 6.746,88",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GARRA",
+              "total_comissao": "R$ 6.746,88"
+            },
+            {
+              "venda_normal": "R$ 6.077,40",
+              "financiamento": "R$ 588,00",
+              "concessionaria": "STRADA LINHA VERDE",
+              "total_comissao": "R$ 6.665,40"
+            },
+            {
+              "venda_normal": "R$ 5.119,80",
+              "financiamento": "R$ 260,40",
+              "concessionaria": "CARBEL KOREA",
+              "total_comissao": "R$ 5.380,20"
+            },
+            {
+              "venda_normal": "R$ 5.218,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "total_comissao": "R$ 5.218,00"
+            },
+            {
+              "venda_normal": "R$ 3.836,70",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "total_comissao": "R$ 3.836,70"
+            },
+            {
+              "venda_normal": "R$ 2.215,29",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "total_comissao": "R$ 2.215,29"
+            },
+            {
+              "venda_normal": "R$ 1.070,58",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "total_comissao": "R$ 1.070,58"
+            },
+            {
+              "venda_normal": "R$ 461,58",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "total_comissao": "R$ 461,58"
+            },
+            {
+              "venda_normal": "R$ 163,80",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARSOUL",
+              "total_comissao": "R$ 163,80"
+            },
+            {
+              "venda_normal": "R$ 84,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "OSAKA PAMPULHA",
+              "total_comissao": "R$ 84,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "XTREME CAR DETAIL",
+              "total_comissao": "R$ 0,00"
+            }
+          ],
+          "_meta": {
+            "schema": "table",
+            "columns": [
+              "venda_normal",
+              "financiamento",
+              "total_comissao"
+            ],
+            "dimension": "tipo_os",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "tipo_os",
+            "subdimension": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": false
+          },
+          "table_rows_sample": [
+            "PORSCHE | financiamento: R$ 4.369,60 | total_comissao: R$ 41.195,20 | venda_normal: R$ 36.825,60",
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 39.416,00 | venda_normal: R$ 39.416,00",
+            "SAITAMA - HONDA | financiamento: R$ 5.664,00 | total_comissao: R$ 34.479,10 | venda_normal: R$ 28.815,10",
+            "STRADA JEEP | financiamento: R$ 2.895,90 | total_comissao: R$ 23.964,78 | venda_normal: R$ 21.068,88",
+            "GWM BAMAQ PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 21.946,40 | venda_normal: R$ 21.946,40",
+            "CARBEL BYD SAVASSI | financiamento: R$ 0,00 | total_comissao: R$ 18.096,75 | venda_normal: R$ 18.096,75",
+            "STRADA | financiamento: R$ 1.602,30 | total_comissao: R$ 16.470,30 | venda_normal: R$ 14.868,00",
+            "CARBEL | financiamento: R$ 0,00 | total_comissao: R$ 16.158,24 | venda_normal: R$ 16.158,24",
+            "AUDI CARBEL | financiamento: R$ 2.364,70 | total_comissao: R$ 13.870,31 | venda_normal: R$ 11.505,61",
+            "CARBEL BYD CATALÃO | financiamento: R$ 0,00 | total_comissao: R$ 13.307,91 | venda_normal: R$ 13.307,91",
+            "BANZAI PAMPULHA | financiamento: R$ 2.733,99 | total_comissao: R$ 12.881,59 | venda_normal: R$ 10.147,60",
+            "STRADA JEEP - PAMPULHA | financiamento: R$ 1.533,00 | total_comissao: R$ 12.580,57 | venda_normal: R$ 11.047,57",
+            "BAMAQ - OFICINA | financiamento: R$ 0,00 | total_comissao: R$ 11.269,60 | venda_normal: R$ 11.269,60",
+            "BANZAI | financiamento: R$ 432,60 | total_comissao: R$ 10.892,70 | venda_normal: R$ 10.460,10",
+            "CARBEL OMODA | financiamento: R$ 0,00 | total_comissao: R$ 9.737,70 | venda_normal: R$ 9.737,70",
+            "CARBEL BYD CONTAGEM | financiamento: R$ 504,00 | total_comissao: R$ 9.409,68 | venda_normal: R$ 8.905,68",
+            "GWM BAMAQ CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 9.339,60 | venda_normal: R$ 9.339,60",
+            "VIA JAP COMERCIO DE VEICULOS LTDA | financiamento: R$ 1.256,50 | total_comissao: R$ 8.438,44 | venda_normal: R$ 7.181,94",
+            "GARRA | financiamento: R$ 0,00 | total_comissao: R$ 6.746,88 | venda_normal: R$ 6.746,88",
+            "STRADA LINHA VERDE | financiamento: R$ 588,00 | total_comissao: R$ 6.665,40 | venda_normal: R$ 6.077,40",
+            "CARBEL KOREA | financiamento: R$ 260,40 | total_comissao: R$ 5.380,20 | venda_normal: R$ 5.119,80",
+            "Bamaq Automóveis Mercedes-Benz | financiamento: R$ 0,00 | total_comissao: R$ 5.218,00 | venda_normal: R$ 5.218,00",
+            "CARBEL JAPÃO CONTORNO | financiamento: R$ 0,00 | total_comissao: R$ 3.836,70 | venda_normal: R$ 3.836,70",
+            "CARBEL JAPÃO BARÃO | financiamento: R$ 0,00 | total_comissao: R$ 2.215,29 | venda_normal: R$ 2.215,29",
+            "STRADA LEAPMOTOR | financiamento: R$ 0,00 | total_comissao: R$ 1.070,58 | venda_normal: R$ 1.070,58",
+            "CARBEL OMODA UBERLANDIA | financiamento: R$ 0,00 | total_comissao: R$ 461,58 | venda_normal: R$ 461,58",
+            "CARSOUL | financiamento: R$ 0,00 | total_comissao: R$ 163,80 | venda_normal: R$ 163,80",
+            "OSAKA PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 84,00 | venda_normal: R$ 84,00",
+            "GRANDE MINAS CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "XTREME CAR DETAIL | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00"
+          ]
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 29,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria_tipo_os:periodo-2026-04",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "GWM BAMAQ | R$ 38.162,34 | R$ 0,00 | R$ 38.162,34\nSAITAMA - HONDA | R$ 28.544,60 | R$ 7.251,00 | R$ 35.795,60\nGWM BAMAQ PAMPULHA | R$ 27.435,40 | R$ 0,00 | R$ 27.435,40\nCARBEL BYD SAVASSI | R$ 24.287,87 | R$ 161,70 | R$ 24.449,57\nPORSCHE | R$ 21.239,49 | R$ 414,40 | R$ 21.653,89\nCARBEL | R$ 18.672,38 | R$ 205,80 | R$ 18.878,18\nSTRADA JEEP | R$ 13.045,62 | R$ 2.709,00 | R$ 15.754,62\nBANZAI PAMPULHA | R$ 11.314,72 | R$ 3.975,09 | R$ 15.289,81\nCARBEL OMODA | R$ 13.242,60 | R$ 0,00 | R$ 13.242,60\nBANZAI | R$ 12.701,64 | R$ 144,90 | R$ 12.846,54\nAUDI CARBEL | R$ 6.243,10 | R$ 4.851,00 | R$ 11.094,10\nCARBEL BYD CONTAGEM | R$ 10.957,80 | R$ 0,00 | R$ 10.957,80\nBamaq Automóveis Mercedes-Benz | R$ 9.979,80 | R$ 0,00 | R$ 9.979,80\nCARBEL BYD CATALÃO | R$ 9.731,40 | R$ 0,00 | R$ 9.731,40\nSTRADA JEEP - PAMPULHA | R$ 6.423,90 | R$ 2.429,70 | R$ 8.853,60\nSTRADA LINHA VERDE | R$ 8.207,34 | R$ 468,30 | R$ 8.675,64\nSTRADA | R$ 5.865,30 | R$ 2.528,40 | R$ 8.393,70\nCARBEL KOREA | R$ 4.584,30 | R$ 1.173,90 | R$ 5.758,20\nGWM BAMAQ CONTAGEM | R$ 5.398,40 | R$ 0,00 | R$ 5.398,40\nGARRA | R$ 4.682,53 | R$ 0,00 | R$ 4.682,53\nCARBEL JAPÃO CONTORNO | R$ 3.367,98 | R$ 0,00 | R$ 3.367,98\nCARBEL JAPÃO BARÃO | R$ 3.032,61 | R$ 0,00 | R$ 3.032,61\nVIA JAP COMERCIO DE VEICULOS LTDA | R$ 2.944,55 | R$ 0,00 | R$ 2.944,55\nSTRADA LEAPMOTOR | R$ 2.705,85 | R$ 0,00 | R$ 2.705,85\nBAMAQ - OFICINA | R$ 1.696,80 | R$ 0,00 | R$ 1.696,80\nCARBEL OMODA UBERLANDIA | R$ 1.325,94 | R$ 0,00 | R$ 1.325,94\nCARBEL OLHOS DAGUA | R$ 33,60 | R$ 0,00 | R$ 33,60\nARVAL BRASIL LTDA | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS CONTAGEM | R$ 0,00 | R$ 0,00 | R$ 0,00\nGRANDE MINAS PAMPULHA | R$ 0,00 | R$ 0,00 | R$ 0,00\nXTREME CAR DETAIL | R$ 0,00 | R$ 0,00 | R$ 0,00",
+      "key_metrics": {
+        "comissao_por_tipo_de_os_por_concessionaria": {
+          "rows": [
+            {
+              "venda_normal": "R$ 38.162,34",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ",
+              "total_comissao": "R$ 38.162,34"
+            },
+            {
+              "venda_normal": "R$ 28.544,60",
+              "financiamento": "R$ 7.251,00",
+              "concessionaria": "SAITAMA - HONDA",
+              "total_comissao": "R$ 35.795,60"
+            },
+            {
+              "venda_normal": "R$ 27.435,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "total_comissao": "R$ 27.435,40"
+            },
+            {
+              "venda_normal": "R$ 24.287,87",
+              "financiamento": "R$ 161,70",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "total_comissao": "R$ 24.449,57"
+            },
+            {
+              "venda_normal": "R$ 21.239,49",
+              "financiamento": "R$ 414,40",
+              "concessionaria": "PORSCHE",
+              "total_comissao": "R$ 21.653,89"
+            },
+            {
+              "venda_normal": "R$ 18.672,38",
+              "financiamento": "R$ 205,80",
+              "concessionaria": "CARBEL",
+              "total_comissao": "R$ 18.878,18"
+            },
+            {
+              "venda_normal": "R$ 13.045,62",
+              "financiamento": "R$ 2.709,00",
+              "concessionaria": "STRADA JEEP",
+              "total_comissao": "R$ 15.754,62"
+            },
+            {
+              "venda_normal": "R$ 11.314,72",
+              "financiamento": "R$ 3.975,09",
+              "concessionaria": "BANZAI PAMPULHA",
+              "total_comissao": "R$ 15.289,81"
+            },
+            {
+              "venda_normal": "R$ 13.242,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA",
+              "total_comissao": "R$ 13.242,60"
+            },
+            {
+              "venda_normal": "R$ 12.701,64",
+              "financiamento": "R$ 144,90",
+              "concessionaria": "BANZAI",
+              "total_comissao": "R$ 12.846,54"
+            },
+            {
+              "venda_normal": "R$ 6.243,10",
+              "financiamento": "R$ 4.851,00",
+              "concessionaria": "AUDI CARBEL",
+              "total_comissao": "R$ 11.094,10"
+            },
+            {
+              "venda_normal": "R$ 10.957,80",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "total_comissao": "R$ 10.957,80"
+            },
+            {
+              "venda_normal": "R$ 9.979,80",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "total_comissao": "R$ 9.979,80"
+            },
+            {
+              "venda_normal": "R$ 9.731,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "total_comissao": "R$ 9.731,40"
+            },
+            {
+              "venda_normal": "R$ 6.423,90",
+              "financiamento": "R$ 2.429,70",
+              "concessionaria": "STRADA JEEP - PAMPULHA",
+              "total_comissao": "R$ 8.853,60"
+            },
+            {
+              "venda_normal": "R$ 8.207,34",
+              "financiamento": "R$ 468,30",
+              "concessionaria": "STRADA LINHA VERDE",
+              "total_comissao": "R$ 8.675,64"
+            },
+            {
+              "venda_normal": "R$ 5.865,30",
+              "financiamento": "R$ 2.528,40",
+              "concessionaria": "STRADA",
+              "total_comissao": "R$ 8.393,70"
+            },
+            {
+              "venda_normal": "R$ 4.584,30",
+              "financiamento": "R$ 1.173,90",
+              "concessionaria": "CARBEL KOREA",
+              "total_comissao": "R$ 5.758,20"
+            },
+            {
+              "venda_normal": "R$ 5.398,40",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ CONTAGEM",
+              "total_comissao": "R$ 5.398,40"
+            },
+            {
+              "venda_normal": "R$ 4.682,53",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GARRA",
+              "total_comissao": "R$ 4.682,53"
+            },
+            {
+              "venda_normal": "R$ 3.367,98",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "total_comissao": "R$ 3.367,98"
+            },
+            {
+              "venda_normal": "R$ 3.032,61",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "total_comissao": "R$ 3.032,61"
+            },
+            {
+              "venda_normal": "R$ 2.944,55",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "total_comissao": "R$ 2.944,55"
+            },
+            {
+              "venda_normal": "R$ 2.705,85",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "total_comissao": "R$ 2.705,85"
+            },
+            {
+              "venda_normal": "R$ 1.696,80",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BAMAQ - OFICINA",
+              "total_comissao": "R$ 1.696,80"
+            },
+            {
+              "venda_normal": "R$ 1.325,94",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "total_comissao": "R$ 1.325,94"
+            },
+            {
+              "venda_normal": "R$ 33,60",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OLHOS DAGUA",
+              "total_comissao": "R$ 33,60"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "XTREME CAR DETAIL",
+              "total_comissao": "R$ 0,00"
+            }
+          ],
+          "_meta": {
+            "schema": "table",
+            "columns": [
+              "venda_normal",
+              "financiamento",
+              "total_comissao"
+            ],
+            "dimension": "tipo_os",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "tipo_os",
+            "subdimension": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": false
+          },
+          "table_rows_sample": [
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 38.162,34 | venda_normal: R$ 38.162,34",
+            "SAITAMA - HONDA | financiamento: R$ 7.251,00 | total_comissao: R$ 35.795,60 | venda_normal: R$ 28.544,60",
+            "GWM BAMAQ PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 27.435,40 | venda_normal: R$ 27.435,40",
+            "CARBEL BYD SAVASSI | financiamento: R$ 161,70 | total_comissao: R$ 24.449,57 | venda_normal: R$ 24.287,87",
+            "PORSCHE | financiamento: R$ 414,40 | total_comissao: R$ 21.653,89 | venda_normal: R$ 21.239,49",
+            "CARBEL | financiamento: R$ 205,80 | total_comissao: R$ 18.878,18 | venda_normal: R$ 18.672,38",
+            "STRADA JEEP | financiamento: R$ 2.709,00 | total_comissao: R$ 15.754,62 | venda_normal: R$ 13.045,62",
+            "BANZAI PAMPULHA | financiamento: R$ 3.975,09 | total_comissao: R$ 15.289,81 | venda_normal: R$ 11.314,72",
+            "CARBEL OMODA | financiamento: R$ 0,00 | total_comissao: R$ 13.242,60 | venda_normal: R$ 13.242,60",
+            "BANZAI | financiamento: R$ 144,90 | total_comissao: R$ 12.846,54 | venda_normal: R$ 12.701,64",
+            "AUDI CARBEL | financiamento: R$ 4.851,00 | total_comissao: R$ 11.094,10 | venda_normal: R$ 6.243,10",
+            "CARBEL BYD CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 10.957,80 | venda_normal: R$ 10.957,80",
+            "Bamaq Automóveis Mercedes-Benz | financiamento: R$ 0,00 | total_comissao: R$ 9.979,80 | venda_normal: R$ 9.979,80",
+            "CARBEL BYD CATALÃO | financiamento: R$ 0,00 | total_comissao: R$ 9.731,40 | venda_normal: R$ 9.731,40",
+            "STRADA JEEP - PAMPULHA | financiamento: R$ 2.429,70 | total_comissao: R$ 8.853,60 | venda_normal: R$ 6.423,90",
+            "STRADA LINHA VERDE | financiamento: R$ 468,30 | total_comissao: R$ 8.675,64 | venda_normal: R$ 8.207,34",
+            "STRADA | financiamento: R$ 2.528,40 | total_comissao: R$ 8.393,70 | venda_normal: R$ 5.865,30",
+            "CARBEL KOREA | financiamento: R$ 1.173,90 | total_comissao: R$ 5.758,20 | venda_normal: R$ 4.584,30",
+            "GWM BAMAQ CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 5.398,40 | venda_normal: R$ 5.398,40",
+            "GARRA | financiamento: R$ 0,00 | total_comissao: R$ 4.682,53 | venda_normal: R$ 4.682,53",
+            "CARBEL JAPÃO CONTORNO | financiamento: R$ 0,00 | total_comissao: R$ 3.367,98 | venda_normal: R$ 3.367,98",
+            "CARBEL JAPÃO BARÃO | financiamento: R$ 0,00 | total_comissao: R$ 3.032,61 | venda_normal: R$ 3.032,61",
+            "VIA JAP COMERCIO DE VEICULOS LTDA | financiamento: R$ 0,00 | total_comissao: R$ 2.944,55 | venda_normal: R$ 2.944,55",
+            "STRADA LEAPMOTOR | financiamento: R$ 0,00 | total_comissao: R$ 2.705,85 | venda_normal: R$ 2.705,85",
+            "BAMAQ - OFICINA | financiamento: R$ 0,00 | total_comissao: R$ 1.696,80 | venda_normal: R$ 1.696,80",
+            "CARBEL OMODA UBERLANDIA | financiamento: R$ 0,00 | total_comissao: R$ 1.325,94 | venda_normal: R$ 1.325,94",
+            "CARBEL OLHOS DAGUA | financiamento: R$ 0,00 | total_comissao: R$ 33,60 | venda_normal: R$ 33,60",
+            "ARVAL BRASIL LTDA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "XTREME CAR DETAIL | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00"
+          ]
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 38,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria_tipo_os:periodo-2026-05",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Comissão por concessionária e tipo de O.S. em PERIODO_2026_05: tabela com colunas venda_normal, financiamento e total_comissao conforme registro detalhado por concessionária.",
+      "key_metrics": {
+        "comissao_por_tipo_de_os_por_concessionaria": {
+          "rows": [
+            {
+              "venda_normal": "R$ 43.584,46",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ",
+              "total_comissao": "R$ 43.584,46"
+            },
+            {
+              "venda_normal": "R$ 27.332,90",
+              "financiamento": "R$ 9.066,00",
+              "concessionaria": "SAITAMA - HONDA",
+              "total_comissao": "R$ 36.398,90"
+            },
+            {
+              "venda_normal": "R$ 33.668,58",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "total_comissao": "R$ 33.668,58"
+            },
+            {
+              "venda_normal": "R$ 28.539,33",
+              "financiamento": "R$ 1.803,60",
+              "concessionaria": "PORSCHE",
+              "total_comissao": "R$ 30.342,93"
+            },
+            {
+              "venda_normal": "R$ 23.776,82",
+              "financiamento": "R$ 4.174,80",
+              "concessionaria": "STRADA JEEP",
+              "total_comissao": "R$ 27.951,62"
+            },
+            {
+              "venda_normal": "R$ 21.726,86",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "total_comissao": "R$ 21.726,86"
+            },
+            {
+              "venda_normal": "R$ 18.951,19",
+              "financiamento": "R$ 81,90",
+              "concessionaria": "CARBEL",
+              "total_comissao": "R$ 19.033,09"
+            },
+            {
+              "venda_normal": "R$ 16.139,26",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "total_comissao": "R$ 16.139,26"
+            },
+            {
+              "venda_normal": "R$ 14.620,18",
+              "financiamento": "R$ 210,00",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "total_comissao": "R$ 14.830,18"
+            },
+            {
+              "venda_normal": "R$ 14.179,41",
+              "financiamento": "R$ 361,20",
+              "concessionaria": "BANZAI",
+              "total_comissao": "R$ 14.540,61"
+            },
+            {
+              "venda_normal": "R$ 12.988,51",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "total_comissao": "R$ 12.988,51"
+            },
+            {
+              "venda_normal": "R$ 10.331,69",
+              "financiamento": "R$ 1.101,59",
+              "concessionaria": "AUDI CARBEL",
+              "total_comissao": "R$ 11.433,28"
+            },
+            {
+              "venda_normal": "R$ 9.749,37",
+              "financiamento": "R$ 1.677,90",
+              "concessionaria": "STRADA JEEP - PAMPULHA",
+              "total_comissao": "R$ 11.427,27"
+            },
+            {
+              "venda_normal": "R$ 9.931,53",
+              "financiamento": "R$ 1.410,15",
+              "concessionaria": "STRADA",
+              "total_comissao": "R$ 11.341,68"
+            },
+            {
+              "venda_normal": "R$ 9.122,76",
+              "financiamento": "R$ 2.211,30",
+              "concessionaria": "BANZAI PAMPULHA",
+              "total_comissao": "R$ 11.334,06"
+            },
+            {
+              "venda_normal": "R$ 10.993,50",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA",
+              "total_comissao": "R$ 10.993,50"
+            },
+            {
+              "venda_normal": "R$ 9.028,05",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "total_comissao": "R$ 9.028,05"
+            },
+            {
+              "venda_normal": "R$ 8.570,36",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GWM BAMAQ CONTAGEM",
+              "total_comissao": "R$ 8.570,36"
+            },
+            {
+              "venda_normal": "R$ 5.988,99",
+              "financiamento": "R$ 390,60",
+              "concessionaria": "STRADA LINHA VERDE",
+              "total_comissao": "R$ 6.379,59"
+            },
+            {
+              "venda_normal": "R$ 6.360,66",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GARRA",
+              "total_comissao": "R$ 6.360,66"
+            },
+            {
+              "venda_normal": "R$ 6.116,46",
+              "financiamento": "R$ 90,30",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "total_comissao": "R$ 6.206,76"
+            },
+            {
+              "venda_normal": "R$ 5.636,19",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "total_comissao": "R$ 5.636,19"
+            },
+            {
+              "venda_normal": "R$ 1.075,20",
+              "financiamento": "R$ 1.764,00",
+              "concessionaria": "CARBEL KOREA",
+              "total_comissao": "R$ 2.839,20"
+            },
+            {
+              "venda_normal": "R$ 1.988,71",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "total_comissao": "R$ 1.988,71"
+            },
+            {
+              "venda_normal": "R$ 583,52",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "BAMAQ - OFICINA",
+              "total_comissao": "R$ 583,52"
+            },
+            {
+              "venda_normal": "R$ 237,30",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "total_comissao": "R$ 237,30"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "CARBEL OLHOS DAGUA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "total_comissao": "R$ 0,00"
+            },
+            {
+              "venda_normal": "R$ 0,00",
+              "financiamento": "R$ 0,00",
+              "concessionaria": "XTREME CAR DETAIL",
+              "total_comissao": "R$ 0,00"
+            }
+          ],
+          "_meta": {
+            "schema": "table",
+            "columns": [
+              "venda_normal",
+              "financiamento",
+              "total_comissao"
+            ],
+            "dimension": "tipo_os",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "tipo_os",
+            "subdimension": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": false
+          },
+          "table_rows_sample": [
+            "GWM BAMAQ | financiamento: R$ 0,00 | total_comissao: R$ 43.584,46 | venda_normal: R$ 43.584,46",
+            "SAITAMA - HONDA | financiamento: R$ 9.066,00 | total_comissao: R$ 36.398,90 | venda_normal: R$ 27.332,90",
+            "GWM BAMAQ PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 33.668,58 | venda_normal: R$ 33.668,58",
+            "PORSCHE | financiamento: R$ 1.803,60 | total_comissao: R$ 30.342,93 | venda_normal: R$ 28.539,33",
+            "STRADA JEEP | financiamento: R$ 4.174,80 | total_comissao: R$ 27.951,62 | venda_normal: R$ 23.776,82",
+            "CARBEL BYD SAVASSI | financiamento: R$ 0,00 | total_comissao: R$ 21.726,86 | venda_normal: R$ 21.726,86",
+            "CARBEL | financiamento: R$ 81,90 | total_comissao: R$ 19.033,09 | venda_normal: R$ 18.951,19",
+            "Bamaq Automóveis Mercedes-Benz | financiamento: R$ 0,00 | total_comissao: R$ 16.139,26 | venda_normal: R$ 16.139,26",
+            "CARBEL BYD CONTAGEM | financiamento: R$ 210,00 | total_comissao: R$ 14.830,18 | venda_normal: R$ 14.620,18",
+            "BANZAI | financiamento: R$ 361,20 | total_comissao: R$ 14.540,61 | venda_normal: R$ 14.179,41",
+            "CARBEL BYD CATALÃO | financiamento: R$ 0,00 | total_comissao: R$ 12.988,51 | venda_normal: R$ 12.988,51",
+            "AUDI CARBEL | financiamento: R$ 1.101,59 | total_comissao: R$ 11.433,28 | venda_normal: R$ 10.331,69",
+            "STRADA JEEP - PAMPULHA | financiamento: R$ 1.677,90 | total_comissao: R$ 11.427,27 | venda_normal: R$ 9.749,37",
+            "STRADA | financiamento: R$ 1.410,15 | total_comissao: R$ 11.341,68 | venda_normal: R$ 9.931,53",
+            "BANZAI PAMPULHA | financiamento: R$ 2.211,30 | total_comissao: R$ 11.334,06 | venda_normal: R$ 9.122,76",
+            "CARBEL OMODA | financiamento: R$ 0,00 | total_comissao: R$ 10.993,50 | venda_normal: R$ 10.993,50",
+            "VIA JAP COMERCIO DE VEICULOS LTDA | financiamento: R$ 0,00 | total_comissao: R$ 9.028,05 | venda_normal: R$ 9.028,05",
+            "GWM BAMAQ CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 8.570,36 | venda_normal: R$ 8.570,36",
+            "STRADA LINHA VERDE | financiamento: R$ 390,60 | total_comissao: R$ 6.379,59 | venda_normal: R$ 5.988,99",
+            "GARRA | financiamento: R$ 0,00 | total_comissao: R$ 6.360,66 | venda_normal: R$ 6.360,66",
+            "STRADA LEAPMOTOR | financiamento: R$ 90,30 | total_comissao: R$ 6.206,76 | venda_normal: R$ 6.116,46",
+            "CARBEL JAPÃO CONTORNO | financiamento: R$ 0,00 | total_comissao: R$ 5.636,19 | venda_normal: R$ 5.636,19",
+            "CARBEL KOREA | financiamento: R$ 1.764,00 | total_comissao: R$ 2.839,20 | venda_normal: R$ 1.075,20",
+            "CARBEL JAPÃO BARÃO | financiamento: R$ 0,00 | total_comissao: R$ 1.988,71 | venda_normal: R$ 1.988,71",
+            "BAMAQ - OFICINA | financiamento: R$ 0,00 | total_comissao: R$ 583,52 | venda_normal: R$ 583,52",
+            "CARBEL OMODA UBERLANDIA | financiamento: R$ 0,00 | total_comissao: R$ 237,30 | venda_normal: R$ 237,30",
+            "ARVAL BRASIL LTDA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "CARBEL OLHOS DAGUA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS CONTAGEM | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "GRANDE MINAS PAMPULHA | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00",
+            "XTREME CAR DETAIL | financiamento: R$ 0,00 | total_comissao: R$ 0,00 | venda_normal: R$ 0,00"
+          ]
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    }
+  ],
+  "source": "senna_live_packer",
+  "index_key": "comissao_por_tipo_de_os_por_concessionaria",
+  "periods": [
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05"
+  ],
+  "question": "Qual a diferença entre o total de comissão por tipo_os 'Venda Normal' e por 'Financiamento' para a concessionária GWM BAMAQ, somando as comições de janeiro ate maio de 2026?"
+}

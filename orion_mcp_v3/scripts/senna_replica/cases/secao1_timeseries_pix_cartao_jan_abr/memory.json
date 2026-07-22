@@ -1,0 +1,108 @@
+{
+  "hits": [
+    {
+      "origin_id": 200,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-01",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "faturamento_por_forma_pagamento 2026-01",
+      "key_metrics": {
+        "faturamento_por_forma_pagamento": {
+          "rows": [
+            {
+              "label": "Pix",
+              "valor": 10.0
+            },
+            {
+              "label": "Cartão de Crédito",
+              "valor": 20.0
+            }
+          ],
+          "_meta": {
+            "entity_field": "label",
+            "value_field": "valor",
+            "truncated_head_tail": false,
+            "total_original_rows": 2
+          }
+        }
+      }
+    },
+    {
+      "origin_id": 201,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "faturamento_por_forma_pagamento 2026-02",
+      "key_metrics": {
+        "faturamento_por_forma_pagamento": {
+          "rows": [
+            {
+              "label": "Pix",
+              "valor": 30.0
+            },
+            {
+              "label": "Cartão de Crédito",
+              "valor": 20.0
+            }
+          ],
+          "_meta": {
+            "entity_field": "label",
+            "value_field": "valor",
+            "truncated_head_tail": false,
+            "total_original_rows": 2
+          }
+        }
+      }
+    },
+    {
+      "origin_id": 202,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "faturamento_por_forma_pagamento 2026-03",
+      "key_metrics": {
+        "faturamento_por_forma_pagamento": {
+          "rows": [
+            {
+              "label": "Pix",
+              "valor": 15.0
+            },
+            {
+              "label": "Cartão de Crédito",
+              "valor": 25.0
+            }
+          ],
+          "_meta": {
+            "entity_field": "label",
+            "value_field": "valor",
+            "truncated_head_tail": false,
+            "total_original_rows": 2
+          }
+        }
+      }
+    },
+    {
+      "origin_id": 203,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-04",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "faturamento_por_forma_pagamento 2026-04",
+      "key_metrics": {
+        "faturamento_por_forma_pagamento": {
+          "rows": [
+            {
+              "label": "Pix",
+              "valor": 40.0
+            },
+            {
+              "label": "Cartão de Crédito",
+              "valor": 10.0
+            }
+          ],
+          "_meta": {
+            "entity_field": "label",
+            "value_field": "valor",
+            "truncated_head_tail": false,
+            "total_original_rows": 2
+          }
+        }
+      }
+    }
+  ]
+}

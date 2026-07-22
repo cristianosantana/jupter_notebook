@@ -1,0 +1,27 @@
+status: regression_guard
+secao: 1
+bug_summary: 'Time series: meses em que Pix ultrapassa Cartão no intervalo jan–abr
+  completo.'
+trace_id: ts-pix-cartao-001
+question: Em quais meses entre janeiro e abril de 2026 o Pix ultrapassou o Cartão
+  de Crédito?
+memory_json: ./memory.json
+intent:
+  operation: time_series
+  dimension: forma_pagamento
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  index_key: faturamento_por_forma_pagamento
+  scope_filters: []
+  operand_labels:
+  - Pix
+  - Cartão de Crédito
+runtime_verdict:
+  label: 2026-02,2026-04
+  value: 2.0
+  unit: count
+  confidence: 0.9
+  note: crossover_months=['2026-02', '2026-04']

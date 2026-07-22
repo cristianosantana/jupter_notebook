@@ -1,0 +1,188 @@
+[
+  {
+    "origin_id": 39,
+    "context_key": "sistema_background:fechamento_gerencial:producao_por_servico:periodo-2026-05",
+    "dimension": "por_servico",
+    "metric_kind": "revenue",
+    "key_metrics": {
+      "producao_por_servico": {
+        "rows": [
+          {
+            "servico": "PPF REGENERATIVO - FULL - CARRO INTEIRO",
+            "valor": 445373.5
+          },
+          {
+            "servico": "CLEAR COMFORT PARABRISA",
+            "valor": 354573.7
+          },
+          {
+            "servico": "MAX COMFORT Filme Premium",
+            "valor": 324771.54
+          },
+          {
+            "servico": "NANO PROTEÇÃO 9H EVO",
+            "valor": 275293.7
+          },
+          {
+            "servico": "FILME SOLAR",
+            "valor": 260570.69
+          },
+          {
+            "servico": "NANO PROTEÇÃO EVO",
+            "valor": 158889.94
+          },
+          {
+            "servico": "FILME DE SEGURANÇA PS4",
+            "valor": 144589.39
+          },
+          {
+            "servico": "PPF REGENERATIVO - FRENTE TOTAL - CAPO, PARA CHOQUE DIANTEIRO, PARALAMAS E RETROVISORES",
+            "valor": 108342.63
+          },
+          {
+            "servico": "FILME PS4 PROTECTION",
+            "valor": 73154.5
+          },
+          {
+            "servico": "PPF REGENERATIVO FOSCO - FULL - CARRO INTEIRO",
+            "valor": 52160.0
+          },
+          {
+            "servico": "PPF REGENERATIVO - CAPÔ INTEIRO",
+            "valor": 35963.5
+          },
+          {
+            "servico": "PPF-MAÇANETAS",
+            "valor": 35061.18
+          },
+          {
+            "servico": "NANO PROTEÇÃO DO COURO",
+            "valor": 34027.9
+          },
+          {
+            "servico": "PPF-PROTEÇÃO DAS PORTAS",
+            "valor": 31359.81
+          },
+          {
+            "servico": "ESPELHAMENTO DE PINTURA",
+            "valor": 29830.0
+          },
+          {
+            "servico": "CLEAR COMFORT TETO SOLAR",
+            "valor": 26493.52
+          },
+          {
+            "servico": "MAX COMFORT Filme Premium PARABRISA",
+            "valor": 20650.05
+          },
+          {
+            "servico": "PPF - PROTEÇÃO DAS QUINAS DAS PORTAS - FOSCO",
+            "valor": 254.0
+          }
+        ],
+        "_meta": {
+          "schema": "ranked_list",
+          "dimension": "servico",
+          "metric_kind": "revenue",
+          "value_field": "valor",
+          "entity_field": "servico",
+          "total_original_rows": 18,
+          "truncated_head_tail": false
+        }
+      }
+    }
+  },
+  {
+    "origin_id": 47,
+    "context_key": "sistema_background:fechamento_gerencial:producao_por_servico:periodo-2026-06",
+    "dimension": "por_servico",
+    "metric_kind": "revenue",
+    "key_metrics": {
+      "producao_por_servico": {
+        "rows": [
+          {
+            "servico": "PPF REGENERATIVO - FULL - CARRO INTEIRO",
+            "valor": 505735.0
+          },
+          {
+            "servico": "CLEAR COMFORT PARABRISA",
+            "valor": 369388.13
+          },
+          {
+            "servico": "MAX COMFORT Filme Premium",
+            "valor": 330336.16
+          },
+          {
+            "servico": "NANO PROTEÇÃO 9H EVO",
+            "valor": 305871.53
+          },
+          {
+            "servico": "FILME SOLAR",
+            "valor": 258638.15
+          },
+          {
+            "servico": "NANO PROTEÇÃO EVO",
+            "valor": 180178.76
+          },
+          {
+            "servico": "FILME DE SEGURANÇA PS4",
+            "valor": 168391.6
+          },
+          {
+            "servico": "PPF REGENERATIVO - FRENTE TOTAL - CAPO, PARA CHOQUE DIANTEIRO, PARALAMAS E RETROVISORES",
+            "valor": 118581.0
+          },
+          {
+            "servico": "FILME PS4 PROTECTION",
+            "valor": 77961.52
+          },
+          {
+            "servico": "PPF REGENERATIVO FOSCO - FULL - CARRO INTEIRO",
+            "valor": 45700.0
+          },
+          {
+            "servico": "ESPELHAMENTO DE PINTURA",
+            "valor": 38982.0
+          },
+          {
+            "servico": "PPF-MAÇANETAS",
+            "valor": 36229.6
+          },
+          {
+            "servico": "PPF-PROTEÇÃO DAS PORTAS",
+            "valor": 34489.5
+          },
+          {
+            "servico": "MAX COMFORT Filme Premium PARABRISA",
+            "valor": 33984.2
+          },
+          {
+            "servico": "NANO PROTEÇÃO DO COURO",
+            "valor": 29950.6
+          },
+          {
+            "servico": "CLEAR COMFORT TETO SOLAR",
+            "valor": 25471.28
+          },
+          {
+            "servico": "PPF REGENERATIVO - CAPÔ INTEIRO",
+            "valor": 21005.0
+          },
+          {
+            "servico": "PPF - PROTEÇÃO DAS QUINAS DAS PORTAS - FOSCO",
+            "valor": 600.0
+          }
+        ],
+        "_meta": {
+          "schema": "ranked_list",
+          "dimension": "servico",
+          "metric_kind": "revenue",
+          "value_field": "valor",
+          "entity_field": "servico",
+          "total_original_rows": 18,
+          "truncated_head_tail": false
+        }
+      }
+    }
+  }
+]

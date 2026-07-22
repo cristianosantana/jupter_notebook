@@ -39,6 +39,7 @@ Exemplo: `secao1_ranking_periodo_parcelas_9ee5b6e3`
 ## Uso
 
 Requisitos: `swipl` (SWI-Prolog). `PyYAML` é opcional se existir `case.json` ao lado do `case.yaml`.
+Para `--from-db`: `asyncpg` + `DATABASE_URL` apontando ao Postgres com `memory_curta`.
 
 ```bash
 # Case único (desenvolvimento) — devolve exit bruto do Prolog
@@ -48,6 +49,15 @@ python3 scripts/run_senna_replica.py \
 # Só emitir generated.pl
 python3 scripts/run_senna_replica.py ... --emit-only
 
+# Empacotar do BD (harness isolado — não importa public_chat)
+python3 scripts/run_senna_replica.py --from-db \
+  scripts/senna_replica/cases/secao1_cumulative_range_gwm_vn_fin \
+  --question "Qual a diferença entre o total de comissão ..." \
+  --operation cumulative \
+  --dimension tipo_os \
+  --index-key comissao_por_tipo_de_os_por_concessionaria \
+  --operand-labels 'Venda Normal|Financiamento'
+
 # Suíte CI (interpreta status × exit)
 python3 scripts/run_senna_replica.py --suite scripts/senna_replica/cases
 
@@ -55,7 +65,16 @@ python3 scripts/run_senna_replica.py --suite scripts/senna_replica/cases
 python3 -m pytest scripts/senna_replica/tests/test_senna_replica.py -v
 ```
 
+```bash
+python3 scripts/run_senna_replica.py --from-db scripts/senna_replica/cases/secao1_cumulative_range_gwm_vn_fin --question "Qual a diferença entre o total de comissão por tipo_os 'Venda Normal' e por 'Financiamento' para a concessionária GWM BAMAQ, somando as comições de janeiro ate maio de 2026?" --operation cumulative --dimension tipo_os --index-key comissao_por_tipo_de_os_por_concessionaria --operand-labels 'Venda Normal|Financiamento'
+````
+
 `generated.pl` é gitignored — nunca commitar. O case §1 inclui `case.yaml` e `case.json` (fallback sem PyYAML).
+
+## Isolamento `--from-db`
+
+Infra vendored em `infra/` (`remissive_reader`, `pool`, `knowledge`, `noop_trace`) + `period_range.py`.
+Sem `from orion_mcp_v3.public_chat...` no caminho live.
 
 ## Insumos de um case
 
@@ -67,7 +86,8 @@ python3 -m pytest scripts/senna_replica/tests/test_senna_replica.py -v
 
 - Toda lógica de Veredito B vive **só** em `prolog/rules_lib.pl`.
 - Case novo com `intent.operation` (ou agregação) ainda não coberta **deve** estender a lib no mesmo PR.
-- Operações atuais: `period_growth`, `period_decline`, `ranking_desc`, `ranking_asc`.
+- Operações atuais: `period_growth`, `period_decline`, `ranking_desc`, `ranking_asc`,
+  `leader_change`, `cumulative`, `time_series`.
 - Dimensão só nos fatos; proibido catálogo estático `dominio(dimensao, [...])` nas regras.
 - PR que só adiciona case sem estender a lib quando a operação é nova → barrar.
 - Se B reporta `cobertura_incompleta` e A emitiu vencedor concreto → **diverge** (`exit 1`), padrão Senna.
