@@ -620,15 +620,25 @@ def _aggregation_for_contract(
         entry.dimension,
     ):
         return AggregationRule.LOOKUP, Comparator.NONE
-    if operation in (PublicOperationType.RANKING_ASC.value, "ranking_asc", "min"):
+    if operation in (
+        PublicOperationType.RANKING_ASC.value,
+        PublicOperationType.PERIOD_DECLINE.value,
+        "ranking_asc",
+        "period_decline",
+        "min",
+    ):
         return AggregationRule.MIN, Comparator.ASC
-    if operation in (PublicOperationType.RANKING_DESC.value, "ranking_desc", "max", "summary"):
-        if entry.dimension in ("servico", "produto", "forma_pagamento"):
-            return AggregationRule.MAX, Comparator.DESC
-    if operation in (PublicOperationType.RANKING_DESC.value, "ranking_desc", "max"):
+    if operation in (
+        PublicOperationType.RANKING_DESC.value,
+        PublicOperationType.LEADER_CHANGE.value,
+        PublicOperationType.PERIOD_GROWTH.value,
+        "ranking_desc",
+        "leader_change",
+        "period_growth",
+        "max",
+        "summary",
+    ):
         return AggregationRule.MAX, Comparator.DESC
-    if operation in (PublicOperationType.RANKING_ASC.value, "ranking_asc"):
-        return AggregationRule.MIN, Comparator.ASC
     return AggregationRule.LOOKUP, Comparator.NONE
 
 
@@ -660,8 +670,14 @@ def _resolve_requirement_entity(
     ranking_ops = {
         PublicOperationType.RANKING_ASC.value,
         PublicOperationType.RANKING_DESC.value,
+        PublicOperationType.LEADER_CHANGE.value,
+        PublicOperationType.PERIOD_GROWTH.value,
+        PublicOperationType.PERIOD_DECLINE.value,
         "ranking_asc",
         "ranking_desc",
+        "leader_change",
+        "period_growth",
+        "period_decline",
         "min",
         "max",
     }

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalPlan
 from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap
 from orion_mcp_v3.public_chat.domain.fact_engine.join_plan import MemoryJoinPlan
@@ -91,17 +93,30 @@ class RemissiveWorkspace:
     requirements: tuple[FactRequirement, ...]
     join_plan: MemoryJoinPlan | None
     workspace_confidence: float
+    analytical_plan: AnalyticalPlan | None = None
+    computed: tuple[dict[str, Any], ...] = ()
+    evidence: tuple[dict[str, Any], ...] = ()
+    narrative_instructions: tuple[str, ...] = ()
+    requirements_graph: dict[str, Any] | None = None
 
     @property
     def has_facts(self) -> bool:
-        return bool(self.facts)
+        return bool(self.facts) or bool(self.computed)
 
     def as_prompt_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "period": self.period,
             "facts": [fact.as_mapping() for fact in self.facts],
             "gaps": [gap.as_mapping() for gap in self.gaps],
             "requirements": [req.as_mapping() for req in self.requirements],
             "join_plan": self.join_plan.as_mapping() if self.join_plan else None,
             "workspace_confidence": round(self.workspace_confidence, 4),
+            "computed": list(self.computed),
+            "evidence": list(self.evidence),
+            "narrative_instructions": list(self.narrative_instructions),
         }
+        if self.analytical_plan is not None:
+            payload["analytical_plan"] = self.analytical_plan.as_mapping()
+        if self.requirements_graph is not None:
+            payload["requirements_graph"] = self.requirements_graph
+        return payload

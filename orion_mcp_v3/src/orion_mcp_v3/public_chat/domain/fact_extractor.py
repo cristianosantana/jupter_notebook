@@ -49,8 +49,11 @@ from orion_mcp_v3.public_chat.domain.knowledge import KnowledgeHit
 from orion_mcp_v3.public_chat.infrastructure.pipeline_trace import log_public_chat_event
 
 PARTIAL_RANKING_CONFIDENCE = 0.4
+_PERIOD_DELTA_OPERATIONS = frozenset(
+    {"period_growth", "period_decline"},
+)
 _RANKING_OPERATIONS = frozenset(
-    {"ranking_asc", "ranking_desc", "min", "max"},
+    {"ranking_asc", "ranking_desc", "min", "max", "leader_change", "period_growth", "period_decline", "time_series", "cumulative"},
 )
 
 
@@ -77,7 +80,7 @@ class FactExtractor:
         ranking_base_rows: int | None = None
         source_truncated = False
 
-        cross_period_keys = _cross_period_ranking_fact_keys(requirements, resolved)
+        cross_period_keys = _period_delta_fact_keys(requirements, resolved)
         for requirement in requirements:
             if requirement.semantics.aggregation_rule == AggregationRule.DERIVED:
                 continue
@@ -105,19 +108,7 @@ class FactExtractor:
             if gap is not None:
                 gaps.append(gap)
 
-        growth_facts, growth_gaps, growth_rows, growth_truncated = self._compute_cross_period_ranking(
-            requirements,
-            resolved,
-            semantics_version=semantics_version,
-            skip_keys=cross_period_keys,
-        )
-        facts.extend(growth_facts)
-        gaps.extend(growth_gaps)
-        if growth_rows is not None:
-            ranking_base_rows = growth_rows if ranking_base_rows is None else min(ranking_base_rows, growth_rows)
-        if growth_truncated:
-            source_truncated = True
-
+        # Growth/leader composition moved to KnowledgeComposer — extractor só resolve leafs.
         derived_facts, derived_gaps = self._compute_derived(requirements, extracted_by_key, semantics_version)
         facts.extend(derived_facts)
         gaps.extend(derived_gaps)
@@ -575,15 +566,15 @@ def _rows_with_percentual_values(rows: tuple) -> tuple:
     return tuple(converted) if converted else rows
 
 
-def _cross_period_ranking_fact_keys(
+def _period_delta_fact_keys(
     requirements: tuple[FactRequirement, ...],
     resolved: dict[str, ResolvedMemoryHit],
 ) -> frozenset[str]:
-    """Requirements de ranking sem entidade, mesmo matched_key, ≥2 períodos."""
+    """Só period_growth/period_decline colapsam em delta — nunca leader_change/ranking_*."""
     buckets: dict[str, list[FactRequirement]] = {}
     for requirement in requirements:
         operation = (requirement.operation or "").lower()
-        if operation not in _RANKING_OPERATIONS:
+        if operation not in _PERIOD_DELTA_OPERATIONS:
             continue
         if requirement.entity:
             continue
@@ -601,6 +592,14 @@ def _cross_period_ranking_fact_keys(
         for req in group:
             keys.add(req.fact_key)
     return frozenset(keys)
+
+
+# Compat alias (testes/imports legados)
+def _cross_period_ranking_fact_keys(
+    requirements: tuple[FactRequirement, ...],
+    resolved: dict[str, ResolvedMemoryHit],
+) -> frozenset[str]:
+    return _period_delta_fact_keys(requirements, resolved)
 
 
 def _rows_for_requirement(requirement: FactRequirement, hit: KnowledgeHit) -> tuple:

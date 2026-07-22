@@ -20,6 +20,11 @@ class PublicOperationType(str, Enum):
     LIST = "list"
     SUMMARY = "summary"
     COMPARISON = "comparison"
+    LEADER_CHANGE = "leader_change"
+    PERIOD_GROWTH = "period_growth"
+    PERIOD_DECLINE = "period_decline"
+    TIME_SERIES = "time_series"
+    CUMULATIVE = "cumulative"
 
 
 @dataclass(frozen=True, slots=True)

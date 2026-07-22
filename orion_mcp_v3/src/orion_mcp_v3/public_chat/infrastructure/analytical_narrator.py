@@ -62,7 +62,6 @@ class AnalyticalNarrator:
                 "user_message": message,
                 "intent_contract": contract.as_mapping(),
                 "workspace": facts_payload,
-                "allowed_derivations": ["participacao = oficina / total"],
             },
             ensure_ascii=False,
             default=str,

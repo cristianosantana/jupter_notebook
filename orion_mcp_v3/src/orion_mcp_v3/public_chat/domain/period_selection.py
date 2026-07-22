@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date
 
 from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract
 
 _YEAR_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+_YEAR_HALF_RE = re.compile(r"^(\d{4})-H([12])$", re.IGNORECASE)
+_SPAN_RE = re.compile(r"^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$")
 _PARCEL_COUNT_RE = re.compile(r"\b(\d+)\s*x\b", re.IGNORECASE)
 _PREDICATE_FILTER_RE = re.compile(r"^\s*(>=|<=|!=|>|<)\s*[-+]?\d+(?:[.,]\d+)?\s*$")
 
@@ -16,14 +19,69 @@ def is_predicate_filter_value(value: str) -> bool:
     return bool(_PREDICATE_FILTER_RE.match(value or ""))
 
 
+def expand_period_range(start: str, end: str) -> tuple[str, ...]:
+    """Expande intervalo inclusivo ``YYYY-MM`` → ``(start, …, end)``."""
+    if not _is_year_month(start) or not _is_year_month(end):
+        return ()
+    start_y, start_m = int(start[:4]), int(start[5:7])
+    end_y, end_m = int(end[:4]), int(end[5:7])
+    cursor = date(start_y, start_m, 1)
+    stop = date(end_y, end_m, 1)
+    if cursor > stop:
+        cursor, stop = stop, cursor
+    periods: list[str] = []
+    while cursor <= stop:
+        periods.append(f"{cursor.year:04d}-{cursor.month:02d}")
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return tuple(periods)
+
+
+def expand_periods_inclusive(periods: tuple[str, ...]) -> tuple[str, ...]:
+    """Se houver ≥2 YYYY-MM, preenche meses entre o menor e o maior."""
+    year_months = sorted({p for p in periods if _is_year_month(p)})
+    if len(year_months) < 2:
+        return tuple(dict.fromkeys(p for p in periods if _is_year_month(p) or _is_year_half(p)))
+    return expand_period_range(year_months[0], year_months[-1])
+
+
+def periods_from_token(token: str | None) -> tuple[str, ...]:
+    """Interpreta ``YYYY-MM``, ``YYYY-H1/H2``, ``A..B`` ou lista CSV."""
+    if not token:
+        return ()
+    text = token.strip()
+    if _is_year_month(text):
+        return (text,)
+    half = _YEAR_HALF_RE.match(text)
+    if half:
+        year = int(half.group(1))
+        if half.group(2) == "1":
+            return expand_period_range(f"{year:04d}-01", f"{year:04d}-06")
+        return expand_period_range(f"{year:04d}-07", f"{year:04d}-12")
+    span = _SPAN_RE.match(text)
+    if span:
+        return expand_period_range(span.group(1), span.group(2))
+    if "," in text:
+        parts = tuple(p.strip() for p in text.split(",") if p.strip())
+        expanded: list[str] = []
+        for part in parts:
+            expanded.extend(periods_from_token(part))
+        return expand_periods_inclusive(tuple(expanded)) if len(expanded) >= 2 else tuple(dict.fromkeys(expanded))
+    return ()
+
+
 def periods_from_contract(contract: IntentContract) -> tuple[str, ...]:
     periods: list[str] = []
-    if _is_year_month(contract.period):
-        periods.append(str(contract.period))
+    periods.extend(periods_from_token(contract.period))
     for filt in contract.entity_filters:
-        if _is_period_filter(filt) and _is_year_month(filt.value):
-            periods.append(str(filt.value))
-    return tuple(dict.fromkeys(periods))
+        if _is_period_filter(filt):
+            periods.extend(periods_from_token(filt.value))
+    discrete = tuple(dict.fromkeys(p for p in periods if _is_year_month(p)))
+    if len(discrete) >= 2:
+        return expand_periods_inclusive(discrete)
+    return discrete
 
 
 def non_period_entity_filters(contract: IntentContract) -> tuple[EntityFilter, ...]:
@@ -144,7 +202,17 @@ def entities_for_dimension(
     # Ranking no eixo inteiro: não inventar entidade a partir do texto da mensagem
     # (ex.: "1x a 10x" → primeiro match "1X").
     operation = (contract.operation or "").strip().lower()
-    if operation in {"ranking_asc", "ranking_desc", "min", "max"}:
+    if operation in {
+        "ranking_asc",
+        "ranking_desc",
+        "leader_change",
+        "period_growth",
+        "period_decline",
+        "time_series",
+        "cumulative",
+        "min",
+        "max",
+    }:
         return ()
     entity = _single_entity_for_dimension(contract, dimension, message=message)
     return (entity,) if entity else ()
@@ -181,6 +249,9 @@ def _is_period_filter(filt: EntityFilter) -> bool:
 def _is_year_month(value: str | None) -> bool:
     return isinstance(value, str) and bool(_YEAR_MONTH_RE.match(value.strip()))
 
+
+def _is_year_half(value: str | None) -> bool:
+    return isinstance(value, str) and bool(_YEAR_HALF_RE.match(value.strip()))
 
 def _normalize_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value.strip().lower())

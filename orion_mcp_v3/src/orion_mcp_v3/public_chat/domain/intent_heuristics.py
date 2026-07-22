@@ -20,10 +20,25 @@ _RANKING_OPERATIONS = frozenset(
     {
         PublicOperationType.RANKING_ASC.value,
         PublicOperationType.RANKING_DESC.value,
+        PublicOperationType.LEADER_CHANGE.value,
+        PublicOperationType.PERIOD_GROWTH.value,
+        PublicOperationType.PERIOD_DECLINE.value,
         "ranking_asc",
         "ranking_desc",
+        "leader_change",
+        "period_growth",
+        "period_decline",
         "min",
         "max",
+    }
+)
+
+_PERIOD_DELTA_OPERATIONS = frozenset(
+    {
+        PublicOperationType.PERIOD_GROWTH.value,
+        PublicOperationType.PERIOD_DECLINE.value,
+        "period_growth",
+        "period_decline",
     }
 )
 
@@ -72,13 +87,34 @@ _GROWTH_NEEDLES = (
 )
 _EXTREME_NEEDLES = ("maior", "maiores", "maximo", "máximo", "maxima", "máxima")
 
-# Superlativo de liderança/volume: "mais vendido" + "manteve líder" ≠ comparison agregada.
+# Continuidade de liderança: identidade do extremo por período (≠ growth%).
+_LEADER_CHANGE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:se\s+)?manteve(?:\s+o)?\s+l[ií]der\b"),
+    re.compile(r"\bmudou\s+de\s+l[ií]der\b"),
+    re.compile(r"\bpermane(?:ce|ceu)\s+(?:o\s+)?l[ií]der\b"),
+    re.compile(r"\bcontinuou\s+(?:como\s+)?l[ií]der\b"),
+    re.compile(r"\bl[ií]der\s+(?:em|no)\s+\w+.*\b(?:e|,).*\b(?:junho|maio|abril|mar[cç]o|fevereiro|janeiro|julho|agosto)\b"),
+)
+
+# Superlativo de volume num período (sem continuidade).
 _SUPERLATIVE_RANKING_DESC_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bmais\s+vendid[oa]s?\b"),
     re.compile(r"\bmais\s+produzid[oa]s?\b"),
     re.compile(r"\bmais\s+faturad[oa]s?\b"),
-    re.compile(r"\bl[ií]der(?:es|ança|anca)?\b"),
     re.compile(r"\bcampe[aã]o(?:es|ãs|as)?\b"),
+)
+
+_TIME_SERIES_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bem\s+quais\s+meses\b"),
+    re.compile(r"\bm[eê]s\s+a\s+m[eê]s\b"),
+    re.compile(r"\bestabil(?:e|idade)\b"),
+    re.compile(r"\bultrapass"),
+)
+
+_CUMULATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:soma|acumulad[oa])\b"),
+    re.compile(r"\bdiferen[cç]a\s+entre\s+o\s+total\b"),
+    re.compile(r"\btotal\s+de\s+comiss"),
 )
 
 _DIMENSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -109,28 +145,62 @@ def _coalesce_period(period: str | None) -> str | None:
     return None
 
 
-def _ranking_operation_from_collocation(text: str) -> str | None:
-    """Detecta 'maior queda' / 'maior crescimento' antes dos unigramas genéricos."""
+def _operation_from_leader_change(text: str) -> str | None:
+    if any(pattern.search(text) for pattern in _LEADER_CHANGE_PATTERNS):
+        return PublicOperationType.LEADER_CHANGE.value
+    return None
+
+
+def _operation_from_period_delta(text: str) -> str | None:
+    """Detecta 'maior queda' / 'maior crescimento' → period_decline / period_growth."""
     has_extreme = _contains_needle(text, _EXTREME_NEEDLES)
     if not has_extreme:
         return None
     if _contains_needle(text, _DECLINE_NEEDLES):
-        return PublicOperationType.RANKING_ASC.value
+        return PublicOperationType.PERIOD_DECLINE.value
     if _contains_needle(text, _GROWTH_NEEDLES):
-        return PublicOperationType.RANKING_DESC.value
+        return PublicOperationType.PERIOD_GROWTH.value
     return None
 
 
-def _ranking_operation_from_superlative(text: str) -> str | None:
-    """Detecta superlativo de liderança/volume (mais vendido, líder, campeão)."""
+def _operation_from_superlative(text: str) -> str | None:
+    """Detecta superlativo de volume (mais vendido, campeão) → ranking_desc."""
     if any(pattern.search(text) for pattern in _SUPERLATIVE_RANKING_DESC_PATTERNS):
         return PublicOperationType.RANKING_DESC.value
     return None
 
 
+def _operation_from_time_series(text: str) -> str | None:
+    if any(pattern.search(text) for pattern in _TIME_SERIES_PATTERNS):
+        return PublicOperationType.TIME_SERIES.value
+    return None
+
+
+def _operation_from_cumulative(text: str) -> str | None:
+    if any(pattern.search(text) for pattern in _CUMULATIVE_PATTERNS):
+        if re.search(r"\b(entre|ate|até|de\s+\w+\s+a|janeiro|fevereiro|marco|abril|maio|junho)\b", text):
+            return PublicOperationType.CUMULATIVE.value
+    return None
+
+
 def _ranking_operation_override(text: str) -> str | None:
-    """Sinais que sobrescrevem operation do LLM (coligações / superlativos)."""
-    return _ranking_operation_from_collocation(text) or _ranking_operation_from_superlative(text)
+    """Sinais que sobrescrevem operation do LLM (prioridade fechada)."""
+    return (
+        _operation_from_leader_change(text)
+        or _operation_from_period_delta(text)
+        or _operation_from_time_series(text)
+        or _operation_from_cumulative(text)
+        or _operation_from_superlative(text)
+    )
+
+
+# Compat: testes/imports legados
+def _ranking_operation_from_collocation(text: str) -> str | None:
+    return _operation_from_period_delta(text)
+
+
+def _ranking_operation_from_superlative(text: str) -> str | None:
+    return _operation_from_superlative(text)
 
 
 def extract_heuristic_signals(message: str) -> dict[str, str | None]:
@@ -161,7 +231,7 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     signals = extract_heuristic_signals(message)
     text = (message or "").strip().lower()
     ranking_override = _ranking_operation_override(text)
-    # Override sobrescreve operation do LLM (ex.: "maior queda"; "mais vendido" ≠ comparison).
+    # Override sobrescreve operation do LLM (ex.: leader_change; period_decline ≠ ranking_desc).
     operation = ranking_override or contract.operation or signals["operation"]
     dimension = contract.dimension or signals["dimension"]
     mentioned_periods = extract_mentioned_periods(message)
@@ -264,9 +334,23 @@ def _normalize_ranking_dimension(value: str | None) -> str:
 
 
 def _sort_direction_from_operation(operation: str | None) -> str | None:
-    if operation == PublicOperationType.RANKING_ASC.value:
+    if operation in (
+        PublicOperationType.RANKING_ASC.value,
+        PublicOperationType.PERIOD_DECLINE.value,
+        "ranking_asc",
+        "period_decline",
+        "min",
+    ):
         return "asc"
-    if operation == PublicOperationType.RANKING_DESC.value:
+    if operation in (
+        PublicOperationType.RANKING_DESC.value,
+        PublicOperationType.LEADER_CHANGE.value,
+        PublicOperationType.PERIOD_GROWTH.value,
+        "ranking_desc",
+        "leader_change",
+        "period_growth",
+        "max",
+    ):
         return "desc"
     return None
 

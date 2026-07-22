@@ -191,10 +191,14 @@ def _compact_period_span(periods: tuple[str, ...]) -> str:
 
 
 def extract_mentioned_periods(message: str | None) -> tuple[str, ...]:
-    """Extrai todos os períodos YYYY-MM mencionados em ordem textual."""
+    """Extrai períodos YYYY-MM; com range/semestre, lista inclusiva."""
     text = _normalize_text(message or "")
     if not text:
         return ()
+
+    semestre = _semestre_months(text)
+    if semestre:
+        return semestre
 
     matches: list[tuple[int, str]] = []
     for match in re.finditer(r"\b(20\d{2})[-/](0?[1-9]|1[0-2])\b", text):
@@ -217,7 +221,36 @@ def extract_mentioned_periods(message: str | None) -> tuple[str, ...]:
     for _, period in sorted(matches, key=lambda item: item[0]):
         if period not in ordered:
             ordered.append(period)
+
+    if len(ordered) >= 2 and _message_has_period_range(text):
+        from orion_mcp_v3.public_chat.domain.period_selection import expand_periods_inclusive
+
+        return expand_periods_inclusive(tuple(ordered))
     return tuple(ordered)
+
+
+def _message_has_period_range(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(entre|ate|até|de\s+\w+\s+a\s+|a\s+\w+\s+de\s+20\d{2}|1\s*[oº°]?\s*semestre|"
+            r"2\s*[oº°]?\s*semestre|primeiro\s+semestre|segundo\s+semestre)\b",
+            text,
+        )
+    )
+
+
+def _semestre_months(text: str) -> tuple[str, ...]:
+    year_match = re.search(r"(20\d{2})", text)
+    if not year_match:
+        return ()
+    year = year_match.group(1)
+    from orion_mcp_v3.public_chat.domain.period_selection import expand_period_range
+
+    if re.search(r"primeiro\s+semestre|1\s*[ºo°]?\s*semestre|\bh1\b", text):
+        return expand_period_range(f"{year}-01", f"{year}-06")
+    if re.search(r"segundo\s+semestre|2\s*[ºo°]?\s*semestre|\bh2\b", text):
+        return expand_period_range(f"{year}-07", f"{year}-12")
+    return ()
 
 
 def parse_json_object(text: str) -> dict[str, Any] | None:

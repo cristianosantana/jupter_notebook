@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from orion_mcp_v3.public_chat.domain.direct_answer_parser import parse_validated_answer, ranking_row, find_section_by_needle
 from orion_mcp_v3.public_chat.tests.conftest import make_resolved_hit
-from orion_mcp_v3.public_chat.domain.fact_engine.models import FactRequirement
+from orion_mcp_v3.public_chat.domain.fact_engine.models import ExtractedFact, FactRequirement
 from orion_mcp_v3.public_chat.domain.fact_engine.semantics import FactSemantics, AggregationRule, Comparator, SourcePriority
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import GapReason
 from orion_mcp_v3.public_chat.domain.fact_engine.trace import ResolutionRule
@@ -251,7 +251,11 @@ def test_fact_extractor_gap_includes_attempted_rules_from_resolution_trace():
 
 
 def test_fact_extractor_cross_period_decline_reconstructs_truncated_rows() -> None:
-    """Maior queda: rows truncadas + validated_answer completo → BAMAQ - OFICINA ~−61%."""
+    """Maior queda: rows truncadas + validated_answer → PeriodDelta BAMAQ - OFICINA ~−61%."""
+    from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalGoal, AnalyticalPlan
+    from orion_mcp_v3.public_chat.domain.knowledge_composer import compose_knowledge
+    from orion_mcp_v3.public_chat.domain.requirements_graph import build_requirements_graph
+
     jan_answer = (
         "Comissões por concessionária em PERIODO_2026-01: "
         "SAITAMA - HONDA: R$ 33.828,00 (10,95%); GWM BAMAQ: R$ 30.660,52 (9,92%); "
@@ -262,7 +266,6 @@ def test_fact_extractor_cross_period_decline_reconstructs_truncated_rows() -> No
         "GWM BAMAQ: R$ 43.584,46 (11,61%); SAITAMA - HONDA: R$ 36.398,90 (9,69%); "
         "BAMAQ - OFICINA: R$ 583,52 (0,16%); XTREME CAR DETAIL: R$ 0,00 (0,00%)."
     )
-    # key_metrics truncado: só topo (sem BAMAQ - OFICINA)
     jan_hit = KnowledgeHit(
         origin_id=4,
         context_key="sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-01",
@@ -312,7 +315,7 @@ def test_fact_extractor_cross_period_decline_reconstructs_truncated_rows() -> No
             dimension="concessionaria",
             entity=None,
             period=period,
-            operation="ranking_asc",
+            operation="period_decline",
             matched_key="faturamento_e_comissao_por_concessionaria",
             source_origin_id=origin_id,
             semantics=FactSemantics(
@@ -332,12 +335,109 @@ def test_fact_extractor_cross_period_decline_reconstructs_truncated_rows() -> No
         req_jan.fact_key: make_resolved_hit(jan_hit, ResolutionRule.CATALOG, fact_key=req_jan.fact_key),
         req_mai.fact_key: make_resolved_hit(mai_hit, ResolutionRule.CATALOG, fact_key=req_mai.fact_key),
     }
-    result = FactExtractor().extract((req_jan, req_mai), resolved)
-    assert len(result.facts) == 1
-    fact = result.facts[0]
+    leaf = FactExtractor().extract((req_jan, req_mai), resolved)
+    assert leaf.facts == ()
+    plan = AnalyticalPlan(
+        goal=AnalyticalGoal.PERIOD_DELTA,
+        operation="period_decline",
+        dimension="concessionaria",
+        metric="comissao",
+        periods=("2026-01", "2026-05"),
+        sort_direction="asc",
+        confidence=0.9,
+    )
+    graph = build_requirements_graph((req_jan, req_mai), plan)
+    composition = compose_knowledge(graph=graph, leaf_facts=leaf.facts, resolved=resolved)
+    assert len(composition.facts) == 1
+    fact = composition.facts[0]
     assert fact.label == "BAMAQ - OFICINA"
     assert fact.unit == "pct"
     assert "61" in fact.value
     assert fact.trace.extraction_path.value == "ranking_derived"
-    assert result.source_truncated is False
+    assert composition.source_truncated is False
+    assert composition.computed[0]["kind"] == "PeriodDelta"
+
+
+def test_knowledge_composer_leader_change_not_growth() -> None:
+    """leader_change materializa líderes por período — nunca @growth%."""
+    from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalGoal, AnalyticalPlan
+    from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
+    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace
+    from orion_mcp_v3.public_chat.domain.knowledge_composer import compose_knowledge
+    from orion_mcp_v3.public_chat.domain.requirements_graph import build_requirements_graph
+
+    def _req(period: str) -> FactRequirement:
+        key = f"dynamic:producao_por_servico@{period}"
+        return FactRequirement(
+            fact_key=key,
+            metric="vendas",
+            dimension="servico",
+            entity=None,
+            period=period,
+            operation="leader_change",
+            matched_key="producao_por_servico",
+            semantics=FactSemantics(
+                fact_key=key,
+                aggregation_rule=AggregationRule.MAX,
+                comparator=Comparator.DESC,
+                source_priority=(SourcePriority.KEY_METRICS,),
+                value_kind="currency",
+                allows_multiple_values=True,
+                key_metrics_keys=("producao_por_servico",),
+            ),
+        )
+
+    req_mai = _req("2026-05")
+    req_jun = _req("2026-06")
+    leaf_facts = (
+        ExtractedFact(
+            fact_key=req_mai.fact_key,
+            label="PPF REGENERATIVO - FULL - CARRO INTEIRO",
+            value="R$ 445.373,50",
+            unit="BRL",
+            fact_type=FactType.RAW,
+            confidence=0.9,
+            origin_id=39,
+            context_key="maio",
+            trace=FactTrace(
+                fact_key=req_mai.fact_key,
+                resolved_from=(39,),
+                context_keys=("maio",),
+                rule_applied=ResolutionRule.CATALOG,
+                extraction_path=ExtractionPath.KEY_METRICS,
+            ),
+        ),
+        ExtractedFact(
+            fact_key=req_jun.fact_key,
+            label="PPF REGENERATIVO - FULL - CARRO INTEIRO",
+            value="R$ 505.735,00",
+            unit="BRL",
+            fact_type=FactType.RAW,
+            confidence=0.9,
+            origin_id=47,
+            context_key="junho",
+            trace=FactTrace(
+                fact_key=req_jun.fact_key,
+                resolved_from=(47,),
+                context_keys=("junho",),
+                rule_applied=ResolutionRule.CATALOG,
+                extraction_path=ExtractionPath.KEY_METRICS,
+            ),
+        ),
+    )
+    plan = AnalyticalPlan(
+        goal=AnalyticalGoal.LEADER_COMPARISON,
+        operation="leader_change",
+        dimension="servico",
+        metric="vendas",
+        periods=("2026-05", "2026-06"),
+        sort_direction="desc",
+        confidence=0.9,
+    )
+    graph = build_requirements_graph((req_mai, req_jun), plan)
+    composition = compose_knowledge(graph=graph, leaf_facts=leaf_facts, resolved={})
+    assert composition.computed[0]["kind"] == "LeaderComparison"
+    assert composition.computed[0]["changed"] is False
+    assert not any("@growth:" in f.fact_key for f in composition.facts)
+    assert any("leader_change" in f.fact_key for f in composition.facts)
 

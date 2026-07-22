@@ -132,7 +132,7 @@ def test_senna_message_enrichment_drops_parcelas_1x_on_ranking() -> None:
     parcel_filters = [item for item in contract.entity_filters if item.dimension == "parcelas"]
     assert parcel_filters == []
     assert contract.dimension == "parcelas"
-    assert contract.operation == PublicOperationType.RANKING_DESC.value
+    assert contract.operation == PublicOperationType.PERIOD_GROWTH.value
 
 
 def test_intentional_5x_lookup_keeps_entity_filter() -> None:
@@ -162,7 +162,7 @@ async def test_planner_senna_uses_ranked_list_not_per_entity_keys() -> None:
         intent="comparacao",
         metric="faturamento",
         period="2026-01",
-        operation=PublicOperationType.RANKING_DESC.value,
+        operation=PublicOperationType.PERIOD_GROWTH.value,
         dimension="parcelas",
         entity_filters=(
             EntityFilter(dimension="parcelas", value="1X", match="contains"),
@@ -179,12 +179,19 @@ async def test_planner_senna_uses_ranked_list_not_per_entity_keys() -> None:
     )
     result = await FactPlanner(provider=None).plan(message, contract=contract, knowledge=knowledge)
 
-    assert len(result.requirements) == 2
+    assert len(result.requirements) == 6
     assert all(req.entity is None for req in result.requirements)
     assert all(req.matched_key == "parcelamento_de_cartao" for req in result.requirements)
     assert all("@1x" not in req.fact_key.lower() for req in result.requirements)
     periods = {req.period for req in result.requirements}
-    assert periods == {"2026-01", "2026-06"}
+    assert periods == {
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+    }
 
 
 @pytest.mark.asyncio
@@ -197,7 +204,7 @@ async def test_workspace_senna_winner_is_3x_growth() -> None:
         intent="comparacao",
         metric="faturamento",
         period="2026-01",
-        operation=PublicOperationType.RANKING_DESC.value,
+        operation=PublicOperationType.PERIOD_GROWTH.value,
         dimension="parcelas",
         entity_filters=(
             EntityFilter(dimension="parcelas", value="1X", match="contains"),
@@ -224,6 +231,7 @@ async def test_workspace_senna_winner_is_3x_growth() -> None:
     assert winner.label.upper().replace(" ", "") in {"3X", "3x".upper()}
     assert "43" in winner.value
     assert workspace.workspace_confidence > PARTIAL_RANKING_CONFIDENCE
+    assert any(c.get("kind") == "PeriodDelta" for c in workspace.computed)
 
 
 @pytest.mark.asyncio
@@ -283,7 +291,7 @@ async def test_entity_absent_in_one_period_uses_intersection_not_gap() -> None:
         intent="comparacao",
         metric="faturamento",
         period="2026-01",
-        operation=PublicOperationType.RANKING_DESC.value,
+        operation=PublicOperationType.PERIOD_GROWTH.value,
         dimension="parcelas",
         entity_filters=(EntityFilter(dimension="periodo", value="2026-06", match="exact"),),
         confidence=0.9,
