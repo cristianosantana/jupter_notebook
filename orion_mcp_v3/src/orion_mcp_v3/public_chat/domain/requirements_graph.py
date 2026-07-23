@@ -17,6 +17,7 @@ class CompositionEdgeKind(str, Enum):
     RANK = "rank"
     SERIES = "series"
     SUM = "sum"
+    SHARE = "share"
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,19 @@ def build_requirements_graph(
                 target_key=target,
             )
         )
+    elif plan.goal == AnalyticalGoal.COMPARISON and len(requirements) >= 2:
+        # Forma estrutural: PeriodDelta pode ser materializado no composer
+        periods = sorted({req.period for req in requirements if req.period})
+        if len(periods) >= 2:
+            keys = tuple(req.fact_key for req in requirements)
+            matched = next((req.matched_key for req in requirements if req.matched_key), "index")
+            edges.append(
+                CompositionEdge(
+                    kind=CompositionEdgeKind.DELTA,
+                    source_fact_keys=keys,
+                    target_key=f"dynamic:{matched}@growth:{periods[0]}:{periods[-1]}",
+                )
+            )
     elif plan.goal == AnalyticalGoal.TIME_SERIES and requirements:
         keys = tuple(req.fact_key for req in requirements)
         matched = next((req.matched_key for req in requirements if req.matched_key), "index")
@@ -94,6 +108,16 @@ def build_requirements_graph(
                 kind=CompositionEdgeKind.SUM,
                 source_fact_keys=keys,
                 target_key=f"dynamic:{matched}@cumulative",
+            )
+        )
+    elif plan.goal == AnalyticalGoal.SHARE and requirements:
+        keys = tuple(req.fact_key for req in requirements)
+        matched = next((req.matched_key for req in requirements if req.matched_key), "index")
+        edges.append(
+            CompositionEdge(
+                kind=CompositionEdgeKind.SHARE,
+                source_fact_keys=keys,
+                target_key=f"dynamic:{matched}@share",
             )
         )
     elif plan.goal == AnalyticalGoal.RANKING:

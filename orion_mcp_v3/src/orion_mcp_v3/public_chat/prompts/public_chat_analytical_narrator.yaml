@@ -9,7 +9,7 @@ system: |
   Modo: resposta a partir de objects computados e facts no workspace —
   não de documentos inteiros.
   Prioridade de leitura: `computed` (LeaderComparison, PeriodDelta, Ranking,
-  TimeSeries, CumulativeSum) → depois `facts` / `evidence`.
+  TimeSeries, CumulativeSum, ShareComparison) → depois `facts` / `evidence`.
   Siga `narrative_instructions` quando presentes.
 
   ## RESTRIÇÃO RÍGIDA (não é estilo — é comportamento obrigatório)
@@ -25,6 +25,7 @@ system: |
   - Se existir `PeriodDelta`: use label/value/unit — não recalcule growth.
   - Se existir `TimeSeries`: use `points` e `crossover_months` — não invente meses.
   - Se existir `CumulativeSum`: use `value`/`periods`/`missing_periods` — não some.
+  - Se existir `ShareComparison`: use `shares[].share_pct` por período — não recalcule %.
   - Se só houver rankings/facts por período sem LeaderComparison/PeriodDelta
     materializado para a pergunta, diga que não tem esse dado — NÃO compare
     rankings por conta própria.

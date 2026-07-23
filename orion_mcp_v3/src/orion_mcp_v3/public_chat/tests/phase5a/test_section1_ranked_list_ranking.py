@@ -341,3 +341,163 @@ async def test_truncated_ranked_list_caps_workspace_confidence() -> None:
         extractor=FactExtractor(),
     )
     assert workspace.workspace_confidence <= PARTIAL_RANKING_CONFIDENCE
+
+
+@pytest.mark.asyncio
+async def test_leader_change_truncated_does_not_cap_workspace_confidence() -> None:
+    """Truncamento head/tail não deve impedir cache de LeaderComparison bem resolvido."""
+    from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_CACHE_STORE_CONFIDENCE
+
+    def _servico_hit(*, origin_id: int, period: str, leader: str, value: str) -> KnowledgeHit:
+        return KnowledgeHit(
+            origin_id=origin_id,
+            context_key=f"sistema_background:fechamento_gerencial:producao_por_servico:periodo-{period}",
+            category="Fechamento Gerencial",
+            validated_answer=f"Produção por serviço em {period}.",
+            key_metrics={
+                "producao_por_servico": {
+                    "rows": [
+                        {"servico": leader, "valor": value},
+                        {"servico": "OUTRO", "valor": "R$ 1,00"},
+                    ],
+                    "_meta": {
+                        "schema": "ranked_list",
+                        "dimension": "servico",
+                        "metric_kind": "revenue",
+                        "value_field": "valor",
+                        "entity_field": "servico",
+                        "total_original_rows": 50,
+                        "truncated_head_tail": True,
+                    },
+                },
+            },
+            score=0.4,
+        )
+
+    contract = IntentContract(
+        intent="consulta_metrica",
+        metric="vendas",
+        period="2026-05",
+        operation=PublicOperationType.LEADER_CHANGE.value,
+        dimension="servico",
+        entity_filters=(EntityFilter(dimension="periodo", value="2026-06", match="exact"),),
+        confidence=0.9,
+    )
+    knowledge = ConhecimentoRecuperado(
+        hits=(
+            _servico_hit(
+                origin_id=39,
+                period="2026-05",
+                leader="PPF REGENERATIVO",
+                value="R$ 445.373,50",
+            ),
+            _servico_hit(
+                origin_id=47,
+                period="2026-06",
+                leader="PPF REGENERATIVO",
+                value="R$ 505.735,00",
+            ),
+        ),
+    )
+    workspace = await build_remissive_workspace(
+        "Qual foi o serviço mais vendido maio de 2026, e ele se manteve o líder em junho?",
+        contract=contract,
+        knowledge=knowledge,
+        resolver=MemoryResolver(_CatalogReader(knowledge.hits)),
+        extractor=FactExtractor(),
+    )
+    assert any(
+        isinstance(item, dict) and item.get("kind") == "LeaderComparison"
+        for item in workspace.computed
+    )
+    assert workspace.workspace_confidence > PARTIAL_RANKING_CONFIDENCE
+    assert workspace.workspace_confidence >= MIN_CACHE_STORE_CONFIDENCE
+    leaf_confs = [
+        fact.confidence
+        for fact in workspace.facts
+        if "leader_change" not in fact.fact_key
+    ]
+    assert leaf_confs
+    assert workspace.workspace_confidence == min(leaf_confs)
+
+
+@pytest.mark.asyncio
+async def test_share_comparison_does_not_cap_workspace_confidence() -> None:
+    """ranking_base_rows=1 (lookup de entidade) não deve capar ShareComparison abaixo do cache."""
+    from orion_mcp_v3.public_chat.domain.fact_engine.confidence import MIN_CACHE_STORE_CONFIDENCE
+
+    def _tipo_venda_hit(*, origin_id: int, period: str, rows: list[dict]) -> KnowledgeHit:
+        return KnowledgeHit(
+            origin_id=origin_id,
+            context_key=(
+                "sistema_background:fechamento_gerencial:"
+                f"faturamento_por_tipo_venda:periodo-{period}"
+            ),
+            category="Fechamento Gerencial",
+            validated_answer=f"Tipo de venda em {period}.",
+            key_metrics={
+                "faturamento_por_tipo_de_venda": {
+                    "rows": rows,
+                    "_meta": {
+                        "schema": "ranked_list",
+                        "dimension": "tipo_venda",
+                        "metric_kind": "revenue",
+                        "value_field": "valor",
+                        "entity_field": "tipo",
+                        "total_original_rows": len(rows),
+                        "truncated_head_tail": False,
+                    },
+                },
+            },
+            score=0.4,
+        )
+
+    fev_rows = [
+        {"tipo": "Venda Normal", "valor": "R$ 1.000.000,00"},
+        {"tipo": "Prestação de Serviços", "valor": "R$ 583.264,04"},
+        {"tipo": "Cortesia Concessionária", "valor": "R$ 114.128,00"},
+    ]
+    mar_rows = [
+        {"tipo": "Venda Normal", "valor": "R$ 1.651.289,15"},
+        {"tipo": "Prestação de Serviços", "valor": "R$ 655.892,02"},
+        {"tipo": "Cortesia Concessionária", "valor": "R$ 122.379,00"},
+    ]
+    contract = IntentContract(
+        intent="comparacao",
+        metric="faturamento",
+        period="2026-03",
+        operation=PublicOperationType.SHARE.value,
+        dimension="tipo_venda",
+        entity_filters=(
+            EntityFilter(dimension="tipo_venda", value="Prestação de Serviços", match="contains"),
+            EntityFilter(dimension="periodo", value="2026-02", match="exact"),
+        ),
+        confidence=0.85,
+    )
+    knowledge = ConhecimentoRecuperado(
+        hits=(
+            _tipo_venda_hit(origin_id=11, period="2026-02", rows=fev_rows),
+            _tipo_venda_hit(origin_id=19, period="2026-03", rows=mar_rows),
+        ),
+    )
+    workspace = await build_remissive_workspace(
+        "Em março de 2026, qual a participação de 'Prestação de Serviços' "
+        "sobre o faturamento total por tipo de venda, e como isso se compara a fevereiro?",
+        contract=contract,
+        knowledge=knowledge,
+        resolver=MemoryResolver(_CatalogReader(knowledge.hits)),
+        extractor=FactExtractor(),
+    )
+    share = next(
+        (
+            item
+            for item in workspace.computed
+            if isinstance(item, dict) and item.get("kind") == "ShareComparison"
+        ),
+        None,
+    )
+    assert share is not None
+    assert float(share["confidence"]) >= MIN_CACHE_STORE_CONFIDENCE
+    assert workspace.workspace_confidence > PARTIAL_RANKING_CONFIDENCE
+    assert workspace.workspace_confidence >= MIN_CACHE_STORE_CONFIDENCE
+    assert workspace.workspace_confidence == float(share["confidence"])

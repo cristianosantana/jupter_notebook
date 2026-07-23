@@ -532,17 +532,19 @@ def _merge_discarded_scope(
 
 def _filter_rows_by_scope(
     rows: tuple,
-    scope_entities: tuple[tuple[str, str], ...],
+    scope_entities: tuple[tuple[str, str] | tuple[str, str, str], ...],
 ) -> tuple:
-    from orion_mcp_v3.public_chat.domain.key_metrics_reader import KeyMetricsRow
+    from orion_mcp_v3.public_chat.domain.key_metrics_reader import KeyMetricsRow, label_matches_scope
 
     filtered = rows
-    for _dimension, value in scope_entities:
-        needle = value.lower()
+    for item in scope_entities:
+        value = item[1]
+        match = item[2] if len(item) >= 3 else "exact"
         filtered = tuple(
             row
             for row in filtered
-            if isinstance(row, KeyMetricsRow) and needle in row.label.lower()
+            if isinstance(row, KeyMetricsRow)
+            and label_matches_scope(row.label, value, match=match)
         )
     return filtered
 

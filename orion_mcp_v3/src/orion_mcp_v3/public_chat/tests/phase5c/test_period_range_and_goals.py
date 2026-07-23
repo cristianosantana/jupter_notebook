@@ -80,3 +80,24 @@ def test_analytical_plan_goals() -> None:
         IntentContract(intent="consulta_metrica", operation="cumulative", period="2026-01", confidence=1.0)
     )
     assert cum.goal == AnalyticalGoal.CUMULATIVE
+
+
+def test_share_heuristic_and_goal() -> None:
+    contract = IntentContract(intent="consulta_metrica", confidence=0.5)
+    enriched = apply_heuristic_enrichment(
+        contract,
+        "Em março de 2026, qual a participação de 'Prestação de Serviços' sobre o faturamento total?",
+    )
+    assert enriched.operation == "share"
+    plan = build_analytical_plan(enriched)
+    assert plan.goal == AnalyticalGoal.SHARE
+
+
+def test_label_matches_scope_exact_rejects_prefix() -> None:
+    from orion_mcp_v3.public_chat.domain.key_metrics_reader import label_matches_scope
+
+    assert label_matches_scope("GWM BAMAQ | Venda Normal", "GWM BAMAQ", match="exact")
+    assert not label_matches_scope(
+        "GWM BAMAQ PAMPULHA | Venda Normal", "GWM BAMAQ", match="exact"
+    )
+    assert label_matches_scope("Financiamento - GWM BAMAQ", "GWM BAMAQ", match="exact")

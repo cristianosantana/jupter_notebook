@@ -11,6 +11,7 @@ from orion_mcp_v3.public_chat.domain.direct_answer_parser import _parse_br_curre
 
 _CURRENCY_IN_TEXT_RE = re.compile(r"R\$\s*([\d.]+,\d{2})", re.IGNORECASE)
 _PERCENT_RE = re.compile(r"([\d.,]+)\s*%")
+# Fallback posicional só se `_meta.columns` ausente (legado).
 _MATRIX_DEFAULT_COLUMNS = ("venda normal", "financiamento", "total comissao")
 
 _DEFAULT_ENTITY_FIELDS = ("tipo", "label", "metric", "concessionaria", "departamento", "servico", "produto", "parcelas")
@@ -140,17 +141,30 @@ def rows_from_table_sample(raw: Any, *, meta: Mapping[str, Any] | None = None) -
     if not isinstance(raw, list):
         return ()
     subdimension = None
+    meta_columns: tuple[str, ...] = ()
+    column_labels: dict[str, str] = {}
     if meta is not None:
         raw_sub = meta.get("subdimension")
         if isinstance(raw_sub, str) and raw_sub.strip():
             subdimension = raw_sub.strip()
+        raw_cols = meta.get("columns") or meta.get("measure_fields") or ()
+        if isinstance(raw_cols, (list, tuple)):
+            meta_columns = tuple(str(c) for c in raw_cols if c)
+        raw_labels = meta.get("column_labels")
+        if isinstance(raw_labels, dict):
+            column_labels = {str(k): str(v) for k, v in raw_labels.items() if k and v}
     rows: list[KeyMetricsRow] = []
     for line in raw:
         if not isinstance(line, str) or not line.strip():
             continue
         currency_count = len(list(_CURRENCY_IN_TEXT_RE.finditer(line)))
         if currency_count > 1:
-            parsed_rows = _parse_matrix_table_line(line, subdimension=subdimension)
+            parsed_rows = _parse_matrix_table_line(
+                line,
+                subdimension=subdimension,
+                meta_columns=meta_columns,
+                column_labels=column_labels,
+            )
             rows.extend(parsed_rows)
             continue
         parsed = _parse_table_line(line)
@@ -165,15 +179,60 @@ def entity_slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
 
 
-def lookup_entity(rows: tuple[KeyMetricsRow, ...], entity: str) -> KeyMetricsRow | None:
-    needle = entity.lower().strip()
+def label_matches_scope(
+    label: str,
+    value: str,
+    *,
+    match: str = "exact",
+) -> bool:
+    """Compara escopo no label (segmentos ``|`` / `` - `` ou label inteiro).
+
+    ``exact`` (default Senna): igualdade normalizada em algum segmento —
+    evita ``GWM BAMAQ`` pegar ``GWM BAMAQ PAMPULHA``.
+    ``contains``: substring (legado / forma_pagamento).
+    """
+    needle = _normalize_text(value)
+    if not needle:
+        return True
+    hay = _normalize_text(label)
+    segments = _label_segments(label)
+    mode = (match or "exact").strip().lower()
+    if mode == "contains":
+        return needle in hay or any(needle in seg for seg in segments)
+    return hay == needle or needle in segments
+
+
+def _label_segments(label: str) -> list[str]:
+    parts = re.split(r"[|:/]+|\s+-\s+", label or "")
+    return [_normalize_text(part) for part in parts if part.strip()]
+
+
+def lookup_entity(
+    rows: tuple[KeyMetricsRow, ...],
+    entity: str,
+    *,
+    match: str = "exact",
+) -> KeyMetricsRow | None:
+    needle = _normalize_text(entity)
     slug = entity_slug(entity)
+    mode = (match or "exact").strip().lower()
+
+    # 1) exact: segmento ou label inteiro
     for row in rows:
-        label_lower = row.label.lower()
-        if needle and needle in label_lower:
+        segments = _label_segments(row.label)
+        whole = _normalize_text(row.label)
+        if needle and (whole == needle or needle in segments):
             return row
-        # Schema estruturado: chaves tipadas usam underscore (venda_normal);
-        # o requirement ainda traz o rótulo humano ("Venda Normal").
+        if slug and slug in {entity_slug(seg) for seg in segments}:
+            return row
+
+    if mode != "contains":
+        return None
+
+    # 2) contains (legado)
+    for row in rows:
+        if needle and needle in _normalize_text(row.label):
+            return row
         if slug and slug in _label_slugs(row.label):
             return row
     return None
@@ -260,7 +319,10 @@ def _parse_matrix_table_line(
     line: str,
     *,
     subdimension: str | None = None,
+    meta_columns: tuple[str, ...] = (),
+    column_labels: dict[str, str] | None = None,
 ) -> tuple[KeyMetricsRow, ...]:
+    _ = subdimension  # documentado no meta; escopo vem do texto da linha
     text = line.strip()
     if not text:
         return ()
@@ -275,7 +337,14 @@ def _parse_matrix_table_line(
         value = _parse_br_currency(match.group(1))
         if value is None:
             continue
-        column_label = _matrix_column_label(text, match, index=index, matches=matches)
+        column_label = _matrix_column_label(
+            text,
+            match,
+            index=index,
+            matches=matches,
+            meta_columns=meta_columns,
+            column_labels=column_labels or {},
+        )
         if scope_entity and column_label:
             label = f"{scope_entity} | {column_label}"
         elif scope_entity:
@@ -305,12 +374,22 @@ def _matrix_scope_entity(text: str, first_currency_start: int) -> str:
     return prefix.strip(" -:\t|")
 
 
+def _humanize_column_slug(slug: str, column_labels: dict[str, str]) -> str:
+    needle = entity_slug(slug)
+    for key, label in column_labels.items():
+        if entity_slug(key) == needle:
+            return label
+    return " ".join(part.capitalize() for part in needle.split("_") if part)
+
+
 def _matrix_column_label(
     text: str,
     match: re.Match[str],
     *,
     index: int,
     matches: list[re.Match[str]],
+    meta_columns: tuple[str, ...] = (),
+    column_labels: dict[str, str] | None = None,
 ) -> str:
     start = matches[index - 1].end() if index > 0 else 0
     segment = text[start : match.start()]
@@ -319,6 +398,10 @@ def _matrix_column_label(
     label = segment.strip(" -:\t")
     if label:
         return label.rstrip(":")
+    labels = column_labels or {}
+    # Preferência Senna: `_meta.columns` / `column_labels`
+    if index < len(meta_columns):
+        return _humanize_column_slug(meta_columns[index], labels)
     if index < len(_MATRIX_DEFAULT_COLUMNS):
         return _MATRIX_DEFAULT_COLUMNS[index]
     return f"coluna_{index + 1}"

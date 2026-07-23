@@ -440,4 +440,192 @@ def test_knowledge_composer_leader_change_not_growth() -> None:
     assert composition.computed[0]["changed"] is False
     assert not any("@growth:" in f.fact_key for f in composition.facts)
     assert any("leader_change" in f.fact_key for f in composition.facts)
+    assert not any(
+        isinstance(item, dict) and item.get("kind") == "PeriodDelta"
+        for item in composition.computed
+    )
+
+
+def test_structural_period_delta_from_comparison_cells() -> None:
+    """comparison + 2 FactCells mesma entidade/períodos → PeriodDelta sem period_growth."""
+    from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalGoal, AnalyticalPlan
+    from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
+    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace
+    from orion_mcp_v3.public_chat.domain.knowledge_composer import compose_knowledge
+    from orion_mcp_v3.public_chat.domain.requirements_graph import build_requirements_graph
+
+    def _req(period: str, entity: str) -> FactRequirement:
+        slug = entity.lower().replace(" ", "_").replace("á", "a").replace("é", "e")
+        key = f"dynamic:faturamento_por_tipo_de_pagamento@{slug}@{period}"
+        return FactRequirement(
+            fact_key=key,
+            metric="faturamento",
+            dimension="forma_pagamento",
+            entity=entity,
+            period=period,
+            operation="comparison",
+            matched_key="faturamento_por_tipo_de_pagamento",
+            semantics=FactSemantics(
+                fact_key=key,
+                aggregation_rule=AggregationRule.LOOKUP,
+                comparator=Comparator.NONE,
+                source_priority=(SourcePriority.KEY_METRICS,),
+                value_kind="currency",
+                key_metrics_keys=("faturamento_por_tipo_de_pagamento",),
+            ),
+        )
+
+    req_jan = _req("2026-01", "Cartão de Crédito")
+    req_jun = _req("2026-06", "Cartão de Crédito")
+    leaf = (
+        ExtractedFact(
+            fact_key=req_jan.fact_key,
+            label="Cartão de Crédito",
+            value="R$ 1.143.256,71 (53,06%)",
+            unit="BRL",
+            fact_type=FactType.RAW,
+            confidence=0.95,
+            origin_id=1,
+            context_key="jan",
+            trace=FactTrace(
+                fact_key=req_jan.fact_key,
+                resolved_from=(1,),
+                context_keys=("jan",),
+                rule_applied=ResolutionRule.CATALOG,
+                extraction_path=ExtractionPath.KEY_METRICS,
+            ),
+        ),
+        ExtractedFact(
+            fact_key=req_jun.fact_key,
+            label="Cartão de Crédito",
+            value="R$ 1.168.481,75 (41,97%)",
+            unit="BRL",
+            fact_type=FactType.RAW,
+            confidence=0.95,
+            origin_id=2,
+            context_key="jun",
+            trace=FactTrace(
+                fact_key=req_jun.fact_key,
+                resolved_from=(2,),
+                context_keys=("jun",),
+                rule_applied=ResolutionRule.CATALOG,
+                extraction_path=ExtractionPath.KEY_METRICS,
+            ),
+        ),
+    )
+    plan = AnalyticalPlan(
+        goal=AnalyticalGoal.COMPARISON,
+        operation="comparison",
+        dimension="forma_pagamento",
+        metric="faturamento",
+        periods=("2026-01", "2026-06"),
+        sort_direction=None,
+        confidence=0.9,
+    )
+    graph = build_requirements_graph((req_jan, req_jun), plan)
+    composition = compose_knowledge(graph=graph, leaf_facts=leaf, resolved={})
+    deltas = [c for c in composition.computed if isinstance(c, dict) and c.get("kind") == "PeriodDelta"]
+    assert len(deltas) == 1
+    assert deltas[0]["label"] == "Cartão de Crédito"
+    assert deltas[0]["period_from"] == "2026-01"
+    assert deltas[0]["period_to"] == "2026-06"
+    assert abs(deltas[0]["value"] - 2.2064) < 0.01
+
+
+def test_structural_period_delta_two_entities_comparison() -> None:
+    """Cortesia vs Prestação: um PeriodDelta por label (fev→jun)."""
+    from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalGoal, AnalyticalPlan
+    from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
+    from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace
+    from orion_mcp_v3.public_chat.domain.knowledge_composer import compose_knowledge
+    from orion_mcp_v3.public_chat.domain.requirements_graph import build_requirements_graph
+
+    def _req(period: str, entity: str) -> FactRequirement:
+        slug = (
+            entity.lower()
+            .replace(" ", "_")
+            .replace("á", "a")
+            .replace("ã", "a")
+            .replace("ç", "c")
+            .replace("é", "e")
+            .replace("í", "i")
+            .replace("ó", "o")
+        )
+        key = f"dynamic:faturamento_por_tipo_de_venda@{slug}@{period}"
+        return FactRequirement(
+            fact_key=key,
+            metric="faturamento",
+            dimension="tipo_venda",
+            entity=entity,
+            period=period,
+            operation="comparison",
+            matched_key="faturamento_por_tipo_de_venda",
+            semantics=FactSemantics(
+                fact_key=key,
+                aggregation_rule=AggregationRule.LOOKUP,
+                comparator=Comparator.NONE,
+                source_priority=(SourcePriority.KEY_METRICS,),
+                value_kind="currency",
+                key_metrics_keys=("faturamento_por_tipo_de_venda",),
+            ),
+        )
+
+    entities = ("Cortesia Concessionária", "Prestação de Serviços")
+    periods = ("2026-02", "2026-06")
+    values = {
+        ("Cortesia Concessionária", "2026-02"): "R$ 114.128,00",
+        ("Cortesia Concessionária", "2026-06"): "R$ 150.829,00",
+        ("Prestação de Serviços", "2026-02"): "R$ 583.264,04",
+        ("Prestação de Serviços", "2026-06"): "R$ 889.298,02",
+    }
+    reqs: list[FactRequirement] = []
+    leaf: list[ExtractedFact] = []
+    oid = 1
+    for entity in entities:
+        for period in periods:
+            req = _req(period, entity)
+            reqs.append(req)
+            leaf.append(
+                ExtractedFact(
+                    fact_key=req.fact_key,
+                    label=entity,
+                    value=values[(entity, period)],
+                    unit="BRL",
+                    fact_type=FactType.RAW,
+                    confidence=0.95,
+                    origin_id=oid,
+                    context_key=period,
+                    trace=FactTrace(
+                        fact_key=req.fact_key,
+                        resolved_from=(oid,),
+                        context_keys=(period,),
+                        rule_applied=ResolutionRule.CATALOG,
+                        extraction_path=ExtractionPath.KEY_METRICS,
+                    ),
+                )
+            )
+            oid += 1
+
+    plan = AnalyticalPlan(
+        goal=AnalyticalGoal.COMPARISON,
+        operation="comparison",
+        dimension="tipo_venda",
+        metric="faturamento",
+        periods=periods,
+        sort_direction=None,
+        confidence=0.9,
+    )
+    composition = compose_knowledge(
+        graph=build_requirements_graph(tuple(reqs), plan),
+        leaf_facts=tuple(leaf),
+        resolved={},
+    )
+    deltas = {
+        c["label"]: c
+        for c in composition.computed
+        if isinstance(c, dict) and c.get("kind") == "PeriodDelta"
+    }
+    assert set(deltas) == set(entities)
+    assert abs(deltas["Cortesia Concessionária"]["value"] - 32.16) < 0.1
+    assert abs(deltas["Prestação de Serviços"]["value"] - 52.47) < 0.1
 

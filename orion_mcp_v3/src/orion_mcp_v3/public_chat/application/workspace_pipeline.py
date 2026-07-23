@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from orion_mcp_v3.protocols.llm import LLMProvider
-from orion_mcp_v3.public_chat.domain.analytical_plan import build_analytical_plan
+from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalGoal, build_analytical_plan
 from orion_mcp_v3.public_chat.domain.analytical_requirement_planner import plan_analytical_requirements
 from orion_mcp_v3.public_chat.domain.composition_planner import NoOpCompositionPlanner
 from orion_mcp_v3.public_chat.domain.fact_engine.models import RemissiveWorkspace
@@ -31,6 +31,7 @@ _RANKING_OPERATIONS = frozenset(
         PublicOperationType.PERIOD_DECLINE.value,
         PublicOperationType.TIME_SERIES.value,
         PublicOperationType.CUMULATIVE.value,
+        PublicOperationType.SHARE.value,
         "ranking_asc",
         "ranking_desc",
         "leader_change",
@@ -38,6 +39,7 @@ _RANKING_OPERATIONS = frozenset(
         "period_decline",
         "time_series",
         "cumulative",
+        "share",
         "min",
         "max",
     }
@@ -102,7 +104,40 @@ async def build_remissive_workspace(
         source_truncated=source_truncated,
         fact_count=len(facts),
     )
-    if ranking_partial:
+    # Objetos compostos com confiança própria: não herdar cap de ranking parcial
+    # (base_rows<=1 / head-tail) — senão ShareComparison/LeaderComparison ficam
+    # em 0.4 e nunca entram no cache (threshold 0.8).
+    if (
+        analytical_plan.goal == AnalyticalGoal.LEADER_COMPARISON
+        and any(
+            isinstance(item, dict) and item.get("kind") == "LeaderComparison"
+            for item in composition.computed
+        )
+    ):
+        # Truncamento head/tail não degrada a identidade do líder (max no head).
+        cell_confidences = [cell.confidence for cell in composition.cells]
+        if cell_confidences:
+            workspace_confidence = min(cell_confidences)
+        ranking_partial = False
+    elif (
+        analytical_plan.goal == AnalyticalGoal.SHARE
+        and any(
+            isinstance(item, dict) and item.get("kind") == "ShareComparison"
+            for item in composition.computed
+        )
+    ):
+        # Lookup de 1 entidade ⇒ ranking_base_rows=1 é esperado, não ranking parcial.
+        share_confidences = [
+            float(item["confidence"])
+            for item in composition.computed
+            if isinstance(item, dict)
+            and item.get("kind") == "ShareComparison"
+            and item.get("confidence") is not None
+        ]
+        if share_confidences:
+            workspace_confidence = min(share_confidences)
+        ranking_partial = False
+    elif ranking_partial:
         workspace_confidence = min(workspace_confidence, PARTIAL_RANKING_CONFIDENCE)
 
     workspace = RemissiveWorkspace(
@@ -152,6 +187,20 @@ def _ranking_base_insufficient(
 ) -> bool:
     operation = (contract.operation or "").strip().lower()
     if operation not in _RANKING_OPERATIONS:
+        return False
+    # leader_change só precisa do extremo por período; head/tail não invalida o líder.
+    if operation == PublicOperationType.LEADER_CHANGE.value:
+        if ranking_base_rows is not None and ranking_base_rows <= 0:
+            return True
+        if fact_count < 2 and ranking_base_rows is None:
+            return True
+        return False
+    # share materializa participação entidade/total; base_rows=1 (lookup) é esperado.
+    if operation == PublicOperationType.SHARE.value:
+        if ranking_base_rows is not None and ranking_base_rows <= 0:
+            return True
+        if fact_count < 1:
+            return True
         return False
     if source_truncated:
         return True

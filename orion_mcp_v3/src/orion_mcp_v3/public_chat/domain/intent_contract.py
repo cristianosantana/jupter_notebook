@@ -25,6 +25,7 @@ class PublicOperationType(str, Enum):
     PERIOD_DECLINE = "period_decline"
     TIME_SERIES = "time_series"
     CUMULATIVE = "cumulative"
+    SHARE = "share"
 
 
 @dataclass(frozen=True, slots=True)

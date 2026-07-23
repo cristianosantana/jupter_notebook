@@ -127,7 +127,8 @@ async def test_planner_venda_normal_financiamento_scope_concessionaria():
         for req in result.requirements
     )
     assert all(
-        req.scope_entities == (("concessionaria", "GWM BAMAQ"),)
+        req.scope_entities[0][:2] == ("concessionaria", "GWM BAMAQ")
+        and (len(req.scope_entities[0]) < 3 or req.scope_entities[0][2] == "exact")
         for req in result.requirements
     )
     matched_keys = {req.matched_key for req in result.requirements}

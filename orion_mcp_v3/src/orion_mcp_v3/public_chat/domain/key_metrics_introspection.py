@@ -283,15 +283,18 @@ def scope_axes_from_hit_meta(hit: KnowledgeHit, matched_key: str | None) -> froz
 
 
 def partition_scope_entities(
-    scope_entities: tuple[tuple[str, str], ...],
+    scope_entities: tuple[tuple[str, str] | tuple[str, str, str], ...],
     axes: frozenset[str],
     *,
     exclude_dimensions: tuple[str, ...] = (),
-) -> tuple[tuple[tuple[str, str], ...], tuple[dict[str, str], ...]]:
+) -> tuple[tuple[tuple[str, str, str], ...], tuple[dict[str, str], ...]]:
     excluded = {_normalize_dimension(dimension) for dimension in exclude_dimensions}
-    applicable: list[tuple[str, str]] = []
+    applicable: list[tuple[str, str, str]] = []
     discarded: list[dict[str, str]] = []
-    for dimension, value in scope_entities:
+    for item in scope_entities:
+        dimension = item[0]
+        value = item[1]
+        match = item[2] if len(item) >= 3 else "exact"
         dim_norm = _normalize_dimension(dimension)
         if dim_norm in excluded:
             discarded.append(
@@ -299,7 +302,7 @@ def partition_scope_entities(
             )
             continue
         if dim_norm in axes:
-            applicable.append((dimension, value))
+            applicable.append((dimension, value, match))
             continue
         discarded.append(
             {"dimension": dimension, "value": value, "reason": "not_in_schema"},
@@ -316,7 +319,7 @@ def build_dynamic_requirement(
     message: str = "",
     entity: str | None = None,
     period: str | None = None,
-    scope_entities: tuple[tuple[str, str], ...] = (),
+    scope_entities: tuple[tuple[str, str] | tuple[str, str, str], ...] = (),
     include_period_in_key: bool = False,
     exclude_scope_dimensions: tuple[str, ...] = (),
 ) -> FactRequirement:
@@ -687,7 +690,8 @@ def _resolve_requirement_entity(
 
 def _value_field_for_contract(contract: IntentContract, entry: KeyMetricsIndexEntry) -> str:
     metric = _normalize_metric_kind(contract.metric)
-    if metric == "share":
+    operation = (contract.operation or "").strip().lower()
+    if metric == "share" or operation == "share":
         return "percentual"
     if metric == "commission":
         return entry.value_field if "comissao" in entry.value_field else "valor_comissao"

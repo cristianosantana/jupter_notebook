@@ -31,10 +31,18 @@ class FactRequirement:
     source_context_key: str | None = None
     source_resolution_mode: str | None = None
     source_resolution_detail: str | None = None
-    scope_entities: tuple[tuple[str, str], ...] = ()
+    scope_entities: tuple[tuple[str, str] | tuple[str, str, str], ...] = ()
     discarded_scope: tuple[dict[str, str], ...] = ()
 
     def as_mapping(self) -> dict[str, object]:
+        scope_payload: list[dict[str, str]] = []
+        for item in self.scope_entities:
+            if len(item) >= 3:
+                scope_payload.append(
+                    {"dimension": item[0], "value": item[1], "match": item[2]}
+                )
+            else:
+                scope_payload.append({"dimension": item[0], "value": item[1]})
         return {
             "fact_key": self.fact_key,
             "metric": self.metric,
@@ -50,10 +58,7 @@ class FactRequirement:
             "source_context_key": self.source_context_key,
             "source_resolution_mode": self.source_resolution_mode,
             "source_resolution_detail": self.source_resolution_detail,
-            "scope_entities": [
-                {"dimension": dimension, "value": value}
-                for dimension, value in self.scope_entities
-            ],
+            "scope_entities": scope_payload,
             "discarded_scope": list(self.discarded_scope),
             "semantics": self.semantics.as_mapping(),
         }

@@ -19,7 +19,7 @@ system: |
   - period: período canônico YYYY-MM quando houver referência temporal
   - domain: domínio em slug (ex.: financeiro, vendas)
   - operation: ranking_asc | ranking_desc | leader_change | period_growth | period_decline
-    | time_series | cumulative | list | summary | comparison | null
+    | time_series | cumulative | share | list | summary | comparison | null
   - dimension: dimensão analítica em slug (ex.: forma_pagamento, servico, produto, concessionaria) | null
   - sort_direction: asc | desc | null (derivável de operation quando omitido)
   - entity_filters: lista de {dimension, value, match} para entidades específicas
@@ -38,6 +38,8 @@ system: |
     (série mensal no intervalo; NÃO period_growth e NÃO só endpoints)
   - "soma", "total acumulado", "diferença entre o total … entre/até" → operation: cumulative
     (soma no intervalo completo; NÃO comparison só de dois endpoints)
+  - "participação de X", "share", "sobre o faturamento total" → operation: share
+    (percentual da entidade sobre o total do índice; compare períodos se houver dois)
   - "forma de pagamento" / "PIX" / "cartão de crédito" (sem parcelas) → dimension: forma_pagamento
   - "5x", "10x" como valor único pedido → dimension: parcelas; entity_filters com value normalizado (ex.: 5X)
   - "cartão de crédito em 5x" (consulta de valor único) → dimension: parcelas; entity_filters: [{dimension: parcelas, value: 5X}]

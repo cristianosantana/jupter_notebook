@@ -177,16 +177,36 @@ def scope_entity_tuples(
     operands: tuple[str, ...],
     *,
     exclude_dimensions: tuple[str, ...] = (),
-) -> tuple[tuple[str, str], ...]:
-    return tuple(
-        (_normalize_dimension(filt.dimension or ""), filt.value)
-        for filt in scope_entity_filters(
-            contract,
-            operands,
-            exclude_dimensions=exclude_dimensions,
-        )
-        if filt.value
-    )
+) -> tuple[tuple[str, str, str], ...]:
+    """Retorna ``(dimension, value, match)`` — concessionária etc. forçam ``exact``."""
+    out: list[tuple[str, str, str]] = []
+    for filt in scope_entity_filters(
+        contract,
+        operands,
+        exclude_dimensions=exclude_dimensions,
+    ):
+        if not filt.value:
+            continue
+        dim = _normalize_dimension(filt.dimension or "")
+        mode = _resolve_scope_match(dim, filt.match)
+        out.append((dim, filt.value, mode))
+    return tuple(out)
+
+
+def _resolve_scope_match(dimension: str, raw_match: str | None) -> str:
+    mode = (raw_match or "").strip().lower()
+    if dimension in {"concessionaria", "estabelecimento", "empresa"}:
+        # Default dataclass ``contains`` não deve afrouxar nomes próprios (Senna).
+        if mode in ("", "contains", "exact"):
+            return "exact"
+        return mode
+    return mode or "contains"
+
+
+def _default_scope_match(dimension: str) -> str:
+    if dimension in {"concessionaria", "estabelecimento", "empresa"}:
+        return "exact"
+    return "contains"
 
 
 def entities_for_dimension(
@@ -210,6 +230,7 @@ def entities_for_dimension(
         "period_decline",
         "time_series",
         "cumulative",
+        "share",
         "min",
         "max",
     }:

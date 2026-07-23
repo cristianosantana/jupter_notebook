@@ -16,6 +16,7 @@ class AnalyticalGoal(str, Enum):
     PERIOD_DELTA = "period_delta"
     TIME_SERIES = "time_series"
     CUMULATIVE = "cumulative"
+    SHARE = "share"
     LOOKUP = "lookup"
     COMPARISON = "comparison"
     LIST = "list"
@@ -74,6 +75,8 @@ def _goal_from_operation(operation: str | None) -> AnalyticalGoal:
         return AnalyticalGoal.TIME_SERIES
     if operation == PublicOperationType.CUMULATIVE.value:
         return AnalyticalGoal.CUMULATIVE
+    if operation == PublicOperationType.SHARE.value:
+        return AnalyticalGoal.SHARE
     if operation in (
         PublicOperationType.RANKING_ASC.value,
         PublicOperationType.RANKING_DESC.value,

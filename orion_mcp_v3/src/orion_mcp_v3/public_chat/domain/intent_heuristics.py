@@ -111,6 +111,13 @@ _TIME_SERIES_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bultrapass"),
 )
 
+_SHARE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bparticipa[cç][aã]o\b"),
+    re.compile(r"\bshare\b"),
+    re.compile(r"\bsobre\s+o\s+faturamento\s+total\b"),
+    re.compile(r"\bpercentual\s+de\b"),
+)
+
 _CUMULATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:soma|acumulad[oa])\b"),
     re.compile(r"\bdiferen[cç]a\s+entre\s+o\s+total\b"),
@@ -170,6 +177,12 @@ def _operation_from_superlative(text: str) -> str | None:
     return None
 
 
+def _operation_from_share(text: str) -> str | None:
+    if any(pattern.search(text) for pattern in _SHARE_PATTERNS):
+        return PublicOperationType.SHARE.value
+    return None
+
+
 def _operation_from_time_series(text: str) -> str | None:
     if any(pattern.search(text) for pattern in _TIME_SERIES_PATTERNS):
         return PublicOperationType.TIME_SERIES.value
@@ -188,8 +201,9 @@ def _ranking_operation_override(text: str) -> str | None:
     return (
         _operation_from_leader_change(text)
         or _operation_from_period_delta(text)
-        or _operation_from_time_series(text)
+        or _operation_from_share(text)
         or _operation_from_cumulative(text)
+        or _operation_from_time_series(text)
         or _operation_from_superlative(text)
     )
 
@@ -262,6 +276,7 @@ def apply_heuristic_enrichment(contract: IntentContract, message: str) -> Intent
     entity_filters = _apply_payment_method_filter(entity_filters, message)
     dimension = _dimension_for_cortesia_group(dimension, entity_filters)
     entity_filters = _entity_filters_for_dimension(entity_filters, dimension)
+    entity_filters = _exact_match_for_named_scopes(entity_filters)
     if dimension == "parcelamento":
         dimension = "parcelas"
     enriched = IntentContract(
@@ -388,6 +403,21 @@ def _dimension_for_cortesia_group(
     if any(_is_cortesia_group(filt.value) for filt in filters):
         return "tipo_venda"
     return dimension
+
+
+def _exact_match_for_named_scopes(
+    filters: tuple[EntityFilter, ...],
+) -> tuple[EntityFilter, ...]:
+    """Concessionária/estabelecimento → match exact (Senna / anti-prefixo)."""
+    named = {"concessionaria", "concessionária", "estabelecimento", "empresa"}
+    out: list[EntityFilter] = []
+    for filt in filters:
+        dim = (filt.dimension or "").strip().lower()
+        if dim in named and (filt.match or "contains").lower() != "exact":
+            out.append(EntityFilter(dimension=filt.dimension, value=filt.value, match="exact"))
+        else:
+            out.append(filt)
+    return tuple(out)
 
 
 def _entity_filters_for_dimension(
