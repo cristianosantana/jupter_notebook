@@ -21,15 +21,26 @@ def _slug_index_key(index_key: str) -> str:
 
 def _patterns_for_index_periods(index_key: str, periods: tuple[str, ...]) -> list[str]:
     key = _slug_index_key(index_key)
-    # Aliases comuns: CLI vs context_key vs key_metrics
+    # Só aliases do próprio pedido (não misturar temas irmãos).
     aliases = {
         key,
         key.replace("tipo_os", "tipo_de_os"),
         key.replace("tipo_de_os", "tipo_os"),
-        "comissao_por_concessionaria_tipo_os",
-        "comissao_por_tipo_de_os_por_concessionaria",
-        "comissao_por_tipo_os",
+        key.replace("tipo_venda", "tipo_de_venda"),
+        key.replace("tipo_de_venda", "tipo_venda"),
+        key.replace("forma_pagamento", "tipo_de_pagamento"),
+        key.replace("tipo_de_pagamento", "forma_pagamento"),
+        key.replace("forma_pagamento", "tipo_pagamento"),
+        key.replace("tipo_pagamento", "forma_pagamento"),
     }
+    if "comissao" in key and "tipo" in key:
+        aliases.update(
+            {
+                "comissao_por_concessionaria_tipo_os",
+                "comissao_por_tipo_de_os_por_concessionaria",
+                "comissao_por_tipo_os",
+            }
+        )
     patterns: list[str] = []
     for alias in dict.fromkeys(a for a in aliases if a):
         for period in periods:
@@ -53,17 +64,64 @@ def _prefer_key_metrics_key(hits: list[Any], requested: str) -> str:
     if not counter:
         return requested
     needle = _slug_index_key(requested)
-    # Preferir chaves que casam com o pedido e têm matriz tipo_os
-    ranked = sorted(
-        counter.items(),
-        key=lambda item: (
-            -int(needle in _slug_index_key(item[0]) or _slug_index_key(item[0]) in needle),
-            -int("tipo" in _slug_index_key(item[0])),
-            -item[1],
-            len(item[0]),
-        ),
-    )
+    needle_tokens = {t for t in needle.split("_") if t and t not in {"por", "de", "e", "a", "o"}}
+
+    def score(candidate: str) -> tuple[int, ...]:
+        slug = _slug_index_key(candidate)
+        cand_tokens = {t for t in slug.split("_") if t and t not in {"por", "de", "e", "a", "o"}}
+        overlap = len(needle_tokens & cand_tokens)
+        exact = int(slug == needle)
+        contains = int(needle in slug or slug in needle)
+        # penalizar temas irmãos (venda vs pagamento, etc.)
+        mismatch = len(needle_tokens - cand_tokens) + len(cand_tokens - needle_tokens)
+        return (exact, contains, overlap, -mismatch, -len(slug))
+
+    ranked = sorted(counter.items(), key=lambda item: (*score(item[0]), -item[1]), reverse=True)
     return ranked[0][0]
+
+
+def _theme_from_context_key(context_key: str) -> str:
+    parts = (context_key or "").split(":")
+    return parts[2] if len(parts) >= 3 else (context_key or "")
+
+
+def _filter_hits_for_index(hits: list[Any], index_key: str) -> list[Any]:
+    """Mantém hits cujo theme do context_key casa com o index pedido."""
+    needle = _slug_index_key(index_key)
+    aliases = {
+        needle,
+        needle.replace("tipo_os", "tipo_de_os"),
+        needle.replace("tipo_de_os", "tipo_os"),
+        needle.replace("tipo_venda", "tipo_de_venda"),
+        needle.replace("tipo_de_venda", "tipo_venda"),
+        needle.replace("forma_pagamento", "tipo_de_pagamento"),
+        needle.replace("tipo_de_pagamento", "forma_pagamento"),
+    }
+    if "comissao" in needle and "tipo" in needle:
+        aliases.update(
+            {
+                "comissao_por_concessionaria_tipo_os",
+                "comissao_por_tipo_de_os_por_concessionaria",
+            }
+        )
+
+    by_theme: list[Any] = []
+    for hit in hits:
+        theme = _slug_index_key(_theme_from_context_key(getattr(hit, "context_key", "") or ""))
+        if theme in aliases:
+            by_theme.append(hit)
+    if by_theme:
+        return by_theme
+
+    # Fallback: key_metrics quando context_key não tem theme reconhecível
+    kept: list[Any] = []
+    for hit in hits:
+        km = getattr(hit, "key_metrics", None) or {}
+        if not isinstance(km, dict):
+            continue
+        if any(_slug_index_key(k) in aliases for k in km):
+            kept.append(hit)
+    return kept or hits
 
 
 def _infer_concessionaria(question: str) -> str | None:
@@ -190,6 +248,7 @@ async def pack_case_from_db(
                 limit=50,
             )
         hits = _filter_hits_for_periods(hits, resolved_periods)
+        hits = _filter_hits_for_index(hits, index_key)
         if not hits:
             raise RuntimeError(
                 f"nenhum hit em memory_curta para index_key={index_key!r} "

@@ -1,0 +1,32 @@
+status: known_bug
+secao: 1
+bug_summary: Case empacotado via --from-db (cumulative)
+trace_id: fd3085cc-1fd0-4b59-9ce7-67d035efa8dc
+question: Qual foi a soma do faturamento de estética automotiva (BH Estética, MFP,
+  Carsoul, GB Estética, Xtreme PPF) em todo o 1º semestre de 2026, e qual dessas empresas
+  teve a participação mais estável mês a mês?
+memory_json: ./memory.json
+intent:
+  operation: cumulative
+  dimension: estabelecimento
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  - 2026-05
+  - 2026-06
+  index_key: taxas_cartao_credito
+  scope_filters: []
+  operand_labels:
+  - BH ESTÉTICA
+  - MFP ESTETICA AUTOMOTIVA
+  - CARSOUL
+  - GB ESTÉTICA
+  - XTREME PPF
+runtime_verdict:
+  label: pending_manual_verdict
+  value: 0.0
+  unit: BRL
+  confidence: 0.0
+  note: preencha runtime_verdict após inspecionar Veredito B / pipeline

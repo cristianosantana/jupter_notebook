@@ -1,23 +1,25 @@
 status: known_bug
 secao: 1
 bug_summary: Case empacotado via --from-db (period_growth)
-trace_id: 48031649-2f77-4604-a29d-ae0fee022745
-question: Das vendas parceladas em cartão de crédito em janeiro de 2026, qual parcela
-  (1x a 10x) teve o maior crescimento percentual até junho?
+trace_id: 924be309-9c2b-46d4-9547-8c248a7aaa8d
+question: Comparando fevereiro até junho de 2026, o faturamento com 'Cortesia Concessionária'
+  cresceu mais rápido, em termos percentuais, do que o faturamento total de 'Prestação
+  de Serviços'?
 memory_json: ./memory.json
 intent:
   operation: period_growth
-  dimension: parcelas
+  dimension: tipo_de_venda
   periods:
-  - 2026-01
   - 2026-02
   - 2026-03
   - 2026-04
   - 2026-05
   - 2026-06
-  index_key: parcelamento_de_cartao
+  index_key: faturamento_por_tipo_de_venda
   scope_filters: []
-  operand_labels: []
+  operand_labels:
+  - Cortesia Concessionária
+  - Prestação de Serviços
 runtime_verdict:
   label: pending_manual_verdict
   value: 0.0

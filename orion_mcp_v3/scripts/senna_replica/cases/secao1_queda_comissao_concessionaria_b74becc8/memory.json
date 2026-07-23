@@ -1,877 +1,629 @@
-[
-  {
-    "origin_id": 4,
-    "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-01",
-    "dimension": "por_concessionaria",
-    "metric_kind": "comissao",
-    "key_metrics": {
-      "faturamento_e_comissao_por_concessionaria": {
-        "rows": [
-          {
-            "concessionaria": "SAITAMA - HONDA",
-            "valor_comissao": "R$ 33.828,00 (10,95%)",
-            "percentual": "10,95%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ",
-            "valor_comissao": "R$ 30.660,52 (9,92%)",
-            "percentual": "9,92%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ PAMPULHA",
-            "valor_comissao": "R$ 24.020,00 (7,77%)",
-            "percentual": "7,77%"
-          },
-          {
-            "concessionaria": "STRADA JEEP",
-            "valor_comissao": "R$ 19.762,47 (6,39%)",
-            "percentual": "6,39%"
-          },
-          {
-            "concessionaria": "PORSCHE",
-            "valor_comissao": "R$ 18.993,20 (6,15%)",
-            "percentual": "6,15%"
-          },
-          {
-            "concessionaria": "Bamaq Automóveis Mercedes-Benz",
-            "valor_comissao": "R$ 18.535,20 (6,00%)",
-            "percentual": "6,00%"
-          },
-          {
-            "concessionaria": "BANZAI",
-            "valor_comissao": "R$ 18.220,23 (5,90%)",
-            "percentual": "5,90%"
-          },
-          {
-            "concessionaria": "CARBEL",
-            "valor_comissao": "R$ 16.969,05 (5,49%)",
-            "percentual": "5,49%"
-          },
-          {
-            "concessionaria": "AUDI CARBEL",
-            "valor_comissao": "R$ 16.187,60 (5,24%)",
-            "percentual": "5,24%"
-          },
-          {
-            "concessionaria": "STRADA",
-            "valor_comissao": "R$ 14.042,70 (4,54%)",
-            "percentual": "4,54%"
-          },
-          {
-            "concessionaria": "CARBEL BYD SAVASSI",
-            "valor_comissao": "R$ 12.070,17 (3,91%)",
-            "percentual": "3,91%"
-          },
-          {
-            "concessionaria": "BANZAI PAMPULHA",
-            "valor_comissao": "R$ 11.069,67 (3,58%)",
-            "percentual": "3,58%"
-          },
-          {
-            "concessionaria": "STRADA JEEP - PAMPULHA",
-            "valor_comissao": "R$ 10.212,30 (3,30%)",
-            "percentual": "3,30%"
-          },
-          {
-            "concessionaria": "GARRA",
-            "valor_comissao": "R$ 10.127,04 (3,28%)",
-            "percentual": "3,28%"
-          },
-          {
-            "concessionaria": "STRADA LINHA VERDE",
-            "valor_comissao": "R$ 9.665,88 (3,13%)",
-            "percentual": "3,13%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA",
-            "valor_comissao": "R$ 8.567,58 (2,77%)",
-            "percentual": "2,77%"
-          },
-          {
-            "concessionaria": "CARBEL KOREA",
-            "valor_comissao": "R$ 6.060,60 (1,96%)",
-            "percentual": "1,96%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CATALÃO",
-            "valor_comissao": "R$ 5.860,89 (1,90%)",
-            "percentual": "1,90%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ CONTAGEM",
-            "valor_comissao": "R$ 5.828,40 (1,89%)",
-            "percentual": "1,89%"
-          },
-          {
-            "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
-            "valor_comissao": "R$ 5.303,65 (1,72%)",
-            "percentual": "1,72%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CONTAGEM",
-            "valor_comissao": "R$ 4.263,00 (1,38%)",
-            "percentual": "1,38%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO CONTORNO",
-            "valor_comissao": "R$ 3.750,60 (1,21%)",
-            "percentual": "1,21%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO BARÃO",
-            "valor_comissao": "R$ 2.816,10 (0,91%)",
-            "percentual": "0,91%"
-          },
-          {
-            "concessionaria": "BAMAQ - OFICINA",
-            "valor_comissao": "R$ 1.503,60 (0,49%)",
-            "percentual": "0,49%"
-          },
-          {
-            "concessionaria": "OSAKA",
-            "valor_comissao": "R$ 420,00 (0,14%)",
-            "percentual": "0,14%"
-          },
-          {
-            "concessionaria": "STRADA LEAPMOTOR",
-            "valor_comissao": "R$ 291,90 (0,09%)",
-            "percentual": "0,09%"
-          },
-          {
-            "concessionaria": "ARVAL BRASIL LTDA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CONTAGEM",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CRISTIANO MACHADO",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS PAMPULHA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "XTREME CAR DETAIL",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
+{
+  "hits": [
+    {
+      "origin_id": 4,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-01",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "SAITAMA - HONDA: R$ 33.828,00 (10,95%); GWM BAMAQ: R$ 30.660,52 (9,92%); GWM BAMAQ PAMPULHA: R$ 24.020,00 (7,77%); STRADA JEEP: R$ 19.762,47 (6,39%); PORSCHE: R$ 18.993,20 (6,15%); Bamaq Automóveis Mercedes-Benz: R$ 18.535,20 (6,00%); BANZAI: R$ 18.220,23 (5,90%); CARBEL: R$ 16.969,05 (5,49%); AUDI CARBEL: R$ 16.187,60 (5,24%); STRADA: R$ 14.042,70 (4,54%); CARBEL BYD SAVASSI: R$ 12.070,17 (3,91%); BANZAI PAMPULHA: R$ 11.069,67 (3,58%); STRADA JEEP - PAMPULHA: R$ 10.212,30 (3,30%); GARRA: R$ 10.127,04 (3,28%); STRADA LINHA VERDE: R$ 9.665,88 (3,13%); CARBEL OMODA: R$ 8.567,58 (2,77%); CARBEL KOREA: R$ 6.060,60 (1,96%); CARBEL BYD CATALÃO: R$ 5.860,89 (1,90%); GWM BAMAQ CONTAGEM: R$ 5.828,40 (1,89%); VIA JAP COMERCIO DE VEICULOS LTDA: R$ 5.303,65 (1,72%); CARBEL BYD CONTAGEM: R$ 4.263,00 (1,38%); CARBEL JAPÃO CONTORNO: R$ 3.750,60 (1,21%); CARBEL JAPÃO BARÃO: R$ 2.816,10 (0,91%); BAMAQ - OFICINA: R$ 1.503,60 (0,49%); OSAKA: R$ 420,00 (0,14%); STRADA LEAPMOTOR: R$ 291,90 (0,09%); ARVAL BRASIL LTDA: R$ 0,00 (0,00%); GRANDE MINAS CONTAGEM: R$ 0,00 (0,00%); GRANDE MINAS CRISTIANO MACHADO: R$ 0,00 (0,00%); GRANDE MINAS PAMPULHA: R$ 0,00 (0,00%); XTREME CAR DETAIL: R$ 0,00 (0,00%).",
+      "key_metrics": {
+        "faturamento_e_comissao_por_concessionaria": {
+          "rows": [
+            {
+              "percentual": "10,95%",
+              "concessionaria": "SAITAMA - HONDA",
+              "valor_comissao": "R$ 33.828,00 (10,95%)"
+            },
+            {
+              "percentual": "9,92%",
+              "concessionaria": "GWM BAMAQ",
+              "valor_comissao": "R$ 30.660,52 (9,92%)"
+            },
+            {
+              "percentual": "7,77%",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "valor_comissao": "R$ 24.020,00 (7,77%)"
+            },
+            {
+              "percentual": "6,39%",
+              "concessionaria": "STRADA JEEP",
+              "valor_comissao": "R$ 19.762,47 (6,39%)"
+            },
+            {
+              "percentual": "6,15%",
+              "concessionaria": "PORSCHE",
+              "valor_comissao": "R$ 18.993,20 (6,15%)"
+            },
+            {
+              "percentual": "6,00%",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "valor_comissao": "R$ 18.535,20 (6,00%)"
+            },
+            {
+              "percentual": "5,90%",
+              "concessionaria": "BANZAI",
+              "valor_comissao": "R$ 18.220,23 (5,90%)"
+            },
+            {
+              "percentual": "5,49%",
+              "concessionaria": "CARBEL",
+              "valor_comissao": "R$ 16.969,05 (5,49%)"
+            },
+            {
+              "percentual": "5,24%",
+              "concessionaria": "AUDI CARBEL",
+              "valor_comissao": "R$ 16.187,60 (5,24%)"
+            },
+            {
+              "percentual": "4,54%",
+              "concessionaria": "STRADA",
+              "valor_comissao": "R$ 14.042,70 (4,54%)"
+            },
+            {
+              "percentual": "1,21%",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "valor_comissao": "R$ 3.750,60 (1,21%)"
+            },
+            {
+              "percentual": "0,91%",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "valor_comissao": "R$ 2.816,10 (0,91%)"
+            },
+            {
+              "percentual": "0,49%",
+              "concessionaria": "BAMAQ - OFICINA",
+              "valor_comissao": "R$ 1.503,60 (0,49%)"
+            },
+            {
+              "percentual": "0,14%",
+              "concessionaria": "OSAKA",
+              "valor_comissao": "R$ 420,00 (0,14%)"
+            },
+            {
+              "percentual": "0,09%",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "valor_comissao": "R$ 291,90 (0,09%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CRISTIANO MACHADO",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "XTREME CAR DETAIL",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "concessionaria",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": true
           }
-        ],
-        "_meta": {
-          "schema": "ranked_list",
-          "dimension": "concessionaria",
-          "metric_kind": "commission",
-          "value_field": "valor_comissao",
-          "entity_field": "concessionaria",
-          "total_original_rows": 31,
-          "truncated_head_tail": false,
-          "source": "validated_answer_full_reconstruction"
         }
-      }
-    }
-  },
-  {
-    "origin_id": 12,
-    "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-02",
-    "dimension": "por_concessionaria",
-    "metric_kind": "comissao",
-    "key_metrics": {
-      "faturamento_e_comissao_por_concessionaria": {
-        "rows": [
-          {
-            "concessionaria": "PORSCHE",
-            "valor_comissao": "R$ 32.013,60 (11,62%)",
-            "percentual": "11,62%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ",
-            "valor_comissao": "R$ 31.520,80 (11,44%)",
-            "percentual": "11,44%"
-          },
-          {
-            "concessionaria": "SAITAMA - HONDA",
-            "valor_comissao": "R$ 29.194,60 (10,60%)",
-            "percentual": "10,60%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ PAMPULHA",
-            "valor_comissao": "R$ 21.972,08 (7,97%)",
-            "percentual": "7,97%"
-          },
-          {
-            "concessionaria": "STRADA JEEP",
-            "valor_comissao": "R$ 21.835,80 (7,92%)",
-            "percentual": "7,92%"
-          },
-          {
-            "concessionaria": "BANZAI",
-            "valor_comissao": "R$ 16.709,28 (6,06%)",
-            "percentual": "6,06%"
-          },
-          {
-            "concessionaria": "STRADA",
-            "valor_comissao": "R$ 12.518,10 (4,54%)",
-            "percentual": "4,54%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA",
-            "valor_comissao": "R$ 12.037,20 (4,37%)",
-            "percentual": "4,37%"
-          },
-          {
-            "concessionaria": "CARBEL BYD SAVASSI",
-            "valor_comissao": "R$ 10.988,46 (3,99%)",
-            "percentual": "3,99%"
-          },
-          {
-            "concessionaria": "CARBEL",
-            "valor_comissao": "R$ 9.737,28 (3,53%)",
-            "percentual": "3,53%"
-          },
-          {
-            "concessionaria": "BANZAI PAMPULHA",
-            "valor_comissao": "R$ 8.574,70 (3,11%)",
-            "percentual": "3,11%"
-          },
-          {
-            "concessionaria": "STRADA JEEP - PAMPULHA",
-            "valor_comissao": "R$ 8.424,15 (3,06%)",
-            "percentual": "3,06%"
-          },
-          {
-            "concessionaria": "STRADA LINHA VERDE",
-            "valor_comissao": "R$ 7.992,39 (2,90%)",
-            "percentual": "2,90%"
-          },
-          {
-            "concessionaria": "Bamaq Automóveis Mercedes-Benz",
-            "valor_comissao": "R$ 7.892,00 (2,86%)",
-            "percentual": "2,86%"
-          },
-          {
-            "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
-            "valor_comissao": "R$ 7.706,50 (2,80%)",
-            "percentual": "2,80%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CATALÃO",
-            "valor_comissao": "R$ 7.125,30 (2,59%)",
-            "percentual": "2,59%"
-          },
-          {
-            "concessionaria": "GARRA",
-            "valor_comissao": "R$ 6.232,59 (2,26%)",
-            "percentual": "2,26%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ CONTAGEM",
-            "valor_comissao": "R$ 4.830,40 (1,75%)",
-            "percentual": "1,75%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CONTAGEM",
-            "valor_comissao": "R$ 4.806,69 (1,74%)",
-            "percentual": "1,74%"
-          },
-          {
-            "concessionaria": "BAMAQ - OFICINA",
-            "valor_comissao": "R$ 3.757,60 (1,36%)",
-            "percentual": "1,36%"
-          },
-          {
-            "concessionaria": "CARBEL KOREA",
-            "valor_comissao": "R$ 3.691,17 (1,34%)",
-            "percentual": "1,34%"
-          },
-          {
-            "concessionaria": "AUDI CARBEL",
-            "valor_comissao": "R$ 2.926,00 (1,06%)",
-            "percentual": "1,06%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO CONTORNO",
-            "valor_comissao": "R$ 1.993,01 (0,72%)",
-            "percentual": "0,72%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO BARÃO",
-            "valor_comissao": "R$ 783,30 (0,28%)",
-            "percentual": "0,28%"
-          },
-          {
-            "concessionaria": "STRADA LEAPMOTOR",
-            "valor_comissao": "R$ 272,79 (0,10%)",
-            "percentual": "0,10%"
-          },
-          {
-            "concessionaria": "BYD NOVA LIMA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CONTAGEM",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS PAMPULHA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "XTREME CAR DETAIL",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 12,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. PORSCHE: R$ 32.013,60 (11,62%)\n2. GWM BAMAQ: R$ 31.520,80 (11,44%)\n3. SAITAMA - HONDA: R$ 29.194,60 (10,60%)\n4. GWM BAMAQ PAMPULHA: R$ 21.972,08 (7,97%)\n5. STRADA JEEP: R$ 21.835,80 (7,92%)\n6. BANZAI: R$ 16.709,28 (6,06%)\n7. STRADA: R$ 12.518,10 (4,54%)\n8. CARBEL OMODA: R$ 12.037,20 (4,37%)\n9. CARBEL BYD SAVASSI: R$ 10.988,46 (3,99%)\n10. CARBEL: R$ 9.737,28 (3,53%)\n11. BANZAI PAMPULHA: R$ 8.574,70 (3,11%)\n12. STRADA JEEP - PAMPULHA: R$ 8.424,15 (3,06%)\n13. STRADA LINHA VERDE: R$ 7.992,39 (2,90%)\n14. Bamaq Automóveis Mercedes-Benz: R$ 7.892,00 (2,86%)\n15. VIA JAP COMERCIO DE VEICULOS LTDA: R$ 7.706,50 (2,80%)\n16. CARBEL BYD CATALÃO: R$ 7.125,30 (2,59%)\n17. GARRA: R$ 6.232,59 (2,26%)\n18. GWM BAMAQ CONTAGEM: R$ 4.830,40 (1,75%)\n19. CARBEL BYD CONTAGEM: R$ 4.806,69 (1,74%)\n20. BAMAQ - OFICINA: R$ 3.757,60 (1,36%)\n21. CARBEL KOREA: R$ 3.691,17 (1,34%)\n22. AUDI CARBEL: R$ 2.926,00 (1,06%)\n23. CARBEL JAPÃO CONTORNO: R$ 1.993,01 (0,72%)\n24. CARBEL JAPÃO BARÃO: R$ 783,30 (0,28%)\n25. STRADA LEAPMOTOR: R$ 272,79 (0,10%)\n26. BYD NOVA LIMA: R$ 0,00 (0,00%)\n27. GRANDE MINAS CONTAGEM: R$ 0,00 (0,00%)\n28. GRANDE MINAS PAMPULHA: R$ 0,00 (0,00%)\n29. XTREME CAR DETAIL: R$ 0,00 (0,00%)",
+      "key_metrics": {
+        "faturamento_e_comissao_por_concessionaria": {
+          "rows": [
+            {
+              "percentual": "11,62%",
+              "concessionaria": "PORSCHE",
+              "valor_comissao": "R$ 32.013,60 (11,62%)"
+            },
+            {
+              "percentual": "11,44%",
+              "concessionaria": "GWM BAMAQ",
+              "valor_comissao": "R$ 31.520,80 (11,44%)"
+            },
+            {
+              "percentual": "10,60%",
+              "concessionaria": "SAITAMA - HONDA",
+              "valor_comissao": "R$ 29.194,60 (10,60%)"
+            },
+            {
+              "percentual": "7,97%",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "valor_comissao": "R$ 21.972,08 (7,97%)"
+            },
+            {
+              "percentual": "7,92%",
+              "concessionaria": "STRADA JEEP",
+              "valor_comissao": "R$ 21.835,80 (7,92%)"
+            },
+            {
+              "percentual": "6,06%",
+              "concessionaria": "BANZAI",
+              "valor_comissao": "R$ 16.709,28 (6,06%)"
+            },
+            {
+              "percentual": "4,54%",
+              "concessionaria": "STRADA",
+              "valor_comissao": "R$ 12.518,10 (4,54%)"
+            },
+            {
+              "percentual": "4,37%",
+              "concessionaria": "CARBEL OMODA",
+              "valor_comissao": "R$ 12.037,20 (4,37%)"
+            },
+            {
+              "percentual": "3,99%",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "valor_comissao": "R$ 10.988,46 (3,99%)"
+            },
+            {
+              "percentual": "3,53%",
+              "concessionaria": "CARBEL",
+              "valor_comissao": "R$ 9.737,28 (3,53%)"
+            },
+            {
+              "percentual": "1,36%",
+              "concessionaria": "BAMAQ - OFICINA",
+              "valor_comissao": "R$ 3.757,60 (1,36%)"
+            },
+            {
+              "percentual": "1,34%",
+              "concessionaria": "CARBEL KOREA",
+              "valor_comissao": "R$ 3.691,17 (1,34%)"
+            },
+            {
+              "percentual": "1,06%",
+              "concessionaria": "AUDI CARBEL",
+              "valor_comissao": "R$ 2.926,00 (1,06%)"
+            },
+            {
+              "percentual": "0,72%",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "valor_comissao": "R$ 1.993,01 (0,72%)"
+            },
+            {
+              "percentual": "0,28%",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "valor_comissao": "R$ 783,30 (0,28%)"
+            },
+            {
+              "percentual": "0,10%",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "valor_comissao": "R$ 272,79 (0,10%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "BYD NOVA LIMA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "XTREME CAR DETAIL",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "concessionaria",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "concessionaria",
+            "total_original_rows": 29,
+            "truncated_head_tail": true
           }
-        ],
-        "_meta": {
-          "schema": "ranked_list",
-          "dimension": "concessionaria",
-          "metric_kind": "commission",
-          "value_field": "valor_comissao",
-          "entity_field": "concessionaria",
-          "total_original_rows": 29,
-          "truncated_head_tail": false,
-          "source": "validated_answer_full_reconstruction"
         }
-      }
-    }
-  },
-  {
-    "origin_id": 21,
-    "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-03",
-    "dimension": "por_concessionaria",
-    "metric_kind": "comissao",
-    "key_metrics": {
-      "faturamento_e_comissao_por_concessionaria": {
-        "rows": [
-          {
-            "concessionaria": "PORSCHE",
-            "valor_comissao": "R$ 41.195,20 (11,59%)",
-            "percentual": "11,59%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ",
-            "valor_comissao": "R$ 39.416,00 (11,09%)",
-            "percentual": "11,09%"
-          },
-          {
-            "concessionaria": "SAITAMA - HONDA",
-            "valor_comissao": "R$ 34.479,10 (9,70%)",
-            "percentual": "9,70%"
-          },
-          {
-            "concessionaria": "STRADA JEEP",
-            "valor_comissao": "R$ 23.964,78 (6,74%)",
-            "percentual": "6,74%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ PAMPULHA",
-            "valor_comissao": "R$ 21.946,40 (6,18%)",
-            "percentual": "6,18%"
-          },
-          {
-            "concessionaria": "CARBEL BYD SAVASSI",
-            "valor_comissao": "R$ 18.096,75 (5,09%)",
-            "percentual": "5,09%"
-          },
-          {
-            "concessionaria": "STRADA",
-            "valor_comissao": "R$ 16.470,30 (4,64%)",
-            "percentual": "4,64%"
-          },
-          {
-            "concessionaria": "CARBEL",
-            "valor_comissao": "R$ 16.158,24 (4,55%)",
-            "percentual": "4,55%"
-          },
-          {
-            "concessionaria": "AUDI CARBEL",
-            "valor_comissao": "R$ 13.870,31 (3,90%)",
-            "percentual": "3,90%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CATALÃO",
-            "valor_comissao": "R$ 13.307,91 (3,75%)",
-            "percentual": "3,75%"
-          },
-          {
-            "concessionaria": "BANZAI PAMPULHA",
-            "valor_comissao": "R$ 12.881,59 (3,63%)",
-            "percentual": "3,63%"
-          },
-          {
-            "concessionaria": "STRADA JEEP - PAMPULHA",
-            "valor_comissao": "R$ 12.580,57 (3,54%)",
-            "percentual": "3,54%"
-          },
-          {
-            "concessionaria": "BAMAQ - OFICINA",
-            "valor_comissao": "R$ 11.269,60 (3,17%)",
-            "percentual": "3,17%"
-          },
-          {
-            "concessionaria": "BANZAI",
-            "valor_comissao": "R$ 10.892,70 (3,07%)",
-            "percentual": "3,07%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA",
-            "valor_comissao": "R$ 9.737,70 (2,74%)",
-            "percentual": "2,74%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CONTAGEM",
-            "valor_comissao": "R$ 9.409,68 (2,65%)",
-            "percentual": "2,65%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ CONTAGEM",
-            "valor_comissao": "R$ 9.339,60 (2,63%)",
-            "percentual": "2,63%"
-          },
-          {
-            "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
-            "valor_comissao": "R$ 8.438,44 (2,38%)",
-            "percentual": "2,38%"
-          },
-          {
-            "concessionaria": "GARRA",
-            "valor_comissao": "R$ 6.746,88 (1,90%)",
-            "percentual": "1,90%"
-          },
-          {
-            "concessionaria": "STRADA LINHA VERDE",
-            "valor_comissao": "R$ 6.665,40 (1,88%)",
-            "percentual": "1,88%"
-          },
-          {
-            "concessionaria": "CARBEL KOREA",
-            "valor_comissao": "R$ 5.380,20 (1,51%)",
-            "percentual": "1,51%"
-          },
-          {
-            "concessionaria": "Bamaq Automóveis Mercedes-Benz",
-            "valor_comissao": "R$ 5.218,00 (1,47%)",
-            "percentual": "1,47%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO CONTORNO",
-            "valor_comissao": "R$ 3.836,70 (1,08%)",
-            "percentual": "1,08%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO BARÃO",
-            "valor_comissao": "R$ 2.215,29 (0,62%)",
-            "percentual": "0,62%"
-          },
-          {
-            "concessionaria": "STRADA LEAPMOTOR",
-            "valor_comissao": "R$ 1.070,58 (0,30%)",
-            "percentual": "0,30%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA UBERLANDIA",
-            "valor_comissao": "R$ 461,58 (0,13%)",
-            "percentual": "0,13%"
-          },
-          {
-            "concessionaria": "CARSOUL",
-            "valor_comissao": "R$ 163,80 (0,05%)",
-            "percentual": "0,05%"
-          },
-          {
-            "concessionaria": "OSAKA PAMPULHA",
-            "valor_comissao": "R$ 84,00 (0,02%)",
-            "percentual": "0,02%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CONTAGEM",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS PAMPULHA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "XTREME CAR DETAIL",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 20,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "PORSCHE: R$ 41.195,20 (11,59%); GWM BAMAQ: R$ 39.416,00 (11,09%); SAITAMA - HONDA: R$ 34.479,10 (9,70%); STRADA JEEP: R$ 23.964,78 (6,74%); GWM BAMAQ PAMPULHA: R$ 21.946,40 (6,18%); CARBEL BYD SAVASSI: R$ 18.096,75 (5,09%); STRADA: R$ 16.470,30 (4,64%); CARBEL: R$ 16.158,24 (4,55%); AUDI CARBEL: R$ 13.870,31 (3,90%); CARBEL BYD CATALÃO: R$ 13.307,91 (3,75%); BANZAI PAMPULHA: R$ 12.881,59 (3,63%); STRADA JEEP - PAMPULHA: R$ 12.580,57 (3,54%); BAMAQ - OFICINA: R$ 11.269,60 (3,17%); BANZAI: R$ 10.892,70 (3,07%); CARBEL OMODA: R$ 9.737,70 (2,74%); CARBEL BYD CONTAGEM: R$ 9.409,68 (2,65%); GWM BAMAQ CONTAGEM: R$ 9.339,60 (2,63%); VIA JAP COMERCIO DE VEICULOS LTDA: R$ 8.438,44 (2,38%); GARRA: R$ 6.746,88 (1,90%); STRADA LINHA VERDE: R$ 6.665,40 (1,88%); CARBEL KOREA: R$ 5.380,20 (1,51%); Bamaq Automóveis Mercedes-Benz: R$ 5.218,00 (1,47%); CARBEL JAPÃO CONTORNO: R$ 3.836,70 (1,08%); CARBEL JAPÃO BARÃO: R$ 2.215,29 (0,62%); STRADA LEAPMOTOR: R$ 1.070,58 (0,30%); CARBEL OMODA UBERLANDIA: R$ 461,58 (0,13%); CARSOUL: R$ 163,80 (0,05%); OSAKA PAMPULHA: R$ 84,00 (0,02%); GRANDE MINAS CONTAGEM: R$ 0,00 (0,00%); GRANDE MINAS PAMPULHA: R$ 0,00 (0,00%); XTREME CAR DETAIL: R$ 0,00 (0,00%).",
+      "key_metrics": {
+        "faturamento_e_comissao_por_concessionaria": {
+          "rows": [
+            {
+              "percentual": "11,59%",
+              "concessionaria": "PORSCHE",
+              "valor_comissao": "R$ 41.195,20 (11,59%)"
+            },
+            {
+              "percentual": "11,09%",
+              "concessionaria": "GWM BAMAQ",
+              "valor_comissao": "R$ 39.416,00 (11,09%)"
+            },
+            {
+              "percentual": "9,70%",
+              "concessionaria": "SAITAMA - HONDA",
+              "valor_comissao": "R$ 34.479,10 (9,70%)"
+            },
+            {
+              "percentual": "6,74%",
+              "concessionaria": "STRADA JEEP",
+              "valor_comissao": "R$ 23.964,78 (6,74%)"
+            },
+            {
+              "percentual": "6,18%",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "valor_comissao": "R$ 21.946,40 (6,18%)"
+            },
+            {
+              "percentual": "5,09%",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "valor_comissao": "R$ 18.096,75 (5,09%)"
+            },
+            {
+              "percentual": "4,64%",
+              "concessionaria": "STRADA",
+              "valor_comissao": "R$ 16.470,30 (4,64%)"
+            },
+            {
+              "percentual": "4,55%",
+              "concessionaria": "CARBEL",
+              "valor_comissao": "R$ 16.158,24 (4,55%)"
+            },
+            {
+              "percentual": "3,90%",
+              "concessionaria": "AUDI CARBEL",
+              "valor_comissao": "R$ 13.870,31 (3,90%)"
+            },
+            {
+              "percentual": "3,75%",
+              "concessionaria": "CARBEL BYD CATALÃO",
+              "valor_comissao": "R$ 13.307,91 (3,75%)"
+            },
+            {
+              "percentual": "1,47%",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "valor_comissao": "R$ 5.218,00 (1,47%)"
+            },
+            {
+              "percentual": "1,08%",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "valor_comissao": "R$ 3.836,70 (1,08%)"
+            },
+            {
+              "percentual": "0,62%",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "valor_comissao": "R$ 2.215,29 (0,62%)"
+            },
+            {
+              "percentual": "0,30%",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "valor_comissao": "R$ 1.070,58 (0,30%)"
+            },
+            {
+              "percentual": "0,13%",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "valor_comissao": "R$ 461,58 (0,13%)"
+            },
+            {
+              "percentual": "0,05%",
+              "concessionaria": "CARSOUL",
+              "valor_comissao": "R$ 163,80 (0,05%)"
+            },
+            {
+              "percentual": "0,02%",
+              "concessionaria": "OSAKA PAMPULHA",
+              "valor_comissao": "R$ 84,00 (0,02%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "XTREME CAR DETAIL",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "concessionaria",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": true
           }
-        ],
-        "_meta": {
-          "schema": "ranked_list",
-          "dimension": "concessionaria",
-          "metric_kind": "commission",
-          "value_field": "valor_comissao",
-          "entity_field": "concessionaria",
-          "total_original_rows": 31,
-          "truncated_head_tail": false,
-          "source": "validated_answer_full_reconstruction"
         }
-      }
-    }
-  },
-  {
-    "origin_id": 29,
-    "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-04",
-    "dimension": "por_concessionaria",
-    "metric_kind": "comissao",
-    "key_metrics": {
-      "faturamento_e_comissao_por_concessionaria": {
-        "rows": [
-          {
-            "concessionaria": "GWM BAMAQ",
-            "valor_comissao": "R$ 38.162,34 (11,85%)",
-            "percentual": "11,85%"
-          },
-          {
-            "concessionaria": "SAITAMA - HONDA",
-            "valor_comissao": "R$ 35.795,60 (11,11%)",
-            "percentual": "11,11%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ PAMPULHA",
-            "valor_comissao": "R$ 27.435,40 (8,52%)",
-            "percentual": "8,52%"
-          },
-          {
-            "concessionaria": "CARBEL BYD SAVASSI",
-            "valor_comissao": "R$ 24.449,57 (7,59%)",
-            "percentual": "7,59%"
-          },
-          {
-            "concessionaria": "PORSCHE",
-            "valor_comissao": "R$ 21.653,89 (6,72%)",
-            "percentual": "6,72%"
-          },
-          {
-            "concessionaria": "CARBEL",
-            "valor_comissao": "R$ 18.878,18 (5,86%)",
-            "percentual": "5,86%"
-          },
-          {
-            "concessionaria": "STRADA JEEP",
-            "valor_comissao": "R$ 15.754,62 (4,89%)",
-            "percentual": "4,89%"
-          },
-          {
-            "concessionaria": "BANZAI PAMPULHA",
-            "valor_comissao": "R$ 15.289,81 (4,75%)",
-            "percentual": "4,75%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA",
-            "valor_comissao": "R$ 13.242,60 (4,11%)",
-            "percentual": "4,11%"
-          },
-          {
-            "concessionaria": "BANZAI",
-            "valor_comissao": "R$ 12.846,54 (3,99%)",
-            "percentual": "3,99%"
-          },
-          {
-            "concessionaria": "AUDI CARBEL",
-            "valor_comissao": "R$ 11.094,10 (3,44%)",
-            "percentual": "3,44%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CONTAGEM",
-            "valor_comissao": "R$ 10.957,80 (3,40%)",
-            "percentual": "3,40%"
-          },
-          {
-            "concessionaria": "Bamaq Automóveis Mercedes-Benz",
-            "valor_comissao": "R$ 9.979,80 (3,10%)",
-            "percentual": "3,10%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CATALÃO",
-            "valor_comissao": "R$ 9.731,40 (3,02%)",
-            "percentual": "3,02%"
-          },
-          {
-            "concessionaria": "STRADA JEEP - PAMPULHA",
-            "valor_comissao": "R$ 8.853,60 (2,75%)",
-            "percentual": "2,75%"
-          },
-          {
-            "concessionaria": "STRADA LINHA VERDE",
-            "valor_comissao": "R$ 8.675,64 (2,69%)",
-            "percentual": "2,69%"
-          },
-          {
-            "concessionaria": "STRADA",
-            "valor_comissao": "R$ 8.393,70 (2,61%)",
-            "percentual": "2,61%"
-          },
-          {
-            "concessionaria": "CARBEL KOREA",
-            "valor_comissao": "R$ 5.758,20 (1,79%)",
-            "percentual": "1,79%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ CONTAGEM",
-            "valor_comissao": "R$ 5.398,40 (1,68%)",
-            "percentual": "1,68%"
-          },
-          {
-            "concessionaria": "GARRA",
-            "valor_comissao": "R$ 4.682,53 (1,45%)",
-            "percentual": "1,45%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO CONTORNO",
-            "valor_comissao": "R$ 3.367,98 (1,05%)",
-            "percentual": "1,05%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO BARÃO",
-            "valor_comissao": "R$ 3.032,61 (0,94%)",
-            "percentual": "0,94%"
-          },
-          {
-            "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
-            "valor_comissao": "R$ 2.944,55 (0,91%)",
-            "percentual": "0,91%"
-          },
-          {
-            "concessionaria": "STRADA LEAPMOTOR",
-            "valor_comissao": "R$ 2.705,85 (0,84%)",
-            "percentual": "0,84%"
-          },
-          {
-            "concessionaria": "BAMAQ - OFICINA",
-            "valor_comissao": "R$ 1.696,80 (0,53%)",
-            "percentual": "0,53%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA UBERLANDIA",
-            "valor_comissao": "R$ 1.325,94 (0,41%)",
-            "percentual": "0,41%"
-          },
-          {
-            "concessionaria": "CARBEL OLHOS DAGUA",
-            "valor_comissao": "R$ 33,60 (0,01%)",
-            "percentual": "0,01%"
-          },
-          {
-            "concessionaria": "ARVAL BRASIL LTDA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CONTAGEM",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS PAMPULHA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "XTREME CAR DETAIL",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 28,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-04",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. GWM BAMAQ: R$ 38.162,34 (11,85%)\n2. SAITAMA - HONDA: R$ 35.795,60 (11,11%)\n3. GWM BAMAQ PAMPULHA: R$ 27.435,40 (8,52%)\n4. CARBEL BYD SAVASSI: R$ 24.449,57 (7,59%)\n5. PORSCHE: R$ 21.653,89 (6,72%)\n6. CARBEL: R$ 18.878,18 (5,86%)\n7. STRADA JEEP: R$ 15.754,62 (4,89%)\n8. BANZAI PAMPULHA: R$ 15.289,81 (4,75%)\n9. CARBEL OMODA: R$ 13.242,60 (4,11%)\n10. BANZAI: R$ 12.846,54 (3,99%)\n11. AUDI CARBEL: R$ 11.094,10 (3,44%)\n12. CARBEL BYD CONTAGEM: R$ 10.957,80 (3,40%)\n13. Bamaq Automóveis Mercedes-Benz: R$ 9.979,80 (3,10%)\n14. CARBEL BYD CATALÃO: R$ 9.731,40 (3,02%)\n15. STRADA JEEP - PAMPULHA: R$ 8.853,60 (2,75%)\n16. STRADA LINHA VERDE: R$ 8.675,64 (2,69%)\n17. STRADA: R$ 8.393,70 (2,61%)\n18. CARBEL KOREA: R$ 5.758,20 (1,79%)\n19. GWM BAMAQ CONTAGEM: R$ 5.398,40 (1,68%)\n20. GARRA: R$ 4.682,53 (1,45%)\n21. CARBEL JAPÃO CONTORNO: R$ 3.367,98 (1,05%)\n22. CARBEL JAPÃO BARÃO: R$ 3.032,61 (0,94%)\n23. VIA JAP COMERCIO DE VEICULOS LTDA: R$ 2.944,55 (0,91%)\n24. STRADA LEAPMOTOR: R$ 2.705,85 (0,84%)\n25. BAMAQ - OFICINA: R$ 1.696,80 (0,53%)\n26. CARBEL OMODA UBERLANDIA: R$ 1.325,94 (0,41%)\n27. CARBEL OLHOS DAGUA: R$ 33,60 (0,01%)\n28. ARVAL BRASIL LTDA: R$ 0,00 (0,00%)\n29. GRANDE MINAS CONTAGEM: R$ 0,00 (0,00%)\n30. GRANDE MINAS PAMPULHA: R$ 0,00 (0,00%)\n31. XTREME CAR DETAIL: R$ 0,00 (0,00%)",
+      "key_metrics": {
+        "faturamento_e_comissao_por_concessionaria": {
+          "rows": [
+            {
+              "percentual": "11,85%",
+              "concessionaria": "GWM BAMAQ",
+              "valor_comissao": "R$ 38.162,34 (11,85%)"
+            },
+            {
+              "percentual": "11,11%",
+              "concessionaria": "SAITAMA - HONDA",
+              "valor_comissao": "R$ 35.795,60 (11,11%)"
+            },
+            {
+              "percentual": "8,52%",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "valor_comissao": "R$ 27.435,40 (8,52%)"
+            },
+            {
+              "percentual": "7,59%",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "valor_comissao": "R$ 24.449,57 (7,59%)"
+            },
+            {
+              "percentual": "6,72%",
+              "concessionaria": "PORSCHE",
+              "valor_comissao": "R$ 21.653,89 (6,72%)"
+            },
+            {
+              "percentual": "5,86%",
+              "concessionaria": "CARBEL",
+              "valor_comissao": "R$ 18.878,18 (5,86%)"
+            },
+            {
+              "percentual": "4,89%",
+              "concessionaria": "STRADA JEEP",
+              "valor_comissao": "R$ 15.754,62 (4,89%)"
+            },
+            {
+              "percentual": "4,75%",
+              "concessionaria": "BANZAI PAMPULHA",
+              "valor_comissao": "R$ 15.289,81 (4,75%)"
+            },
+            {
+              "percentual": "4,11%",
+              "concessionaria": "CARBEL OMODA",
+              "valor_comissao": "R$ 13.242,60 (4,11%)"
+            },
+            {
+              "percentual": "3,99%",
+              "concessionaria": "BANZAI",
+              "valor_comissao": "R$ 12.846,54 (3,99%)"
+            },
+            {
+              "percentual": "0,94%",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "valor_comissao": "R$ 3.032,61 (0,94%)"
+            },
+            {
+              "percentual": "0,91%",
+              "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
+              "valor_comissao": "R$ 2.944,55 (0,91%)"
+            },
+            {
+              "percentual": "0,84%",
+              "concessionaria": "STRADA LEAPMOTOR",
+              "valor_comissao": "R$ 2.705,85 (0,84%)"
+            },
+            {
+              "percentual": "0,53%",
+              "concessionaria": "BAMAQ - OFICINA",
+              "valor_comissao": "R$ 1.696,80 (0,53%)"
+            },
+            {
+              "percentual": "0,41%",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "valor_comissao": "R$ 1.325,94 (0,41%)"
+            },
+            {
+              "percentual": "0,01%",
+              "concessionaria": "CARBEL OLHOS DAGUA",
+              "valor_comissao": "R$ 33,60 (0,01%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "XTREME CAR DETAIL",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "concessionaria",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": true
           }
-        ],
-        "_meta": {
-          "schema": "ranked_list",
-          "dimension": "concessionaria",
-          "metric_kind": "commission",
-          "value_field": "valor_comissao",
-          "entity_field": "concessionaria",
-          "total_original_rows": 31,
-          "truncated_head_tail": false,
-          "source": "validated_answer_full_reconstruction"
         }
-      }
-    }
-  },
-  {
-    "origin_id": 37,
-    "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-05",
-    "dimension": "por_concessionaria",
-    "metric_kind": "comissao",
-    "key_metrics": {
-      "faturamento_e_comissao_por_concessionaria": {
-        "rows": [
-          {
-            "concessionaria": "GWM BAMAQ",
-            "valor_comissao": "R$ 43.584,46 (11,61%)",
-            "percentual": "11,61%"
-          },
-          {
-            "concessionaria": "SAITAMA - HONDA",
-            "valor_comissao": "R$ 36.398,90 (9,69%)",
-            "percentual": "9,69%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ PAMPULHA",
-            "valor_comissao": "R$ 33.668,58 (8,96%)",
-            "percentual": "8,96%"
-          },
-          {
-            "concessionaria": "PORSCHE",
-            "valor_comissao": "R$ 30.342,93 (8,08%)",
-            "percentual": "8,08%"
-          },
-          {
-            "concessionaria": "STRADA JEEP",
-            "valor_comissao": "R$ 27.951,62 (7,44%)",
-            "percentual": "7,44%"
-          },
-          {
-            "concessionaria": "CARBEL BYD SAVASSI",
-            "valor_comissao": "R$ 21.726,86 (5,79%)",
-            "percentual": "5,79%"
-          },
-          {
-            "concessionaria": "CARBEL",
-            "valor_comissao": "R$ 19.033,09 (5,07%)",
-            "percentual": "5,07%"
-          },
-          {
-            "concessionaria": "Bamaq Automóveis Mercedes-Benz",
-            "valor_comissao": "R$ 16.139,26 (4,30%)",
-            "percentual": "4,30%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CONTAGEM",
-            "valor_comissao": "R$ 14.830,18 (3,95%)",
-            "percentual": "3,95%"
-          },
-          {
-            "concessionaria": "BANZAI",
-            "valor_comissao": "R$ 14.540,61 (3,87%)",
-            "percentual": "3,87%"
-          },
-          {
-            "concessionaria": "CARBEL BYD CATALÃO",
-            "valor_comissao": "R$ 12.988,51 (3,46%)",
-            "percentual": "3,46%"
-          },
-          {
-            "concessionaria": "AUDI CARBEL",
-            "valor_comissao": "R$ 11.433,28 (3,04%)",
-            "percentual": "3,04%"
-          },
-          {
-            "concessionaria": "STRADA JEEP - PAMPULHA",
-            "valor_comissao": "R$ 11.427,27 (3,04%)",
-            "percentual": "3,04%"
-          },
-          {
-            "concessionaria": "STRADA",
-            "valor_comissao": "R$ 11.341,68 (3,02%)",
-            "percentual": "3,02%"
-          },
-          {
-            "concessionaria": "BANZAI PAMPULHA",
-            "valor_comissao": "R$ 11.334,06 (3,02%)",
-            "percentual": "3,02%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA",
-            "valor_comissao": "R$ 10.993,50 (2,93%)",
-            "percentual": "2,93%"
-          },
-          {
-            "concessionaria": "VIA JAP COMERCIO DE VEICULOS LTDA",
-            "valor_comissao": "R$ 9.028,05 (2,40%)",
-            "percentual": "2,40%"
-          },
-          {
-            "concessionaria": "GWM BAMAQ CONTAGEM",
-            "valor_comissao": "R$ 8.570,36 (2,28%)",
-            "percentual": "2,28%"
-          },
-          {
-            "concessionaria": "STRADA LINHA VERDE",
-            "valor_comissao": "R$ 6.379,59 (1,70%)",
-            "percentual": "1,70%"
-          },
-          {
-            "concessionaria": "GARRA",
-            "valor_comissao": "R$ 6.360,66 (1,69%)",
-            "percentual": "1,69%"
-          },
-          {
-            "concessionaria": "STRADA LEAPMOTOR",
-            "valor_comissao": "R$ 6.206,76 (1,65%)",
-            "percentual": "1,65%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO CONTORNO",
-            "valor_comissao": "R$ 5.636,19 (1,50%)",
-            "percentual": "1,50%"
-          },
-          {
-            "concessionaria": "CARBEL KOREA",
-            "valor_comissao": "R$ 2.839,20 (0,76%)",
-            "percentual": "0,76%"
-          },
-          {
-            "concessionaria": "CARBEL JAPÃO BARÃO",
-            "valor_comissao": "R$ 1.988,71 (0,53%)",
-            "percentual": "0,53%"
-          },
-          {
-            "concessionaria": "BAMAQ - OFICINA",
-            "valor_comissao": "R$ 583,52 (0,16%)",
-            "percentual": "0,16%"
-          },
-          {
-            "concessionaria": "CARBEL OMODA UBERLANDIA",
-            "valor_comissao": "R$ 237,30 (0,06%)",
-            "percentual": "0,06%"
-          },
-          {
-            "concessionaria": "ARVAL BRASIL LTDA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "CARBEL OLHOS DAGUA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS CONTAGEM",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "GRANDE MINAS PAMPULHA",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
-          },
-          {
-            "concessionaria": "XTREME CAR DETAIL",
-            "valor_comissao": "R$ 0,00 (0,00%)",
-            "percentual": "0,00%"
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 37,
+      "context_key": "sistema_background:fechamento_gerencial:comissao_por_concessionaria:periodo-2026-05",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Comissão por concessionária em PERIODO_2026_05: GWM BAMAQ: R$ 43.584,46 (11,61%); SAITAMA - HONDA: R$ 36.398,90 (9,69%); GWM BAMAQ PAMPULHA: R$ 33.668,58 (8,96%); PORSCHE: R$ 30.342,93 (8,08%); STRADA JEEP: R$ 27.951,62 (7,44%); CARBEL BYD SAVASSI: R$ 21.726,86 (5,79%); CARBEL: R$ 19.033,09 (5,07%); Bamaq Automóveis Mercedes-Benz: R$ 16.139,26 (4,30%); CARBEL BYD CONTAGEM: R$ 14.830,18 (3,95%); BANZAI: R$ 14.540,61 (3,87%); CARBEL BYD CATALÃO: R$ 12.988,51 (3,46%); AUDI CARBEL: R$ 11.433,28 (3,04%); STRADA JEEP - PAMPULHA: R$ 11.427,27 (3,04%); STRADA: R$ 11.341,68 (3,02%); BANZAI PAMPULHA: R$ 11.334,06 (3,02%); CARBEL OMODA: R$ 10.993,50 (2,93%); VIA JAP COMERCIO DE VEICULOS LTDA: R$ 9.028,05 (2,40%); GWM BAMAQ CONTAGEM: R$ 8.570,36 (2,28%); STRADA LINHA VERDE: R$ 6.379,59 (1,70%); GARRA: R$ 6.360,66 (1,69%); STRADA LEAPMOTOR: R$ 6.206,76 (1,65%); CARBEL JAPÃO CONTORNO: R$ 5.636,19 (1,50%); CARBEL KOREA: R$ 2.839,20 (0,76%); CARBEL JAPÃO BARÃO: R$ 1.988,71 (0,53%); BAMAQ - OFICINA: R$ 583,52 (0,16%); CARBEL OMODA UBERLANDIA: R$ 237,30 (0,06%); ARVAL BRASIL LTDA: R$ 0,00 (0,00%); CARBEL OLHOS DAGUA: R$ 0,00 (0,00%); GRANDE MINAS CONTAGEM: R$ 0,00 (0,00%); GRANDE MINAS PAMPULHA: R$ 0,00 (0,00%); XTREME CAR DETAIL: R$ 0,00 (0,00%).",
+      "key_metrics": {
+        "faturamento_e_comissao_por_concessionaria": {
+          "rows": [
+            {
+              "percentual": "11,61%",
+              "concessionaria": "GWM BAMAQ",
+              "valor_comissao": "R$ 43.584,46 (11,61%)"
+            },
+            {
+              "percentual": "9,69%",
+              "concessionaria": "SAITAMA - HONDA",
+              "valor_comissao": "R$ 36.398,90 (9,69%)"
+            },
+            {
+              "percentual": "8,96%",
+              "concessionaria": "GWM BAMAQ PAMPULHA",
+              "valor_comissao": "R$ 33.668,58 (8,96%)"
+            },
+            {
+              "percentual": "8,08%",
+              "concessionaria": "PORSCHE",
+              "valor_comissao": "R$ 30.342,93 (8,08%)"
+            },
+            {
+              "percentual": "7,44%",
+              "concessionaria": "STRADA JEEP",
+              "valor_comissao": "R$ 27.951,62 (7,44%)"
+            },
+            {
+              "percentual": "5,79%",
+              "concessionaria": "CARBEL BYD SAVASSI",
+              "valor_comissao": "R$ 21.726,86 (5,79%)"
+            },
+            {
+              "percentual": "5,07%",
+              "concessionaria": "CARBEL",
+              "valor_comissao": "R$ 19.033,09 (5,07%)"
+            },
+            {
+              "percentual": "4,30%",
+              "concessionaria": "Bamaq Automóveis Mercedes-Benz",
+              "valor_comissao": "R$ 16.139,26 (4,30%)"
+            },
+            {
+              "percentual": "3,95%",
+              "concessionaria": "CARBEL BYD CONTAGEM",
+              "valor_comissao": "R$ 14.830,18 (3,95%)"
+            },
+            {
+              "percentual": "3,87%",
+              "concessionaria": "BANZAI",
+              "valor_comissao": "R$ 14.540,61 (3,87%)"
+            },
+            {
+              "percentual": "1,50%",
+              "concessionaria": "CARBEL JAPÃO CONTORNO",
+              "valor_comissao": "R$ 5.636,19 (1,50%)"
+            },
+            {
+              "percentual": "0,76%",
+              "concessionaria": "CARBEL KOREA",
+              "valor_comissao": "R$ 2.839,20 (0,76%)"
+            },
+            {
+              "percentual": "0,53%",
+              "concessionaria": "CARBEL JAPÃO BARÃO",
+              "valor_comissao": "R$ 1.988,71 (0,53%)"
+            },
+            {
+              "percentual": "0,16%",
+              "concessionaria": "BAMAQ - OFICINA",
+              "valor_comissao": "R$ 583,52 (0,16%)"
+            },
+            {
+              "percentual": "0,06%",
+              "concessionaria": "CARBEL OMODA UBERLANDIA",
+              "valor_comissao": "R$ 237,30 (0,06%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "ARVAL BRASIL LTDA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "CARBEL OLHOS DAGUA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS CONTAGEM",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "GRANDE MINAS PAMPULHA",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            },
+            {
+              "percentual": "0,00%",
+              "concessionaria": "XTREME CAR DETAIL",
+              "valor_comissao": "R$ 0,00 (0,00%)"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "concessionaria",
+            "metric_kind": "commission",
+            "value_field": "valor_comissao",
+            "entity_field": "concessionaria",
+            "total_original_rows": 31,
+            "truncated_head_tail": true
           }
-        ],
-        "_meta": {
-          "schema": "ranked_list",
-          "dimension": "concessionaria",
-          "metric_kind": "commission",
-          "value_field": "valor_comissao",
-          "entity_field": "concessionaria",
-          "total_original_rows": 31,
-          "truncated_head_tail": false,
-          "source": "validated_answer_full_reconstruction"
         }
-      }
+      },
+      "score": null,
+      "source": "memory_curta"
     }
-  }
-]
+  ],
+  "source": "senna_live_packer",
+  "index_key": "faturamento_e_comissao_por_concessionaria",
+  "periods": [
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05"
+  ],
+  "question": "Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?"
+}

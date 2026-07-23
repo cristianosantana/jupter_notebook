@@ -1,35 +1,25 @@
-status: regression_guard
+status: known_bug
 secao: 1
-bug_summary: |
-  Queda de comissão jan→mai 2026: runtime falhava complete_period (token SQL),
-  interpretava "maior queda" como ranking_desc e usava ranked_list truncado.
-  Pós-fix: ranking_asc + jan carregado + rows via validated_answer →
-  BAMAQ - OFICINA ~−61,19%.
-
-trace_id: "b74becc8-8c9e-4a15-a587-889efce8f0eb"
-question: |
-  Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?
-
-memory_json: "./memory.json"
-trace_jsonl: "./trace.jsonl"
-
+bug_summary: Case empacotado via --from-db (period_decline)
+trace_id: 189979ea-3abb-401d-9069-0409a0fd8917
+question: Qual concessionária teve a maior queda de comissão entre janeiro a maio
+  de 2026?
+memory_json: ./memory.json
 intent:
   operation: period_decline
   dimension: concessionaria
-  periods: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"]
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  - 2026-05
   index_key: faturamento_e_comissao_por_concessionaria
   scope_filters: []
-
+  operand_labels: []
 runtime_verdict:
-  label: "BAMAQ - OFICINA"
-  value: -61.19
-  unit: pct
-  confidence: 0.85
-  note: "pós-fix — cross-period ranking_asc / growth% mínimo jan→mai"
-
-bug_snapshot:
-  label: "GWM BAMAQ"
-  value: 43584.46
+  label: pending_manual_verdict
+  value: 0.0
   unit: BRL
-  confidence: 0.95
-  note: "lookup maio único; narrador alegou jan ausente"
+  confidence: 0.0
+  note: preencha runtime_verdict após inspecionar Veredito B / pipeline

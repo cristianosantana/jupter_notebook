@@ -1,23 +1,20 @@
 status: known_bug
 secao: 1
 bug_summary: Case empacotado via --from-db (period_growth)
-trace_id: 48031649-2f77-4604-a29d-ae0fee022745
-question: Das vendas parceladas em cartão de crédito em janeiro de 2026, qual parcela
-  (1x a 10x) teve o maior crescimento percentual até junho?
+trace_id: 95d85c85-6c02-476f-9645-2c6b8eb44aa0
+question: Em março de 2026, qual a participação de 'Prestação de Serviços' sobre o
+  faturamento total por tipo de venda, e como isso se compara a fevereiro?
 memory_json: ./memory.json
 intent:
   operation: period_growth
-  dimension: parcelas
+  dimension: tipo_de_venda
   periods:
-  - 2026-01
   - 2026-02
   - 2026-03
-  - 2026-04
-  - 2026-05
-  - 2026-06
-  index_key: parcelamento_de_cartao
+  index_key: faturamento_por_tipo_de_venda
   scope_filters: []
-  operand_labels: []
+  operand_labels:
+  - Prestação de Serviços
 runtime_verdict:
   label: pending_manual_verdict
   value: 0.0

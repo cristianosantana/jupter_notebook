@@ -57,10 +57,16 @@ periodos_ordenados(P1, P2) :-
     last(Ps, P2),
     P1 \== P2.
 
+% Ranking cross-entity exige 2+ labels. Query escopada (operand_label/1)
+% aceita 1 label — ex.: "variação do Cartão entre jan e jun".
 cobertura_suficiente(Labels) :-
+    \+ truncated(true),
     length(Labels, N),
-    N > 1,
-    \+ truncated(true).
+    ( N > 1
+    ; N =:= 1,
+      findall(OL, operand_label(OL), Ops),
+      Ops \= []
+    ).
 
 % --- veredito B: period_growth (maior alta) / period_decline (maior queda) ---
 

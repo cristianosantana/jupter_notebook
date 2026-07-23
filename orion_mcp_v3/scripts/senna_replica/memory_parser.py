@@ -170,14 +170,20 @@ def _resolve_entry(
     keys = list(key_metrics.keys())
     for key in keys:
         slug = _entity_slug(key)
-        if needle and (needle in slug or slug in needle):
+        if needle and (needle == slug or needle in slug or slug in needle):
+            # evita cruzar temas irmãos (…_venda vs …_pagamento)
+            if _themes_conflict(needle, slug):
+                continue
             return key, key_metrics[key]
-    tokens = [t for t in needle.split("_") if t not in {"por", "de", "e", "a", "o"} and len(t) > 2]
+    stop = {"por", "de", "e", "a", "o"}
+    tokens = [t for t in needle.split("_") if t not in stop and len(t) > 2]
     if not tokens:
         return None
     scored: list[tuple[int, str]] = []
     for key in keys:
         slug = _entity_slug(key)
+        if _themes_conflict(needle, slug):
+            continue
         score = sum(1 for t in tokens if t in slug)
         if "tipo" in tokens and "tipo" not in slug:
             continue
@@ -188,6 +194,24 @@ def _resolve_entry(
         best = scored[0][1]
         return best, key_metrics[best]
     return None
+
+
+def _themes_conflict(left: str, right: str) -> bool:
+    """True se os slugs parecem temas irmãos incompatíveis."""
+    pairs = (
+        ("pagamento", "venda"),
+        ("venda", "pagamento"),
+        ("comissao", "faturamento"),
+        ("faturamento", "comissao"),
+        ("taxa", "faturamento"),
+        ("faturamento", "taxa"),
+    )
+    left_toks = set(left.split("_"))
+    right_toks = set(right.split("_"))
+    for a, b in pairs:
+        if a in left_toks and b in right_toks and a not in right_toks:
+            return True
+    return False
 
 
 def _row_matches_scope(

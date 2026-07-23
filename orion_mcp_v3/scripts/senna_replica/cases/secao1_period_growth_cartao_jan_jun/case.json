@@ -2,12 +2,12 @@
   "status": "known_bug",
   "secao": 1,
   "bug_summary": "Case empacotado via --from-db (period_growth)",
-  "trace_id": "48031649-2f77-4604-a29d-ae0fee022745",
-  "question": "Das vendas parceladas em cartão de crédito em janeiro de 2026, qual parcela (1x a 10x) teve o maior crescimento percentual até junho?",
+  "trace_id": "8e3a9378-110b-4685-8f4c-27cbc778a988",
+  "question": "Qual foi a variação percentual do faturamento por Cartão de Crédito entre janeiro e junho de 2026?",
   "memory_json": "./memory.json",
   "intent": {
     "operation": "period_growth",
-    "dimension": "parcelas",
+    "dimension": "forma_pagamento",
     "periods": [
       "2026-01",
       "2026-02",
@@ -16,9 +16,11 @@
       "2026-05",
       "2026-06"
     ],
-    "index_key": "parcelamento_de_cartao",
+    "index_key": "faturamento_por_tipo_de_pagamento",
     "scope_filters": [],
-    "operand_labels": []
+    "operand_labels": [
+      "Cartão de Crédito"
+    ]
   },
   "runtime_verdict": {
     "label": "pending_manual_verdict",
