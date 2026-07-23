@@ -1,0 +1,36 @@
+status: regression_guard
+secao: 1
+bug_summary: |
+  Leader-change: pergunta pede "quem foi o líder em maio e se manteve líder
+  em junho". Corrigido via operação explícita leader_change + KnowledgeComposer
+  (LeaderComparison): RANK max por período, nunca growth%.
+
+trace_id: "08143610-85ac-4caa-a3f8-b4aec9ee8cf4"
+question: |
+  Qual foi o serviço mais vendido maio de 2026, e ele se manteve o líder em junho de 2026?
+
+memory_json: "./memory.json"
+trace_jsonl: "./trace.jsonl"
+
+intent:
+  operation: leader_change
+  dimension: servico
+  periods: ["2026-05", "2026-06"]
+  index_key: producao_por_servico
+  scope_filters: []
+
+runtime_verdict:
+  label: "PPF REGENERATIVO - FULL - CARRO INTEIRO"
+  value: 505735.0
+  unit: BRL
+  confidence: 0.9
+  note: >-
+    pós-fix Context Builder: LeaderComparison / RAW max por período;
+    líder junho = PPF REGENERATIVO - FULL - CARRO INTEIRO (505735).
+
+bug_snapshot:
+  label: "PPF - PROTEÇÃO DAS QUINAS DAS PORTAS - FOSCO"
+  value: 136.22
+  unit: pct
+  confidence: 0.4
+  note: "bug pré-fix — growth% via join_plan/ranking_derived"

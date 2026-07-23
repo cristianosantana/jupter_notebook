@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 
 from orion_mcp_v3.protocols.llm import ChatMessage, LLMProvider, LLMStreamChunk
 from orion_mcp_v3.public_chat.application.workspace_pipeline import build_remissive_workspace
+from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
+from orion_mcp_v3.public_chat.domain.fact_engine.models import ExtractedFact, RemissiveWorkspace
+from orion_mcp_v3.public_chat.domain.fact_engine.trace import ExtractionPath, FactTrace, ResolutionRule
 from orion_mcp_v3.public_chat.domain.fact_planner import FactPlanner
 from orion_mcp_v3.public_chat.domain.intent_contract import EntityFilter, IntentContract, PublicOperationType
 from orion_mcp_v3.public_chat.domain.knowledge import ConhecimentoRecuperado, KnowledgeHit
 from orion_mcp_v3.public_chat.infrastructure.analytical_narrator import AnalyticalNarrator
 from orion_mcp_v3.public_chat.infrastructure.memory_resolver import MemoryResolver
+from orion_mcp_v3.public_chat.prompts import get_public_chat_prompt_registry
 from orion_mcp_v3.public_chat.tests.phase4.fixtures import load_maio_contract_fixture, march_hit
 
 
@@ -297,3 +304,65 @@ async def test_analytical_narrator_streams_facts():
     async for delta in narrator.stream("pior forma pagamento março", contract=contract, workspace=workspace):
         parts.append(delta)
     assert "Depósito" in "".join(parts) or "3.690" in "".join(parts)
+
+
+def test_analytical_narrator_prompt_forbids_unmaterialized_inference():
+    prompt = get_public_chat_prompt_registry().get_text("public_chat_analytical_narrator.system")
+    assert "Proibido calcular, comparar, cruzar, agregar, rankear ou inferir" in prompt
+    assert "não tenho esse dado" in prompt.lower()
+    assert "comportamento obrigatório" in prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_analytical_narrator_user_payload_has_no_allowed_derivations():
+    captured: dict[str, str] = {}
+
+    async def _stream(messages, **_kwargs):
+        captured["user"] = messages[1].content
+        yield LLMStreamChunk(delta="ok")
+        yield LLMStreamChunk(delta="", finish_reason="stop")
+
+    provider = AsyncMock()
+    provider.stream = _stream
+    fact_key = "dynamic:producao_por_servico@2026-05"
+    workspace = RemissiveWorkspace(
+        period="2026-05",
+        facts=(
+            ExtractedFact(
+                fact_key=fact_key,
+                label="Serviço X",
+                value="R$ 1,00",
+                unit="BRL",
+                fact_type=FactType.RAW,
+                confidence=0.9,
+                origin_id=1,
+                context_key="k",
+                trace=FactTrace(
+                    fact_key=fact_key,
+                    resolved_from=(1,),
+                    context_keys=("k",),
+                    rule_applied=ResolutionRule.CATALOG,
+                    extraction_path=ExtractionPath.KEY_METRICS,
+                ),
+            ),
+        ),
+        gaps=(),
+        requirements=(),
+        join_plan=None,
+        workspace_confidence=0.9,
+    )
+    contract = IntentContract(
+        intent="consulta_metrica",
+        period="2026-05",
+        confidence=0.9,
+        operation=PublicOperationType.RANKING_DESC.value,
+        dimension="servico",
+    )
+    narrator = AnalyticalNarrator(provider)
+    async for _ in narrator.stream("serviço mais vendido?", contract=contract, workspace=workspace):
+        pass
+
+    assert "allowed_derivations" not in captured["user"]
+    payload = json.loads(captured["user"])
+    assert "workspace" in payload
+    assert "allowed_derivations" not in payload

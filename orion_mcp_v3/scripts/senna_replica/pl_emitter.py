@@ -69,6 +69,8 @@ def emit_pl(
     for period in case.intent.periods:
         lines.append(f"periodo({_prolog_atom(period)}).")
     lines.append(f"index_key({case.intent.index_key}).")
+    for label in case.intent.operand_labels:
+        lines.append(f"operand_label({_prolog_atom(label)}).")
     for sf in case.intent.scope_filters:
         if sf.dimension == case.intent.dimension:
             continue  # não emitir filtro na dimensão-alvo

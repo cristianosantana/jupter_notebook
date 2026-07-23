@@ -1,0 +1,107 @@
+{
+  "hits": [
+    {
+      "origin_id": 11,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. Venda Normal: R$ 1.234.835,40 (60,97%)\n2. Prestação de Serviços: R$ 583.264,04 (28,80%)\n3. Cortesia Concessionária: R$ 114.128,00 (5,63%)\n4. Financiamento: R$ 91.309,00 (4,51%)\n5. Cortesia Funcionário: R$ 1.830,00 (0,09%)",
+      "key_metrics": {
+        "faturamento_por_tipo_de_venda": {
+          "rows": [
+            {
+              "tipo": "Venda Normal",
+              "valor": "R$ 1.234.835,40 (60,97%)",
+              "percentual": "60,97%"
+            },
+            {
+              "tipo": "Prestação de Serviços",
+              "valor": "R$ 583.264,04 (28,80%)",
+              "percentual": "28,80%"
+            },
+            {
+              "tipo": "Cortesia Concessionária",
+              "valor": "R$ 114.128,00 (5,63%)",
+              "percentual": "5,63%"
+            },
+            {
+              "tipo": "Financiamento",
+              "valor": "R$ 91.309,00 (4,51%)",
+              "percentual": "4,51%"
+            },
+            {
+              "tipo": "Cortesia Funcionário",
+              "valor": "R$ 1.830,00 (0,09%)",
+              "percentual": "0,09%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "tipo_de_venda",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 19,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_tipo_venda:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Venda Normal: R$ 1.651.289,15 (64,41%); Prestação de Serviços: R$ 655.892,02 (25,58%); Cortesia Concessionária: R$ 122.379,00 (4,77%); Financiamento: R$ 105.039,00 (4,10%); Cortesia Funcionário: R$ 29.220,00 (1,14%).",
+      "key_metrics": {
+        "faturamento_por_tipo_de_venda": {
+          "rows": [
+            {
+              "tipo": "Venda Normal",
+              "valor": "R$ 1.651.289,15 (64,41%)",
+              "percentual": "64,41%"
+            },
+            {
+              "tipo": "Prestação de Serviços",
+              "valor": "R$ 655.892,02 (25,58%)",
+              "percentual": "25,58%"
+            },
+            {
+              "tipo": "Cortesia Concessionária",
+              "valor": "R$ 122.379,00 (4,77%)",
+              "percentual": "4,77%"
+            },
+            {
+              "tipo": "Financiamento",
+              "valor": "R$ 105.039,00 (4,10%)",
+              "percentual": "4,10%"
+            },
+            {
+              "tipo": "Cortesia Funcionário",
+              "valor": "R$ 29.220,00 (1,14%)",
+              "percentual": "1,14%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "tipo_de_venda",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    }
+  ],
+  "source": "senna_live_packer",
+  "index_key": "faturamento_por_tipo_de_venda",
+  "periods": [
+    "2026-02",
+    "2026-03"
+  ],
+  "question": "Em março de 2026, qual a participação de 'Prestação de Serviços' sobre o faturamento total por tipo de venda, e como isso se compara a fevereiro?"
+}

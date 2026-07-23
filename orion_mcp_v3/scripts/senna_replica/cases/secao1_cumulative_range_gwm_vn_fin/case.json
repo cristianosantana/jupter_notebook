@@ -1,0 +1,38 @@
+{
+  "status": "known_bug",
+  "secao": 1,
+  "bug_summary": "Case empacotado via --from-db (cumulative)",
+  "trace_id": "a14bd6f1-c9d4-4c55-903c-ab9d4e39b73a",
+  "question": "Qual a diferença entre o total de comissão por tipo_os 'Venda Normal' e por 'Financiamento' para a concessionária GWM BAMAQ, somando as comições de janeiro ate maio de 2026?",
+  "memory_json": "./memory.json",
+  "intent": {
+    "operation": "cumulative",
+    "dimension": "tipo_os",
+    "periods": [
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05"
+    ],
+    "index_key": "comissao_por_tipo_de_os_por_concessionaria",
+    "scope_filters": [
+      {
+        "dimension": "concessionaria",
+        "value": "GWM BAMAQ",
+        "match": "exact"
+      }
+    ],
+    "operand_labels": [
+      "Venda Normal",
+      "Financiamento"
+    ]
+  },
+  "runtime_verdict": {
+    "label": "pending_manual_verdict",
+    "value": 0.0,
+    "unit": "BRL",
+    "confidence": 0.0,
+    "note": "preencha runtime_verdict após inspecionar Veredito B / pipeline"
+  }
+}

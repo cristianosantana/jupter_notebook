@@ -1,0 +1,265 @@
+{
+  "hits": [
+    {
+      "origin_id": 1,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-01",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Cartão de Crédito: R$ 1.143.256,71 (53,06%); Concessionária: R$ 668.855,10 (31,04%); PIX: R$ 256.954,00 (11,93%); Depósito Bancário: R$ 43.340,00 (2,01%); Dinheiro: R$ 29.598,00 (1,37%); Parcelamento: R$ 12.500,00 (0,58%); Cheque: R$ 0,00 (0,00%); Permuta: R$ 0,00 (0,00%).",
+      "key_metrics": {
+        "faturamento_por_tipo_de_pagamento": {
+          "rows": [
+            {
+              "tipo": "Cartão de Crédito",
+              "valor": "R$ 1.143.256,71 (53,06%)",
+              "percentual": "53,06%"
+            },
+            {
+              "tipo": "Concessionária",
+              "valor": "R$ 668.855,10 (31,04%)",
+              "percentual": "31,04%"
+            },
+            {
+              "tipo": "PIX",
+              "valor": "R$ 256.954,00 (11,93%)",
+              "percentual": "11,93%"
+            },
+            {
+              "tipo": "Depósito Bancário",
+              "valor": "R$ 43.340,00 (2,01%)",
+              "percentual": "2,01%"
+            },
+            {
+              "tipo": "Dinheiro",
+              "valor": "R$ 29.598,00 (1,37%)",
+              "percentual": "1,37%"
+            },
+            {
+              "tipo": "Parcelamento",
+              "valor": "R$ 12.500,00 (0,58%)",
+              "percentual": "0,58%"
+            },
+            {
+              "tipo": "Cheque",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            },
+            {
+              "tipo": "Permuta",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "forma_pagamento",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 8,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 10,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. Cartão de Crédito: R$ 953.957,90 (45,60%)\n2. Concessionária: R$ 790.218,04 (37,77%)\n3. PIX: R$ 233.571,00 (11,16%)\n4. Dinheiro: R$ 65.684,00 (3,14%)\n5. Depósito Bancário: R$ 37.250,00 (1,78%)\n6. Parcelamento: R$ 11.400,00 (0,54%)\n7. Cheque: R$ 0,00 (0,00%)\n8. Permuta: R$ 0,00 (0,00%)",
+      "key_metrics": {
+        "faturamento_por_tipo_de_pagamento": {
+          "rows": [
+            {
+              "tipo": "Cartão de Crédito",
+              "valor": "R$ 953.957,90 (45,60%)",
+              "percentual": "45,60%"
+            },
+            {
+              "tipo": "Concessionária",
+              "valor": "R$ 790.218,04 (37,77%)",
+              "percentual": "37,77%"
+            },
+            {
+              "tipo": "PIX",
+              "valor": "R$ 233.571,00 (11,16%)",
+              "percentual": "11,16%"
+            },
+            {
+              "tipo": "Dinheiro",
+              "valor": "R$ 65.684,00 (3,14%)",
+              "percentual": "3,14%"
+            },
+            {
+              "tipo": "Depósito Bancário",
+              "valor": "R$ 37.250,00 (1,78%)",
+              "percentual": "1,78%"
+            },
+            {
+              "tipo": "Parcelamento",
+              "valor": "R$ 11.400,00 (0,54%)",
+              "percentual": "0,54%"
+            },
+            {
+              "tipo": "Cheque",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            },
+            {
+              "tipo": "Permuta",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "forma_pagamento",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 8,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 18,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Cartão de Crédito: R$ 1.352.045,28 (49,82%); Concessionária: R$ 886.921,02 (32,68%); PIX: R$ 400.249,98 (14,75%); Dinheiro: R$ 55.179,90 (2,03%); Parcelamento: R$ 15.502,00 (0,57%); Depósito Bancário: R$ 3.690,00 (0,14%); Cheque: R$ 0,00 (0,00%); Permuta: R$ 0,00 (0,00%).",
+      "key_metrics": {
+        "faturamento_por_tipo_de_pagamento": {
+          "rows": [
+            {
+              "tipo": "Cartão de Crédito",
+              "valor": "R$ 1.352.045,28 (49,82%)",
+              "percentual": "49,82%"
+            },
+            {
+              "tipo": "Concessionária",
+              "valor": "R$ 886.921,02 (32,68%)",
+              "percentual": "32,68%"
+            },
+            {
+              "tipo": "PIX",
+              "valor": "R$ 400.249,98 (14,75%)",
+              "percentual": "14,75%"
+            },
+            {
+              "tipo": "Dinheiro",
+              "valor": "R$ 55.179,90 (2,03%)",
+              "percentual": "2,03%"
+            },
+            {
+              "tipo": "Parcelamento",
+              "valor": "R$ 15.502,00 (0,57%)",
+              "percentual": "0,57%"
+            },
+            {
+              "tipo": "Depósito Bancário",
+              "valor": "R$ 3.690,00 (0,14%)",
+              "percentual": "0,14%"
+            },
+            {
+              "tipo": "Cheque",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            },
+            {
+              "tipo": "Permuta",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "forma_pagamento",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 8,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 26,
+      "context_key": "sistema_background:fechamento_gerencial:faturamento_por_forma_pagamento:periodo-2026-04",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. Cartão de Crédito: R$ 1.088.298,35 (41,62%)\n2. Concessionária: R$ 996.963,01 (38,13%)\n3. PIX: R$ 367.870,98 (14,07%)\n4. Dinheiro: R$ 89.085,99 (3,41%)\n5. Depósito Bancário: R$ 48.800,00 (1,87%)\n6. Permuta: R$ 12.600,00 (0,48%)\n7. Parcelamento: R$ 11.113,00 (0,43%)\n8. Cheque: R$ 0,00 (0,00%)",
+      "key_metrics": {
+        "faturamento_por_tipo_de_pagamento": {
+          "rows": [
+            {
+              "tipo": "Cartão de Crédito",
+              "valor": "R$ 1.088.298,35 (41,62%)",
+              "percentual": "41,62%"
+            },
+            {
+              "tipo": "Concessionária",
+              "valor": "R$ 996.963,01 (38,13%)",
+              "percentual": "38,13%"
+            },
+            {
+              "tipo": "PIX",
+              "valor": "R$ 367.870,98 (14,07%)",
+              "percentual": "14,07%"
+            },
+            {
+              "tipo": "Dinheiro",
+              "valor": "R$ 89.085,99 (3,41%)",
+              "percentual": "3,41%"
+            },
+            {
+              "tipo": "Depósito Bancário",
+              "valor": "R$ 48.800,00 (1,87%)",
+              "percentual": "1,87%"
+            },
+            {
+              "tipo": "Permuta",
+              "valor": "R$ 12.600,00 (0,48%)",
+              "percentual": "0,48%"
+            },
+            {
+              "tipo": "Parcelamento",
+              "valor": "R$ 11.113,00 (0,43%)",
+              "percentual": "0,43%"
+            },
+            {
+              "tipo": "Cheque",
+              "valor": "R$ 0,00 (0,00%)",
+              "percentual": "0,00%"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "forma_pagamento",
+            "metric_kind": "revenue",
+            "value_field": "valor",
+            "entity_field": "tipo",
+            "total_original_rows": 8,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    }
+  ],
+  "source": "senna_live_packer",
+  "index_key": "faturamento_por_tipo_de_pagamento",
+  "periods": [
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04"
+  ],
+  "question": "Em quais meses entre janeiro e abril de 2026 o Pix ultrapassou o Cartão de Crédito como principal forma de pagamento, e qual foi a diferença percentual nesses meses?"
+}

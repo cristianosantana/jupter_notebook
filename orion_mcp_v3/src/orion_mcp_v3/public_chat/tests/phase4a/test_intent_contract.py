@@ -19,10 +19,10 @@ def test_heuristics_pior_maps_ranking_asc() -> None:
     assert signals["period"] == "2026-03"
 
 
-def test_heuristics_maior_queda_maps_ranking_asc_not_desc() -> None:
+def test_heuristics_maior_queda_maps_period_decline() -> None:
     message = "Qual concessionária teve a maior queda de comissão entre janeiro a maio de 2026?"
     signals = extract_heuristic_signals(message)
-    assert signals["operation"] == PublicOperationType.RANKING_ASC.value
+    assert signals["operation"] == PublicOperationType.PERIOD_DECLINE.value
     assert signals["dimension"] == "concessionaria"
 
     # Coligação sobrescreve LLM que errou para ranking_desc
@@ -38,24 +38,23 @@ def test_heuristics_maior_queda_maps_ranking_asc_not_desc() -> None:
         ),
         message,
     )
-    assert contract.operation == PublicOperationType.RANKING_ASC.value
+    assert contract.operation == PublicOperationType.PERIOD_DECLINE.value
     assert contract.sort_direction == "asc"
 
 
-def test_heuristics_maior_crescimento_keeps_ranking_desc() -> None:
+def test_heuristics_maior_crescimento_maps_period_growth() -> None:
     signals = extract_heuristic_signals(
         "qual parcela teve o maior crescimento percentual até junho?"
     )
-    assert signals["operation"] == PublicOperationType.RANKING_DESC.value
+    assert signals["operation"] == PublicOperationType.PERIOD_GROWTH.value
 
 
-def test_heuristics_mais_vendido_manteve_lider_is_ranking_desc_not_comparison() -> None:
+def test_heuristics_mais_vendido_manteve_lider_is_leader_change() -> None:
     message = "Qual foi o serviço mais vendido em maio, e se manteve líder em junho?"
     signals = extract_heuristic_signals(message)
-    assert signals["operation"] == PublicOperationType.RANKING_DESC.value
+    assert signals["operation"] == PublicOperationType.LEADER_CHANGE.value
     assert signals["dimension"] == "servico"
 
-    # Superlativo sobrescreve LLM que errou para comparison agregada
     contract = apply_heuristic_enrichment(
         IntentContract(
             intent="comparacao",
@@ -68,10 +67,9 @@ def test_heuristics_mais_vendido_manteve_lider_is_ranking_desc_not_comparison() 
         ),
         message,
     )
-    assert contract.operation == PublicOperationType.RANKING_DESC.value
+    assert contract.operation == PublicOperationType.LEADER_CHANGE.value
     assert contract.sort_direction == "desc"
     assert contract.dimension == "servico"
-    assert contract.operation != "comparison"
 
 
 def test_intent_ranking_asc_pior() -> None:

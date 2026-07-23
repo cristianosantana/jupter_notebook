@@ -23,6 +23,7 @@ class IntentSpec:
     periods: tuple[str, ...]
     index_key: str
     scope_filters: tuple[ScopeFilter, ...] = ()
+    operand_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,12 +124,17 @@ def load_case(case_dir: Path | str) -> CaseSpec:
             )
         )
 
+    operand_labels = tuple(
+        str(item) for item in (intent_raw.get("operand_labels") or []) if item
+    )
+
     intent = IntentSpec(
         operation=str(_require(intent_raw, "operation")),
         dimension=str(_require(intent_raw, "dimension")),
         periods=tuple(str(p) for p in periods),
         index_key=str(_require(intent_raw, "index_key")),
         scope_filters=tuple(scope_filters),
+        operand_labels=operand_labels,
     )
 
     verdict_raw = _require(data, "runtime_verdict")

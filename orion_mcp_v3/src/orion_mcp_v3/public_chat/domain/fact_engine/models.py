@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from orion_mcp_v3.public_chat.domain.analytical_plan import AnalyticalPlan
 from orion_mcp_v3.public_chat.domain.fact_engine.fact_type import FactType
 from orion_mcp_v3.public_chat.domain.fact_engine.gap import FactGap
 from orion_mcp_v3.public_chat.domain.fact_engine.join_plan import MemoryJoinPlan
@@ -29,10 +31,18 @@ class FactRequirement:
     source_context_key: str | None = None
     source_resolution_mode: str | None = None
     source_resolution_detail: str | None = None
-    scope_entities: tuple[tuple[str, str], ...] = ()
+    scope_entities: tuple[tuple[str, str] | tuple[str, str, str], ...] = ()
     discarded_scope: tuple[dict[str, str], ...] = ()
 
     def as_mapping(self) -> dict[str, object]:
+        scope_payload: list[dict[str, str]] = []
+        for item in self.scope_entities:
+            if len(item) >= 3:
+                scope_payload.append(
+                    {"dimension": item[0], "value": item[1], "match": item[2]}
+                )
+            else:
+                scope_payload.append({"dimension": item[0], "value": item[1]})
         return {
             "fact_key": self.fact_key,
             "metric": self.metric,
@@ -48,10 +58,7 @@ class FactRequirement:
             "source_context_key": self.source_context_key,
             "source_resolution_mode": self.source_resolution_mode,
             "source_resolution_detail": self.source_resolution_detail,
-            "scope_entities": [
-                {"dimension": dimension, "value": value}
-                for dimension, value in self.scope_entities
-            ],
+            "scope_entities": scope_payload,
             "discarded_scope": list(self.discarded_scope),
             "semantics": self.semantics.as_mapping(),
         }
@@ -91,17 +98,30 @@ class RemissiveWorkspace:
     requirements: tuple[FactRequirement, ...]
     join_plan: MemoryJoinPlan | None
     workspace_confidence: float
+    analytical_plan: AnalyticalPlan | None = None
+    computed: tuple[dict[str, Any], ...] = ()
+    evidence: tuple[dict[str, Any], ...] = ()
+    narrative_instructions: tuple[str, ...] = ()
+    requirements_graph: dict[str, Any] | None = None
 
     @property
     def has_facts(self) -> bool:
-        return bool(self.facts)
+        return bool(self.facts) or bool(self.computed)
 
     def as_prompt_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "period": self.period,
             "facts": [fact.as_mapping() for fact in self.facts],
             "gaps": [gap.as_mapping() for gap in self.gaps],
             "requirements": [req.as_mapping() for req in self.requirements],
             "join_plan": self.join_plan.as_mapping() if self.join_plan else None,
             "workspace_confidence": round(self.workspace_confidence, 4),
+            "computed": list(self.computed),
+            "evidence": list(self.evidence),
+            "narrative_instructions": list(self.narrative_instructions),
         }
+        if self.analytical_plan is not None:
+            payload["analytical_plan"] = self.analytical_plan.as_mapping()
+        if self.requirements_graph is not None:
+            payload["requirements_graph"] = self.requirements_graph
+        return payload

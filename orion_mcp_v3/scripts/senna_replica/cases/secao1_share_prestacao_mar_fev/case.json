@@ -1,0 +1,28 @@
+{
+  "status": "known_bug",
+  "secao": 1,
+  "bug_summary": "Case empacotado via --from-db (period_growth)",
+  "trace_id": "95d85c85-6c02-476f-9645-2c6b8eb44aa0",
+  "question": "Em março de 2026, qual a participação de 'Prestação de Serviços' sobre o faturamento total por tipo de venda, e como isso se compara a fevereiro?",
+  "memory_json": "./memory.json",
+  "intent": {
+    "operation": "period_growth",
+    "dimension": "tipo_de_venda",
+    "periods": [
+      "2026-02",
+      "2026-03"
+    ],
+    "index_key": "faturamento_por_tipo_de_venda",
+    "scope_filters": [],
+    "operand_labels": [
+      "Prestação de Serviços"
+    ]
+  },
+  "runtime_verdict": {
+    "label": "pending_manual_verdict",
+    "value": 0.0,
+    "unit": "BRL",
+    "confidence": 0.0,
+    "note": "preencha runtime_verdict após inspecionar Veredito B / pipeline"
+  }
+}

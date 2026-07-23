@@ -1,0 +1,293 @@
+{
+  "hits": [
+    {
+      "origin_id": 9,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-01",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "BH ESTÉTICA: R$ 3.781,80 (62,22%); MFP ESTETICA AUTOMOTIVA: R$ 753,31 (12,39%); CARSOUL: R$ 703,37 (11,57%); XTREME PPF: R$ 569,75 (9,37%); GB ESTÉTICA: R$ 269,57 (4,44%).",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 3.781,80 (62,22%)",
+              "percentual": "62,22%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 753,31 (12,39%)",
+              "percentual": "12,39%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 703,37 (11,57%)",
+              "percentual": "11,57%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 569,75 (9,37%)",
+              "percentual": "9,37%",
+              "estabelecimento": "XTREME PPF"
+            },
+            {
+              "valor": "R$ 269,57 (4,44%)",
+              "percentual": "4,44%",
+              "estabelecimento": "GB ESTÉTICA"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 17,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-02",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. BH ESTÉTICA: R$ 4.381,94 (45,08%)\n2. CARSOUL: R$ 2.688,94 (27,66%)\n3. MFP ESTETICA AUTOMOTIVA: R$ 1.781,52 (18,33%)\n4. XTREME PPF: R$ 867,89 (8,93%)",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 4.381,94 (45,08%)",
+              "percentual": "45,08%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 2.688,94 (27,66%)",
+              "percentual": "27,66%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 1.781,52 (18,33%)",
+              "percentual": "18,33%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 867,89 (8,93%)",
+              "percentual": "8,93%",
+              "estabelecimento": "XTREME PPF"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 4,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 25,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-03",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "MFP ESTETICA AUTOMOTIVA: R$ 1.687,79 (39,28%); CARSOUL: R$ 1.363,19 (31,73%); BH ESTÉTICA: R$ 1.161,77 (27,04%); XTREME PPF: R$ 84,07 (1,96%).",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 1.687,79 (39,28%)",
+              "percentual": "39,28%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 1.363,19 (31,73%)",
+              "percentual": "31,73%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 1.161,77 (27,04%)",
+              "percentual": "27,04%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 84,07 (1,96%)",
+              "percentual": "1,96%",
+              "estabelecimento": "XTREME PPF"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 4,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 33,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-04",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "1. BH ESTÉTICA: R$ 2.138,92 (35,63%)\n2. CARSOUL: R$ 1.247,06 (20,78%)\n3. MFP ESTETICA AUTOMOTIVA: R$ 1.189,91 (19,82%)\n4. GB ESTÉTICA: R$ 743,45 (12,39%)\n5. XTREME PPF: R$ 682,98 (11,38%)",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 2.138,92 (35,63%)",
+              "percentual": "35,63%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 1.247,06 (20,78%)",
+              "percentual": "20,78%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 1.189,91 (19,82%)",
+              "percentual": "19,82%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 743,45 (12,39%)",
+              "percentual": "12,39%",
+              "estabelecimento": "GB ESTÉTICA"
+            },
+            {
+              "valor": "R$ 682,98 (11,38%)",
+              "percentual": "11,38%",
+              "estabelecimento": "XTREME PPF"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 42,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-05",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "Taxas de cartão de crédito por empresa em PERIODO_2026_05: MFP ESTETICA AUTOMOTIVA: R$ 775,07 (25,38%); GB ESTÉTICA: R$ 733,32 (24,01%); CARSOUL: R$ 670,81 (21,97%); BH ESTÉTICA: R$ 630,73 (20,65%); XTREME PPF: R$ 243,79 (7,98%).",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 775,07 (25,38%)",
+              "percentual": "25,38%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 733,32 (24,01%)",
+              "percentual": "24,01%",
+              "estabelecimento": "GB ESTÉTICA"
+            },
+            {
+              "valor": "R$ 670,81 (21,97%)",
+              "percentual": "21,97%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 630,73 (20,65%)",
+              "percentual": "20,65%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 243,79 (7,98%)",
+              "percentual": "7,98%",
+              "estabelecimento": "XTREME PPF"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    },
+    {
+      "origin_id": 50,
+      "context_key": "sistema_background:fechamento_gerencial:taxas_cartao_credito:periodo-2026-06",
+      "category": "Fechamento Gerencial",
+      "validated_answer": "BH ESTÉTICA: R$ 2.044,22 (38,41%); MFP ESTETICA AUTOMOTIVA: R$ 1.269,00 (23,84%); CARSOUL: R$ 1.148,82 (21,59%); GB ESTÉTICA: R$ 733,27 (13,78%); XTREME PPF: R$ 126,88 (2,38%).",
+      "key_metrics": {
+        "taxas_cartao_credito": {
+          "rows": [
+            {
+              "valor": "R$ 2.044,22 (38,41%)",
+              "percentual": "38,41%",
+              "estabelecimento": "BH ESTÉTICA"
+            },
+            {
+              "valor": "R$ 1.269,00 (23,84%)",
+              "percentual": "23,84%",
+              "estabelecimento": "MFP ESTETICA AUTOMOTIVA"
+            },
+            {
+              "valor": "R$ 1.148,82 (21,59%)",
+              "percentual": "21,59%",
+              "estabelecimento": "CARSOUL"
+            },
+            {
+              "valor": "R$ 733,27 (13,78%)",
+              "percentual": "13,78%",
+              "estabelecimento": "GB ESTÉTICA"
+            },
+            {
+              "valor": "R$ 126,88 (2,38%)",
+              "percentual": "2,38%",
+              "estabelecimento": "XTREME PPF"
+            }
+          ],
+          "_meta": {
+            "schema": "ranked_list",
+            "dimension": "estabelecimento",
+            "metric_kind": "rate",
+            "value_field": "valor",
+            "entity_field": "estabelecimento",
+            "total_original_rows": 5,
+            "truncated_head_tail": false
+          }
+        }
+      },
+      "score": null,
+      "source": "memory_curta"
+    }
+  ],
+  "source": "senna_live_packer",
+  "index_key": "taxas_cartao_credito",
+  "periods": [
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06"
+  ],
+  "question": "Qual foi a soma do faturamento de estética automotiva (BH Estética, MFP, Carsoul, GB Estética, Xtreme PPF) em todo o 1º semestre de 2026, e qual dessas empresas teve a participação mais estável mês a mês?"
+}

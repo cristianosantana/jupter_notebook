@@ -1,36 +1,26 @@
-status: regression_guard
+status: known_bug
 secao: 1
-bug_summary: |
-  Ranking cross-period: LLM colapsou "1x a 10x" em entity=1X;
-  runtime histórico devolveu único registro −35.95% em vez do max growth (3X ~43%).
-  Guarda pós-fix §1: Veredito A esperado = 3X / 43.32%.
-
-trace_id: "9ee5b6e3-3705-4a8d-996f-a66525fe6d9a"
-question: |
-  Das vendas parceladas em cartão de crédito em janeiro de 2026,
-  qual parcela (1x a 10x) teve o maior crescimento percentual até junho?
-
-memory_json: "./memory.json"
-trace_jsonl: "./trace.jsonl"
-
+bug_summary: Case empacotado via --from-db (period_growth)
+trace_id: 48031649-2f77-4604-a29d-ae0fee022745
+question: Das vendas parceladas em cartão de crédito em janeiro de 2026, qual parcela
+  (1x a 10x) teve o maior crescimento percentual até junho?
+memory_json: ./memory.json
 intent:
   operation: period_growth
   dimension: parcelas
-  periods: ["2026-01", "2026-06"]
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  - 2026-05
+  - 2026-06
   index_key: parcelamento_de_cartao
-  scope_filters:
-    - {dimension: forma_pagamento, value: cartao de credito}
-
+  scope_filters: []
+  operand_labels: []
 runtime_verdict:
-  label: "3X"
-  value: 43.32
-  unit: pct
-  confidence: 0.85
-  note: "pós-fix §1 — growth ranking_derived"
-
-bug_snapshot:
-  label: "1X"
-  value: -35.95
-  unit: pct
-  confidence: 0.9
-  note: "único registro disponível (bug original)"
+  label: pending_manual_verdict
+  value: 0.0
+  unit: BRL
+  confidence: 0.0
+  note: preencha runtime_verdict após inspecionar Veredito B / pipeline

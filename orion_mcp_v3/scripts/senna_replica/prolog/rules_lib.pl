@@ -1,6 +1,7 @@
 % rules_lib.pl — motor B genérico (agnóstico à dimensão).
 % Dimensão e períodos aparecem só nos fatos do case gerado.
-% Operações: period_growth, period_decline, ranking_desc, ranking_asc.
+% Operações: period_growth, period_decline, ranking_desc, ranking_asc,
+%            leader_change, cumulative, time_series.
 
 :- dynamic
     operacao/1,
@@ -8,10 +9,13 @@
     periodo/1,
     index_key/1,
     scope_filter/2,
+    operand_label/1,
     observado/4,
     nao_disponivel/3,
     truncated/1,
     veredito_runtime/4.
+
+:- discontiguous veredito_b/1.
 
 % --- sanitize: filtro cuja dimensão = dimensão-alvo é contradição estrutural ---
 
@@ -53,10 +57,16 @@ periodos_ordenados(P1, P2) :-
     last(Ps, P2),
     P1 \== P2.
 
+% Ranking cross-entity exige 2+ labels. Query escopada (operand_label/1)
+% aceita 1 label — ex.: "variação do Cartão entre jan e jun".
 cobertura_suficiente(Labels) :-
+    \+ truncated(true),
     length(Labels, N),
-    N > 1,
-    \+ truncated(true).
+    ( N > 1
+    ; N =:= 1,
+      findall(OL, operand_label(OL), Ops),
+      Ops \= []
+    ).
 
 % --- veredito B: period_growth (maior alta) / period_decline (maior queda) ---
 
@@ -111,6 +121,176 @@ veredito_b(cobertura_incompleta(Labels)) :-
     sort(Labels0, Labels),
     ( length(Labels, N), N =< 1
     ; truncated(true)
+    ).
+
+% --- veredito B: leader_change (RANK top=1 por período, nunca growth) ---
+%
+% "Quem foi o líder no período X, e ele se manteve líder no período Y?"
+% NÃO é period_growth: o vencedor é decidido por valor absoluto MÁXIMO em
+% cada período, isoladamente — nunca pela variação percentual entre os dois
+% valores de uma mesma entidade. Regra separada por design, para impedir que
+% o motor caia de volta em crescimento_pct/3 quando há 2 períodos + ranking.
+% Convenção: Label/Valor reportados = líder do período mais recente (P2);
+% "mudou de líder" é auditável comparando o líder de P1 com o de P2.
+
+lider_do_periodo(IndexKey, Periodo, Label, Valor) :-
+    findall(V-L,
+            ( observado(IndexKey, L, Periodo, V),
+              number(V)
+            ),
+            Pares),
+    Pares \= [],
+    max_member(Valor-Label, Pares).
+
+veredito_b(vencedora(Label, Valor)) :-
+    operacao(leader_change),
+    index_key(IK),
+    periodos_ordenados(P1, P2),
+    findall(L1, (observado(IK, L1, P1, V1), number(V1)), LabelsP1),
+    findall(L2, (observado(IK, L2, P2, V2), number(V2)), LabelsP2),
+    sort(LabelsP1, SortedP1),
+    sort(LabelsP2, SortedP2),
+    length(SortedP1, N1),
+    length(SortedP2, N2),
+    N1 > 1,
+    N2 > 1,
+    \+ truncated(true),
+    lider_do_periodo(IK, P1, _LiderP1, _ValorP1),
+    lider_do_periodo(IK, P2, Label, Valor).
+
+veredito_b(cobertura_incompleta(Labels)) :-
+    operacao(leader_change),
+    index_key(IK),
+    periodos_ordenados(P1, P2),
+    findall(L1, (observado(IK, L1, P1, V1), number(V1)), LabelsP1),
+    findall(L2, (observado(IK, L2, P2, V2), number(V2)), LabelsP2),
+    sort(LabelsP1, SortedP1),
+    sort(LabelsP2, SortedP2),
+    append(SortedP1, SortedP2, Labels0),
+    sort(Labels0, Labels),
+    ( length(SortedP1, N1), N1 =< 1
+    ; length(SortedP2, N2), N2 =< 1
+    ; truncated(true)
+    ).
+
+% --- veredito B: cumulative (soma em todos os períodos) ---
+%
+% Acumula observados por label em TODOS os periodo/1. Cobertura exige que
+% cada período tenha valor numérico para o label. Com 2+ labels no escopo
+% do index, o Veredito B reporta a diferença (primeiro-segundo por ordem
+% lexicográfica de label_norm) — alinhado a "diferença entre totais".
+
+periodos_todos(Periodos) :-
+    findall(P, periodo(P), Ps0),
+    sort(Ps0, Periodos),
+    Periodos \= [].
+
+acumulado_label(IndexKey, Label, Total) :-
+    periodos_todos(Periodos),
+    findall(V,
+            ( member(P, Periodos),
+              observado(IndexKey, Label, P, V),
+              number(V)
+            ),
+            Valores),
+    length(Periodos, NPeriodos),
+    length(Valores, NValores),
+    NValores =:= NPeriodos,
+    sum_list(Valores, Total).
+
+labels_com_cobertura_completa(IndexKey, Labels) :-
+    findall(L,
+            ( observado(IndexKey, L, _P, V),
+              number(V),
+              acumulado_label(IndexKey, L, _T)
+            ),
+            Raw),
+    sort(Raw, All),
+    ( findall(OL, operand_label(OL), Ops0), Ops0 \= []
+    -> findall(L, (member(L, Ops0), member(L, All)), Labels)
+    ;  Labels = All
+    ).
+
+veredito_b(vencedora(Label, Valor)) :-
+    operacao(cumulative),
+    index_key(IK),
+    \+ truncated(true),
+    labels_com_cobertura_completa(IK, Labels),
+    length(Labels, N),
+    N >= 2,
+    Labels = [L1, L2 | _],
+    acumulado_label(IK, L1, T1),
+    acumulado_label(IK, L2, T2),
+    Diff is T1 - T2,
+    format(atom(Label), 'diff:~w-~w', [L1, L2]),
+    Valor = Diff.
+
+veredito_b(vencedora(Label, Valor)) :-
+    operacao(cumulative),
+    index_key(IK),
+    \+ truncated(true),
+    labels_com_cobertura_completa(IK, Labels),
+    Labels = [Label],
+    acumulado_label(IK, Label, Valor).
+
+veredito_b(cobertura_incompleta(Labels)) :-
+    operacao(cumulative),
+    index_key(IK),
+    findall(L, (observado(IK, L, _P, V), number(V)), Raw),
+    sort(Raw, Labels),
+    ( truncated(true)
+    ; labels_com_cobertura_completa(IK, Completos),
+      Completos = []
+    ).
+
+% --- veredito B: time_series (meses em que label A > label B) ---
+%
+% Com dois labels (operand_label ou ordem lexicográfica), reporta a lista de
+% períodos (átomo CSV) em que o primeiro ultrapassa o segundo.
+% Valor = quantidade de meses de cruzamento.
+
+series_labels(IndexKey, Labels) :-
+    findall(L, (observado(IndexKey, L, _P, V), number(V)), Raw),
+    sort(Raw, All),
+    ( findall(OL, operand_label(OL), Ops0), Ops0 \= []
+    -> findall(L, (member(L, Ops0), member(L, All)), Labels)
+    ;  Labels = All
+    ).
+
+mes_ultrapassa(IndexKey, LabelA, LabelB, Periodo) :-
+    observado(IndexKey, LabelA, Periodo, VA),
+    observado(IndexKey, LabelB, Periodo, VB),
+    number(VA),
+    number(VB),
+    VA > VB.
+
+veredito_b(vencedora(Label, Valor)) :-
+    operacao(time_series),
+    index_key(IK),
+    periodos_todos(Periodos),
+    length(Periodos, NPeriodos),
+    NPeriodos >= 2,
+    \+ truncated(true),
+    series_labels(IK, Labels),
+    Labels = [LA, LB | _],
+    findall(P,
+            ( member(P, Periodos),
+              mes_ultrapassa(IK, LA, LB, P)
+            ),
+            Meses),
+    Meses \= [],
+    atomic_list_concat(Meses, ',', Label),
+    length(Meses, Valor).
+
+veredito_b(cobertura_incompleta(Labels)) :-
+    operacao(time_series),
+    index_key(IK),
+    series_labels(IK, Labels),
+    ( truncated(true)
+    ; \+ periodos_todos(_)
+    ; periodos_todos(Periodos), length(Periodos, N), N < 2
+    ; Labels = []
+    ; length(Labels, NLab), NLab < 2
     ).
 
 % --- normalização de label para comparação ---

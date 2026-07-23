@@ -1,0 +1,27 @@
+status: known_bug
+secao: 1
+bug_summary: Case empacotado via --from-db (time_series)
+trace_id: f41734ad-c0c2-4680-b0d7-acd6119ed45b
+question: Em quais meses entre janeiro e abril de 2026 o Pix ultrapassou o Cartão
+  de Crédito como principal forma de pagamento, e qual foi a diferença percentual
+  nesses meses?
+memory_json: ./memory.json
+intent:
+  operation: time_series
+  dimension: forma_pagamento
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  index_key: faturamento_por_tipo_de_pagamento
+  scope_filters: []
+  operand_labels:
+  - Pix
+  - Cartão de Crédito
+runtime_verdict:
+  label: pending_manual_verdict
+  value: 0.0
+  unit: BRL
+  confidence: 0.0
+  note: preencha runtime_verdict após inspecionar Veredito B / pipeline

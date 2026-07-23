@@ -15,7 +15,11 @@ from orion_mcp_v3.protocols.llm import (
 
 
 class OpenAIPublicLLMProvider:
-    """Wrapper mínimo sobre ``openai.AsyncOpenAI`` para intent + narrador."""
+    """Wrapper mínimo sobre ``openai.AsyncOpenAI`` para intent + narrador.
+
+    Modelos ``gpt-5*`` / ``o1*`` / ``o3*`` / ``o4*`` usam ``max_completion_tokens``
+    (não ``max_tokens``) e não aceitam ``temperature`` fora do default da API.
+    """
 
     def __init__(
         self,
@@ -43,13 +47,39 @@ class OpenAIPublicLLMProvider:
         self._max_tokens = max_tokens
         self._temperature = temperature
 
+    @staticmethod
+    def _completion_budget_for_constrained_model(max_tokens: int) -> int:
+        """Evita respostas vazias quando modelos reasoning consomem o budget interno."""
+        return max(int(max_tokens), 8192)
+
+    @staticmethod
+    def _is_constrained_chat_model(model: str) -> bool:
+        m = model.strip().lower()
+        return (
+            m.startswith("gpt-5")
+            or m.startswith("o1")
+            or m.startswith("o3")
+            or m.startswith("o4")
+        )
+
     def _params(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "model": kwargs.pop("model", self._model),
-            "temperature": kwargs.pop("temperature", self._temperature),
-            "max_tokens": kwargs.pop("max_tokens", self._max_tokens),
-            **kwargs,
-        }
+        model = kwargs.pop("model", self._model)
+        temperature = kwargs.pop("temperature", self._temperature)
+        max_tok = kwargs.pop("max_tokens", self._max_tokens)
+        max_compl = kwargs.pop("max_completion_tokens", None)
+
+        merged: dict[str, Any] = {"model": model, **kwargs}
+
+        if not self._is_constrained_chat_model(model):
+            merged["temperature"] = temperature
+
+        if max_compl is not None:
+            merged["max_completion_tokens"] = max_compl
+        elif self._is_constrained_chat_model(model):
+            merged["max_completion_tokens"] = self._completion_budget_for_constrained_model(max_tok)
+        else:
+            merged["max_tokens"] = max_tok
+        return merged
 
     @staticmethod
     def _meta(raw: Any, elapsed_ms: float) -> LLMResponseMeta:

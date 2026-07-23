@@ -36,6 +36,8 @@ def test_memory_parser_observados_from_ranked_list() -> None:
         CASE_DIR / "memory.json",
         index_key="parcelamento_de_cartao",
         periods=("2026-01", "2026-06"),
+        # dimensão ausente na row não pode zerar observados
+        scope_filters=(("forma_pagamento", "cartao de credito"),),
     )
     assert not result.truncated
     assert result.missing_periods == ()
@@ -43,6 +45,29 @@ def test_memory_parser_observados_from_ranked_list() -> None:
     labels_jun = {o.label for o in result.observados if o.period == "2026-06"}
     assert "3X" in labels_jan and "3X" in labels_jun
     assert len(result.observados) == 20
+
+
+def test_memory_parser_matrix_uses_meta_columns_not_aliases() -> None:
+    """Matriz via ``_meta.schema/columns/subdimension`` — sem catálogo hardcoded."""
+    cum = (
+        Path(__file__).resolve().parent.parent
+        / "cases"
+        / "secao1_cumulative_range_gwm_vn_fin"
+    )
+    result = parse_memory_json(
+        cum / "memory.json",
+        index_key="comissao_por_tipo_de_os_por_concessionaria",
+        periods=("2026-01", "2026-02", "2026-03", "2026-04", "2026-05"),
+        scope_filters=(("concessionaria", "GWM BAMAQ"),),
+        operand_labels=("Venda Normal", "Financiamento"),
+    )
+    assert result.missing_periods == ()
+    by_label: dict[str, float] = {}
+    for obs in result.observados:
+        by_label[obs.label] = by_label.get(obs.label, 0.0) + obs.value
+    assert set(by_label) == {"Venda Normal", "Financiamento"}
+    assert abs(by_label["Venda Normal"] - 183344.12) < 0.01
+    assert by_label["Financiamento"] == 0.0
 
 
 def test_pl_emitter_has_seven_sections_and_include() -> None:

@@ -1,0 +1,27 @@
+status: known_bug
+secao: 1
+bug_summary: Case empacotado via --from-db (period_growth)
+trace_id: 8e3a9378-110b-4685-8f4c-27cbc778a988
+question: Qual foi a variação percentual do faturamento por Cartão de Crédito entre
+  janeiro e junho de 2026?
+memory_json: ./memory.json
+intent:
+  operation: period_growth
+  dimension: forma_pagamento
+  periods:
+  - 2026-01
+  - 2026-02
+  - 2026-03
+  - 2026-04
+  - 2026-05
+  - 2026-06
+  index_key: faturamento_por_tipo_de_pagamento
+  scope_filters: []
+  operand_labels:
+  - Cartão de Crédito
+runtime_verdict:
+  label: pending_manual_verdict
+  value: 0.0
+  unit: BRL
+  confidence: 0.0
+  note: preencha runtime_verdict após inspecionar Veredito B / pipeline

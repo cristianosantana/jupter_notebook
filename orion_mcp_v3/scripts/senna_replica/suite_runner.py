@@ -70,10 +70,13 @@ def run_case(
     emit_only: bool = False,
 ) -> CaseRunResult:
     case = load_case(case_dir)
+    scope = tuple((sf.dimension, sf.value) for sf in case.intent.scope_filters)
     memory = parse_memory_json(
         case.memory_path,
         index_key=case.intent.index_key,
         periods=case.intent.periods,
+        scope_filters=scope,
+        operand_labels=case.intent.operand_labels,
     )
     pl_path = emit_pl(case, memory)
 
